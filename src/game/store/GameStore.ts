@@ -10,6 +10,44 @@ import type {
   Upgrade,
 } from '../types';
 
+const LEGACY_STORAGE_KEY = 'cyber-garage-save';
+
+/** Reads the Telegram user id directly from `window`, defensively — this runs at module
+ * load time, before React (and the `useTelegram` hook) ever mounts. */
+function getTelegramUserId(): string | null {
+  try {
+    const id = (
+      window as unknown as {
+        Telegram?: { WebApp?: { initDataUnsafe?: { user?: { id?: number } } } };
+      }
+    ).Telegram?.WebApp?.initDataUnsafe?.user?.id;
+    return typeof id === 'number' ? String(id) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Falls back to a shared 'guest' slot outside Telegram (local dev in a plain browser tab). */
+function getStorageKey(): string {
+  const telegramUserId = getTelegramUserId();
+  return telegramUserId ? `${LEGACY_STORAGE_KEY}-${telegramUserId}` : `${LEGACY_STORAGE_KEY}-guest`;
+}
+
+/** One-time copy from the old shared-across-everyone save key, so switching to
+ * per-account saves doesn't wipe progress that already exists on this device. */
+function migrateLegacySave(storageKey: string) {
+  try {
+    if (localStorage.getItem(storageKey)) return;
+    const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
+    if (legacy) localStorage.setItem(storageKey, legacy);
+  } catch {
+    // localStorage can throw in privacy modes / disabled storage — safe to skip.
+  }
+}
+
+const STORAGE_KEY = getStorageKey();
+migrateLegacySave(STORAGE_KEY);
+
 interface GameActions {
   /** Advances passive Scrap generation and Energy regen based on real elapsed time since the last save. */
   tick: () => void;
@@ -307,7 +345,7 @@ export const useGameStore = create<GameStore>()(
         set({ isBoostActive: true, boostTimeLeft: durationInSeconds }),
     }),
     {
-      name: 'cyber-garage-save',
+      name: STORAGE_KEY,
       // offlineEarnings is a one-shot UI toast, recomputed fresh each load — persisting
       // it would just make a stale "Welcome back" reappear on the next reload.
       partialize: (state) => {

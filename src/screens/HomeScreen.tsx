@@ -142,11 +142,11 @@ export function HomeScreen() {
       <motion.img
         src="/car-base.webp"
         alt="Cyber Car"
-        animate={isOverheated ? { y: [0, -2, 2, 0] } : { y: 0 }}
+        animate={isOverheated ? { y: [0, -2, 2, 0] } : { y: [0, -6, 0] }}
         transition={
           isOverheated
             ? { duration: 0.15, repeat: Infinity, ease: 'easeInOut' }
-            : { duration: 0.2 }
+            : { duration: 3, repeat: Infinity, ease: 'easeInOut' }
         }
         className="mx-auto w-full max-w-sm object-contain drop-shadow-[0_0_15px_rgba(0,255,255,0.3)]"
       />
