@@ -140,7 +140,7 @@ export function HomeScreen() {
       </div>
 
       <motion.img
-        src="/car-placeholder.png"
+        src="/car-base.webp"
         alt="Cyber Car"
         animate={isOverheated ? { y: [0, -2, 2, 0] } : { y: 0 }}
         transition={
