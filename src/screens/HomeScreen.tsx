@@ -103,19 +103,34 @@ export function HomeScreen() {
   }, [isBoostActive]);
 
   const handlePointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
-    event.currentTarget.setPointerCapture(event.pointerId);
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // Some environments (older WebViews, certain iframe sandboxes) can throw here —
+      // the hold still works via pointerup/pointerleave alone, just without the
+      // "ignore physical leave" guard below.
+    }
     isHoldingRef.current = true;
     setIsHolding(true);
   };
 
-  const handlePointerUp = () => {
+  const endHold = () => {
     isHoldingRef.current = false;
     setIsHolding(false);
   };
 
-  const handlePointerLeave = () => {
-    isHoldingRef.current = false;
-    setIsHolding(false);
+  // With pointer capture active (set on pointerdown above), pointerup/pointermove are
+  // redirected to this element no matter where the finger physically is — but per the
+  // Pointer Events spec, pointerleave is NOT redirected; it still fires based on the
+  // finger's real position. Since the button's own scale animation (below) constantly
+  // resizes it slightly, a held finger can end up just outside the shrunken bounds,
+  // firing a spurious pointerleave and cutting the hold short. Only treat "leave" as a
+  // release when capture isn't actually held, i.e. as a fallback for when
+  // setPointerCapture itself didn't take — pointerup/pointercancel are the real signal.
+  const handlePointerLeave = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (!event.currentTarget.hasPointerCapture(event.pointerId)) {
+      endHold();
+    }
   };
 
   const gaugeColorClass = isOverheated
@@ -221,7 +236,8 @@ export function HomeScreen() {
             <motion.button
               type="button"
               onPointerDown={handlePointerDown}
-              onPointerUp={handlePointerUp}
+              onPointerUp={endHold}
+              onPointerCancel={endHold}
               onPointerLeave={handlePointerLeave}
               animate={isHolding ? { scale: 1.05 } : { scale: [1, 1.04, 1] }}
               transition={
