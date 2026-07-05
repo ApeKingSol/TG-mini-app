@@ -107,8 +107,7 @@ export function HomeScreen() {
       event.currentTarget.setPointerCapture(event.pointerId);
     } catch {
       // Some environments (older WebViews, certain iframe sandboxes) can throw here —
-      // the hold still works via pointerup/pointerleave alone, just without the
-      // "ignore physical leave" guard below.
+      // the hold still ends correctly via pointerup/pointercancel regardless.
     }
     isHoldingRef.current = true;
     setIsHolding(true);
@@ -117,20 +116,6 @@ export function HomeScreen() {
   const endHold = () => {
     isHoldingRef.current = false;
     setIsHolding(false);
-  };
-
-  // With pointer capture active (set on pointerdown above), pointerup/pointermove are
-  // redirected to this element no matter where the finger physically is — but per the
-  // Pointer Events spec, pointerleave is NOT redirected; it still fires based on the
-  // finger's real position. Since the button's own scale animation (below) constantly
-  // resizes it slightly, a held finger can end up just outside the shrunken bounds,
-  // firing a spurious pointerleave and cutting the hold short. Only treat "leave" as a
-  // release when capture isn't actually held, i.e. as a fallback for when
-  // setPointerCapture itself didn't take — pointerup/pointercancel are the real signal.
-  const handlePointerLeave = (event: React.PointerEvent<HTMLButtonElement>) => {
-    if (!event.currentTarget.hasPointerCapture(event.pointerId)) {
-      endHold();
-    }
   };
 
   const gaugeColorClass = isOverheated
@@ -238,15 +223,15 @@ export function HomeScreen() {
               onPointerDown={handlePointerDown}
               onPointerUp={endHold}
               onPointerCancel={endHold}
-              onPointerLeave={handlePointerLeave}
+              onLostPointerCapture={endHold}
+              onContextMenu={(event) => event.preventDefault()}
               animate={isHolding ? { scale: 1.05 } : { scale: [1, 1.04, 1] }}
               transition={
                 isHolding
                   ? { duration: 0.15 }
                   : { duration: 1.6, repeat: Infinity, ease: 'easeInOut' }
               }
-              style={{ touchAction: 'none' }}
-              className="select-none rounded-full border-2 border-neon-cyan bg-neon-cyan/10 px-10 py-5 font-display text-lg font-bold tracking-wide text-neon-cyan shadow-[0_0_20px_rgba(0,240,255,0.5)] active:bg-neon-cyan/20"
+              className="touch-none [-webkit-tap-highlight-color:transparent] [-webkit-touch-callout:none] select-none rounded-full border-2 border-neon-cyan bg-neon-cyan/10 px-10 py-5 font-display text-lg font-bold tracking-wide text-neon-cyan shadow-[0_0_20px_rgba(0,240,255,0.5)] active:bg-neon-cyan/20"
             >
               CALIBRATE CORE
             </motion.button>
