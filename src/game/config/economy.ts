@@ -42,14 +42,16 @@ export const ECONOMY = {
 
 /** Tuning for the Home screen's "Core Calibration" hold-and-release mini-game. */
 export const CALIBRATION = {
-  TARGET_ZONE_MIN: 70,
-  TARGET_ZONE_MAX: 85,
+  TARGET_ZONE_MIN: 60,
+  TARGET_ZONE_MAX: 90,
   /** Cumulative seconds the power needle must sit inside the target zone to win. */
   HOLD_SECONDS_TO_WIN: 3,
-  /** How fast Power (0-100) climbs per second while the button is held. */
-  POWER_INCREASE_PER_SECOND: 70,
+  /** How fast Power (0-100) climbs per second while the button is held. Slower than the
+   * original 70/s — at that rate the needle crossed the target zone in ~200ms, well under
+   * human reaction time on a touchscreen and making the game feel broken rather than hard. */
+  POWER_INCREASE_PER_SECOND: 40,
   /** How fast Power falls per second once released. */
-  POWER_DECREASE_PER_SECOND: 50,
+  POWER_DECREASE_PER_SECOND: 30,
   /** How many seconds the resulting Overclock Boost lasts. */
   BOOST_DURATION_SECONDS: 3600,
 } as const;

@@ -34,6 +34,19 @@ export function HomeScreen() {
   const hasWonRef = useRef(false);
   const rafRef = useRef<number | null>(null);
   const lastFrameTimeRef = useRef<number | null>(null);
+  const releaseListenerRef = useRef<(() => void) | null>(null);
+
+  // Guards against a stray window listener calling setState after this screen unmounts
+  // mid-hold (e.g. the user switches tabs while the button is still pressed).
+  useEffect(() => {
+    return () => {
+      if (releaseListenerRef.current) {
+        window.removeEventListener('pointerup', releaseListenerRef.current);
+        window.removeEventListener('pointercancel', releaseListenerRef.current);
+        releaseListenerRef.current = null;
+      }
+    };
+  }, []);
 
   const inTargetZone =
     power >= CALIBRATION.TARGET_ZONE_MIN && power <= CALIBRATION.TARGET_ZONE_MAX;
@@ -102,20 +115,25 @@ export function HomeScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isBoostActive]);
 
-  const handlePointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
-    try {
-      event.currentTarget.setPointerCapture(event.pointerId);
-    } catch {
-      // Some environments (older WebViews, certain iframe sandboxes) can throw here —
-      // the hold still ends correctly via pointerup/pointercancel regardless.
-    }
+  // Release detection is deliberately NOT based on pointer capture / pointerleave: both
+  // fire (or fail to fire) based on the pointer's physical position relative to the
+  // button's live bounds, which shift every frame because the button scales while held.
+  // A window-level listener sidesteps that entirely — "did the pointer go up anywhere on
+  // the page" is unambiguous and identical across desktop, Android, and iOS.
+  const handlePointerDown = () => {
     isHoldingRef.current = true;
     setIsHolding(true);
-  };
 
-  const endHold = () => {
-    isHoldingRef.current = false;
-    setIsHolding(false);
+    const release = () => {
+      isHoldingRef.current = false;
+      setIsHolding(false);
+      window.removeEventListener('pointerup', release);
+      window.removeEventListener('pointercancel', release);
+      releaseListenerRef.current = null;
+    };
+    releaseListenerRef.current = release;
+    window.addEventListener('pointerup', release);
+    window.addEventListener('pointercancel', release);
   };
 
   const gaugeColorClass = isOverheated
@@ -221,9 +239,6 @@ export function HomeScreen() {
             <motion.button
               type="button"
               onPointerDown={handlePointerDown}
-              onPointerUp={endHold}
-              onPointerCancel={endHold}
-              onLostPointerCapture={endHold}
               onContextMenu={(event) => event.preventDefault()}
               animate={isHolding ? { scale: 1.05 } : { scale: [1, 1.04, 1] }}
               transition={
