@@ -13,10 +13,16 @@ export const ECONOMY = {
   /** Scrap cost to repair one point of car HP in the Garage. */
   REPAIR_COST_PER_HP: 2,
 
-  /** How many Level 1 parts the player starts with, so there's something to merge right away. */
+  /** How many of the 8 inventory slots start filled with a Level 1 part, so there's something to merge right away. */
   STARTING_PARTS_COUNT: 4,
-  /** Scrap cost to salvage one new Level 1 part in the Garage. */
-  SALVAGE_PART_COST_SCRAP: 15,
+  /** Fixed size of the Garage merge grid. */
+  INVENTORY_SIZE: 8,
+  /** Parts merge from Lv.1 up to this level, at which point they're ready to install on the car. */
+  MAX_PART_LEVEL: 4,
+  /** Scrap cost to buy one new Level 1 part in the Garage. */
+  BUY_PART_COST_SCRAP: 15,
+  /** Permanent scrapPerSecond granted for successfully calibrating a Lv.4 part on the Dyno. */
+  CALIBRATION_SCRAP_PER_SECOND_REWARD: 5.0,
 
   /** Each upgrade purchase multiplies its own next cost by this factor. */
   UPGRADE_COST_MULTIPLIER: 1.15,
@@ -35,12 +41,9 @@ export const ECONOMY = {
   MAX_OFFLINE_SECONDS: 8 * 60 * 60,
   /** Below this many Scrap, the "Welcome back" toast doesn't bother showing. */
   MIN_OFFLINE_EARNINGS_TO_SHOW: 1,
-
-  /** Passive Scrap multiplier while a Core Calibration boost is active. */
-  OVERCLOCK_MULTIPLIER: 2,
 } as const;
 
-/** Tuning for the Home screen's "Core Calibration" hold-and-release mini-game. */
+/** Tuning for the Garage's Dyno "Core Calibration" hold-and-release mini-game. */
 export const CALIBRATION = {
   TARGET_ZONE_MIN: 60,
   TARGET_ZONE_MAX: 90,
@@ -52,8 +55,6 @@ export const CALIBRATION = {
   POWER_INCREASE_PER_SECOND: 40,
   /** How fast Power falls per second once released. */
   POWER_DECREASE_PER_SECOND: 30,
-  /** How many seconds the resulting Overclock Boost lasts. */
-  BOOST_DURATION_SECONDS: 3600,
 } as const;
 
 /**

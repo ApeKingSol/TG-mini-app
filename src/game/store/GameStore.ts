@@ -1,11 +1,11 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { ECONOMY, UPGRADE_BLUEPRINTS } from '../config/economy';
+import { getPartTier } from '../config/parts';
 import type {
   CarHpStatus,
   CarState,
   Part,
-  PartKind,
   PlayerState,
   Upgrade,
 } from '../types';
@@ -59,9 +59,16 @@ interface GameActions {
   damageCar: (amount: number) => void;
   repairCar: (amount: number) => void;
   getCarHpStatus: () => CarHpStatus;
-  addPart: (kind: PartKind, level?: number) => void;
-  /** Merges two parts of the same kind/level into one of the next level. Returns the new part on success, or null if the pair is invalid (caller should snap the dragged part back). */
-  mergeParts: (draggedId: string, targetId: string) => Part | null;
+  /** Buys a new Lv.1 part into the first empty inventory slot. Returns false without charging if there's no empty slot or the player can't afford it. */
+  buyPart: () => boolean;
+  /** Moves (or swaps, if the target is occupied) a part between two inventory slots. */
+  movePart: (fromIndex: number, toIndex: number) => void;
+  /** Merges two identical-level parts into one of level + 1 at the target slot, clearing the dragged slot. Returns the new part on success, or null if the pair is invalid (caller should snap the dragged part back). */
+  mergeParts: (draggedIndex: number, targetIndex: number) => Part | null;
+  /** Pulls a Lv.4 part out of inventory and onto the Dyno for Core Calibration. No-op if the slot isn't a maxed part or a calibration is already pending. */
+  startCalibration: (partIndex: number) => void;
+  /** Resolves the pending calibration: on success the part is consumed for a permanent scrapPerSecond boost; otherwise it's returned to inventory. */
+  completeCalibration: (success: boolean) => void;
   /** Spends 1 Energy for Scrap (possibly a critical hit). Returns null if Energy is empty. */
   handleTap: () => { isCrit: boolean; amount: number } | null;
   /** Returns false without charging if the player can't afford this upgrade's current cost. */
@@ -71,8 +78,6 @@ interface GameActions {
   dismissOfflineEarnings: () => void;
   /** Adds any upgrade blueprints missing from a persisted save (e.g. ones introduced in a later update), without touching existing progress. */
   reconcileUpgrades: () => void;
-  /** Activates (or refreshes) the Overclock Boost for the given duration. */
-  activateBoost: (durationInSeconds: number) => void;
 }
 
 type GameStore = PlayerState & GameActions;
@@ -93,13 +98,14 @@ function hpToStatus(hp: number, maxHp: number): CarHpStatus {
   return 'red';
 }
 
-function createPart(kind: PartKind, level: number): Part {
-  return { id: crypto.randomUUID(), kind, level };
+function createPart(level: number): Part {
+  return { id: crypto.randomUUID(), level, name: getPartTier(level).name };
 }
 
-function createStartingParts(): Part[] {
-  return Array.from({ length: ECONOMY.STARTING_PARTS_COUNT }, () =>
-    createPart('gear', 1),
+/** An 8-slot grid, the first STARTING_PARTS_COUNT filled with a Lv.1 part, the rest empty. */
+function createStartingInventory(): (Part | null)[] {
+  return Array.from({ length: ECONOMY.INVENTORY_SIZE }, (_, index) =>
+    index < ECONOMY.STARTING_PARTS_COUNT ? createPart(1) : null,
   );
 }
 
@@ -120,7 +126,8 @@ export const useGameStore = create<GameStore>()(
       scrap: ECONOMY.STARTING_SCRAP,
       neon: ECONOMY.STARTING_NEON,
       car: createStartingCar(),
-      parts: createStartingParts(),
+      inventory: createStartingInventory(),
+      pendingCalibrationPart: null,
       scrapPerClick: ECONOMY.STARTING_SCRAP_PER_CLICK,
       scrapPerSecond: ECONOMY.STARTING_SCRAP_PER_SECOND,
       upgrades: createStartingUpgrades(),
@@ -129,8 +136,6 @@ export const useGameStore = create<GameStore>()(
       energyRegenRate: ECONOMY.ENERGY_REGEN_PER_SECOND,
       critChance: ECONOMY.STARTING_CRIT_CHANCE,
       critMultiplier: ECONOMY.STARTING_CRIT_MULTIPLIER,
-      isBoostActive: false,
-      boostTimeLeft: 0,
       offlineEarnings: null,
       lastSaved: Date.now(),
 
@@ -143,16 +148,12 @@ export const useGameStore = create<GameStore>()(
 
         set((state) => {
           const energyToAdd = state.energyRegenRate * deltaSeconds;
-          const multiplier = state.isBoostActive ? ECONOMY.OVERCLOCK_MULTIPLIER : 1;
-          const newBoostTimeLeft = Math.max(0, state.boostTimeLeft - deltaSeconds);
           return {
-            scrap: state.scrap + state.scrapPerSecond * deltaSeconds * multiplier,
+            scrap: state.scrap + state.scrapPerSecond * deltaSeconds,
             currentEnergy: Math.min(
               maxEnergy,
               Math.max(0, state.currentEnergy + energyToAdd),
             ),
-            boostTimeLeft: newBoostTimeLeft,
-            isBoostActive: newBoostTimeLeft > 0,
             lastSaved: now,
           };
         });
@@ -192,27 +193,85 @@ export const useGameStore = create<GameStore>()(
         return hpToStatus(hp, maxHp);
       },
 
-      addPart: (kind, level = 1) =>
-        set((state) => ({ parts: [...state.parts, createPart(kind, level)] })),
+      buyPart: () => {
+        const { inventory, scrap } = get();
+        const emptyIndex = inventory.findIndex((slot) => slot === null);
+        if (emptyIndex === -1 || scrap < ECONOMY.BUY_PART_COST_SCRAP) return false;
 
-      mergeParts: (draggedId, targetId) => {
-        if (draggedId === targetId) return null;
-        const { parts } = get();
-        const dragged = parts.find((p) => p.id === draggedId);
-        const target = parts.find((p) => p.id === targetId);
+        set((state) => {
+          const nextInventory = [...state.inventory];
+          nextInventory[emptyIndex] = createPart(1);
+          return {
+            inventory: nextInventory,
+            scrap: state.scrap - ECONOMY.BUY_PART_COST_SCRAP,
+          };
+        });
+        return true;
+      },
+
+      movePart: (fromIndex, toIndex) => {
+        if (fromIndex === toIndex) return;
+        set((state) => {
+          const nextInventory = [...state.inventory];
+          const temp = nextInventory[toIndex];
+          nextInventory[toIndex] = nextInventory[fromIndex];
+          nextInventory[fromIndex] = temp;
+          return { inventory: nextInventory };
+        });
+      },
+
+      mergeParts: (draggedIndex, targetIndex) => {
+        if (draggedIndex === targetIndex) return null;
+        const { inventory } = get();
+        const dragged = inventory[draggedIndex];
+        const target = inventory[targetIndex];
         if (!dragged || !target) return null;
-        if (dragged.kind !== target.kind || dragged.level !== target.level) {
+        if (dragged.level !== target.level || dragged.level >= ECONOMY.MAX_PART_LEVEL) {
           return null;
         }
 
-        const merged = createPart(dragged.kind, dragged.level + 1);
-        set((state) => ({
-          parts: [
-            ...state.parts.filter((p) => p.id !== draggedId && p.id !== targetId),
-            merged,
-          ],
-        }));
+        const merged = createPart(dragged.level + 1);
+        set((state) => {
+          const nextInventory = [...state.inventory];
+          nextInventory[draggedIndex] = null;
+          nextInventory[targetIndex] = merged;
+          return { inventory: nextInventory };
+        });
         return merged;
+      },
+
+      startCalibration: (partIndex) => {
+        const { inventory, pendingCalibrationPart } = get();
+        if (pendingCalibrationPart) return;
+        const part = inventory[partIndex];
+        if (!part || part.level < ECONOMY.MAX_PART_LEVEL) return;
+
+        set((state) => {
+          const nextInventory = [...state.inventory];
+          nextInventory[partIndex] = null;
+          return { inventory: nextInventory, pendingCalibrationPart: part };
+        });
+      },
+
+      completeCalibration: (success) => {
+        const { pendingCalibrationPart } = get();
+        if (!pendingCalibrationPart) return;
+
+        if (success) {
+          set((state) => ({
+            pendingCalibrationPart: null,
+            scrapPerSecond:
+              state.scrapPerSecond + ECONOMY.CALIBRATION_SCRAP_PER_SECOND_REWARD,
+          }));
+          return;
+        }
+
+        set((state) => {
+          const emptyIndex = state.inventory.findIndex((slot) => slot === null);
+          const nextInventory = [...state.inventory];
+          if (emptyIndex !== -1) nextInventory[emptyIndex] = pendingCalibrationPart;
+          return { inventory: nextInventory, pendingCalibrationPart: null };
+        });
       },
 
       handleTap: () => {
@@ -263,8 +322,7 @@ export const useGameStore = create<GameStore>()(
 
       applyOfflineProgress: () => {
         const now = Date.now();
-        const { lastSaved, scrapPerSecond, energyRegenRate, maxEnergy, boostTimeLeft } =
-          get();
+        const { lastSaved, scrapPerSecond, energyRegenRate, maxEnergy } = get();
         const elapsedSeconds = Math.min(
           Math.max(0, (now - lastSaved) / 1000),
           ECONOMY.MAX_OFFLINE_SECONDS,
@@ -274,14 +332,7 @@ export const useGameStore = create<GameStore>()(
           return;
         }
 
-        // Prorate: only the portion of the offline gap that fell before the boost
-        // expired earns the 2x multiplier, the rest earns the normal rate.
-        const boostSeconds = Math.min(elapsedSeconds, boostTimeLeft);
-        const normalSeconds = elapsedSeconds - boostSeconds;
-        const earnedScrap =
-          boostSeconds * scrapPerSecond * ECONOMY.OVERCLOCK_MULTIPLIER +
-          normalSeconds * scrapPerSecond;
-        const newBoostTimeLeft = Math.max(0, boostTimeLeft - elapsedSeconds);
+        const earnedScrap = elapsedSeconds * scrapPerSecond;
 
         set((state) => ({
           scrap: state.scrap + earnedScrap,
@@ -290,8 +341,6 @@ export const useGameStore = create<GameStore>()(
             Math.max(0, state.currentEnergy + elapsedSeconds * energyRegenRate),
           ),
           lastSaved: now,
-          boostTimeLeft: newBoostTimeLeft,
-          isBoostActive: newBoostTimeLeft > 0,
           offlineEarnings:
             earnedScrap >= ECONOMY.MIN_OFFLINE_EARNINGS_TO_SHOW
               ? earnedScrap
@@ -340,9 +389,6 @@ export const useGameStore = create<GameStore>()(
           return { upgrades: [...migrated, ...missing] };
         });
       },
-
-      activateBoost: (durationInSeconds) =>
-        set({ isBoostActive: true, boostTimeLeft: durationInSeconds }),
     }),
     {
       name: STORAGE_KEY,

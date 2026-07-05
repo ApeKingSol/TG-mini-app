@@ -8,13 +8,11 @@ export interface CarState {
   maxHp: number;
 }
 
-export type PartKind = 'gear';
-
 export interface Part {
   id: string;
-  kind: PartKind;
-  /** Merge level, starting at 1. Two parts of the same kind and level merge into one of level + 1. */
+  /** Merge level, starting at 1. Two parts of the same level merge into one of level + 1, up to MAX_PART_LEVEL. */
   level: number;
+  name: string;
 }
 
 /** Which player stat an upgrade purchase increases. */
@@ -35,7 +33,10 @@ export interface PlayerState {
   scrap: number;
   neon: number;
   car: CarState;
-  parts: Part[];
+  /** Fixed-size 8-slot merge grid; `null` marks an empty socket. */
+  inventory: (Part | null)[];
+  /** The Lv.4 part currently pulled out of inventory and undergoing Core Calibration on the Dyno, if any. */
+  pendingCalibrationPart: Part | null;
   scrapPerClick: number;
   scrapPerSecond: number;
   upgrades: Upgrade[];
@@ -46,10 +47,6 @@ export interface PlayerState {
   /** Chance (0–1) that a tap is a critical hit, awarding scrapPerClick * critMultiplier instead. */
   critChance: number;
   critMultiplier: number;
-  /** True while a Core Calibration Overclock Boost is active (2x passive Scrap). */
-  isBoostActive: boolean;
-  /** Seconds remaining on the active boost; ticks down in real time, including while offline. */
-  boostTimeLeft: number;
   /** Scrap awarded for time elapsed while the app was closed, shown once as a toast. Not persisted. */
   offlineEarnings: number | null;
   /** Unix ms timestamp of the last time state was brought current — drives both the live per-second tick and the offline-progress catch-up on reload. */

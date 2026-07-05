@@ -5,7 +5,6 @@ import { useTelegram } from './hooks/useTelegram';
 import { CurrencyBar } from './components/CurrencyBar';
 import { OfflineEarningsToast } from './components/OfflineEarningsToast';
 import { BottomNav, type ScreenId } from './components/BottomNav';
-import { HomeScreen } from './screens/HomeScreen';
 import { JunkyardScreen } from './screens/JunkyardScreen';
 import { GarageScreen } from './screens/GarageScreen';
 import { RaceScreen } from './screens/RaceScreen';
@@ -14,7 +13,7 @@ function App() {
   // Drives passive Scrap generation in the background; store stays a pure state container.
   useGameLoop();
   const { isTelegram, userFirstName } = useTelegram();
-  const [activeScreen, setActiveScreen] = useState<ScreenId>('home');
+  const [activeScreen, setActiveScreen] = useState<ScreenId>('garage');
 
   return (
     <div className="flex min-h-screen flex-col bg-cyber-grid">
@@ -42,7 +41,6 @@ function App() {
 
         <main className="mt-6">
           <AnimatePresence mode="wait">
-            {activeScreen === 'home' && <HomeScreen key="home" />}
             {activeScreen === 'junkyard' && <JunkyardScreen key="junkyard" />}
             {activeScreen === 'garage' && <GarageScreen key="garage" />}
             {activeScreen === 'race' && <RaceScreen key="race" />}
