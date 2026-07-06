@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Zap } from 'lucide-react';
+import { Zap, Store, X, Lock } from 'lucide-react';
 import {
   DndContext,
   PointerSensor,
@@ -14,11 +14,17 @@ import { useGameStore } from '../game/store/GameStore';
 import { PartSlot } from '../components/PartSlot';
 import { Tachometer } from '../components/Tachometer';
 import { useEngineAudio } from '../hooks/useEngineAudio';
-import { ECONOMY, ANTI_STALL, getPartBuyCost } from '../game/config/economy';
+import { ECONOMY, ANTI_STALL, getPartBuyCost, getSecondsUntilNextEnergyRegen } from '../game/config/economy';
 import { getPartTier, PERK_DESCRIPTIONS, type PartPerk } from '../game/config/parts';
-import { getCarTier, getUpgradeRequirement } from '../game/config/carTiers';
+import { getCarTier, getUpgradeRequirement, getCarSkins } from '../game/config/carTiers';
 
 const CAR_INSTALLATION_ZONE_ID = 'car-installation-zone';
+
+function formatCountdown(totalSeconds: number): string {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
 
 export function GarageScreen() {
   const scrap = useGameStore((state) => state.scrap);
@@ -28,6 +34,7 @@ export function GarageScreen() {
   const totalPartsBought = useGameStore((state) => state.totalPartsBought);
   const energy = useGameStore((state) => state.energy);
   const maxEnergy = useGameStore((state) => state.maxEnergy);
+  const lastEnergyRegenAt = useGameStore((state) => state.lastEnergyRegenAt);
   const installedUpgrades = useGameStore((state) => state.installedUpgrades);
   const buyPart = useGameStore((state) => state.buyPart);
   const movePart = useGameStore((state) => state.movePart);
@@ -41,10 +48,26 @@ export function GarageScreen() {
   const [toast, setToast] = useState<{ message: string; variant: 'error' | 'success' } | null>(
     null,
   );
+  const [isShopOpen, setIsShopOpen] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+
+  // Only the countdown text needs a live clock — everything else re-renders from store
+  // updates already. A plain 1s interval is simplest and cheap enough for a single label.
+  useEffect(() => {
+    const interval = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, []);
+
   const partCost = getPartBuyCost(totalPartsBought);
   const canBuyPart = scrap >= partCost && inventory.some((slot) => slot === null);
   const upgradeRequirement = getUpgradeRequirement(carTier);
   const isMastered = installedUpgrades.length >= upgradeRequirement;
+  const secondsUntilEnergyRegen = getSecondsUntilNextEnergyRegen(
+    energy,
+    maxEnergy,
+    lastEnergyRegenAt,
+    now,
+  );
 
   // PointerSensor alone covers mouse, touch, and pen — dnd-kit's own guidance is to avoid
   // layering a separate TouchSensor/MouseSensor on top, since they'd react to the same
@@ -116,6 +139,20 @@ export function GarageScreen() {
       transition={{ duration: 0.2 }}
       className="flex flex-col gap-4 pt-4"
     >
+      <div className="flex w-full items-center justify-between">
+        <p className="text-xs uppercase tracking-widest text-neutral-500">Garage</p>
+        <motion.button
+          type="button"
+          onClick={() => setIsShopOpen(true)}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          className="flex items-center gap-1 rounded-md border border-neon-cyan/40 bg-neon-cyan/10 px-3 py-1.5 text-xs font-semibold text-neon-cyan"
+        >
+          <Store className="h-3.5 w-3.5" strokeWidth={2} />
+          SHOP
+        </motion.button>
+      </div>
+
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <CarInstallationZone
           carName={car.name}
@@ -167,6 +204,11 @@ export function GarageScreen() {
                   </span>
                   <span className="tabular-nums">
                     {Math.floor(energy)} / {maxEnergy}
+                    {secondsUntilEnergyRegen > 0 && (
+                      <span className="ml-2 text-neutral-600">
+                        +{ECONOMY.ENERGY_REGEN_AMOUNT} in {formatCountdown(secondsUntilEnergyRegen)}
+                      </span>
+                    )}
                   </span>
                 </div>
                 <div className="h-2 w-full overflow-hidden rounded-full bg-neutral-800">
@@ -213,6 +255,70 @@ export function GarageScreen() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <AnimatePresence>
+        {isShopOpen && <SkinShopModal carTier={carTier} onClose={() => setIsShopOpen(false)} />}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
+interface SkinShopModalProps {
+  carTier: number;
+  onClose: () => void;
+}
+
+/** Skins are purely cosmetic and not purchasable yet — shown as "In Development" so
+ * players can see what's coming without a half-built purchase/skin-swap flow. */
+function SkinShopModal({ carTier, onClose }: SkinShopModalProps) {
+  const skins = getCarSkins(carTier);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/70 px-4 pt-24 backdrop-blur-sm"
+    >
+      <motion.div
+        initial={{ opacity: 0, y: -24, scale: 0.95 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: -24, scale: 0.95 }}
+        transition={{ duration: 0.25, ease: 'easeOut' }}
+        onClick={(event) => event.stopPropagation()}
+        className="w-full max-w-xs rounded-xl border border-neon-cyan/40 bg-bg-panel p-4 text-left shadow-lg"
+      >
+        <div className="mb-2 flex items-center justify-between">
+          <p className="font-display text-sm font-bold uppercase tracking-widest text-neon-cyan">
+            Skin Shop
+          </p>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md p-1 text-neutral-500 hover:text-neutral-300"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <p className="mb-2 text-xs text-neutral-500">
+          Cosmetic skins for your current car. In development — coming soon.
+        </p>
+
+        <div className="flex flex-col gap-2">
+          {skins.map((skin) => (
+            <div
+              key={skin.id}
+              className="flex items-center justify-between rounded-lg border border-neutral-800 bg-black/30 px-3 py-2 opacity-60"
+            >
+              <p className="text-sm font-medium text-neutral-200">{skin.name}</p>
+              <span className="flex items-center gap-1 text-xs font-medium text-neutral-500">
+                <Lock className="h-3.5 w-3.5" /> In Development
+              </span>
+            </div>
+          ))}
+        </div>
+      </motion.div>
     </motion.div>
   );
 }
@@ -245,7 +351,7 @@ function CarInstallationZone({
         isOver ? 'border-neon-cyan/70' : 'border-neutral-800'
       }`}
     >
-      <p className="mb-1 text-center text-xs uppercase tracking-widest text-neutral-500">
+      <p className="text-center font-display text-lg font-bold uppercase tracking-wide text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.35)]">
         {carName}
       </p>
       <p className="text-center text-sm font-semibold text-neon-cyan">
@@ -295,8 +401,8 @@ function TradeInPanel({ installedUpgrades, onTradeIn }: TradeInPanelProps) {
         CAR MASTERED
       </p>
       <div className="flex flex-col gap-1 text-sm text-neutral-400">
-        {installedUpgrades.map((perk) => (
-          <span key={perk}>✓ {perk}</span>
+        {installedUpgrades.map((perk, index) => (
+          <span key={`${perk}-${index}`}>✓ {perk}</span>
         ))}
       </div>
       <motion.button
@@ -340,52 +446,64 @@ function AntiStallCalibrationPanel({ partLevel, perk, onComplete }: AntiStallCal
   const [isHolding, setIsHolding] = useState(false);
   const [stallFlash, setStallFlash] = useState(false);
 
-  // Refs, not the React state above, drive the rAF physics loop and the release check —
-  // iOS Safari can batch/delay the state updates from touch events by a frame or more,
-  // which previously let the rAF loop read a stale `isHolding` and made the RPM needle
-  // teleport. Refs are updated synchronously in the event handler itself, so the very next
-  // animation frame always sees the true pressed/released state.
-  const rpmRef = useRef(0);
-  const calibrationProgressRef = useRef(0);
-  const isHoldingRef = useRef(false);
   const hasResolvedRef = useRef(false);
   const rafRef = useRef<number | null>(null);
-  const lastFrameTimeRef = useRef<number | null>(null);
   const handleReleaseRef = useRef<() => void>(() => {});
 
-  useEffect(() => {
-    const step = (timestamp: number) => {
-      if (lastFrameTimeRef.current === null) lastFrameTimeRef.current = timestamp;
-      // Capped so a stalled rAF (iOS can briefly pause it while it decides whether a touch
-      // is a tap/scroll/gesture) can't feed one huge deltaSeconds into the physics and
-      // teleport the needle straight to 0 or 100 on the next frame.
-      const rawDeltaSeconds = (timestamp - lastFrameTimeRef.current) / 1000;
-      const deltaSeconds = Math.min(rawDeltaSeconds, ANTI_STALL.MAX_FRAME_DELTA_SECONDS);
-      lastFrameTimeRef.current = timestamp;
+  // RPM is computed as a pure function of real elapsed wall-clock time since the current
+  // hold/release phase began — NOT accumulated bit-by-bit every rAF frame. An accumulator
+  // (`rpm += rate * frameDelta`) is fragile to how sparsely rAF actually fires: iOS Safari
+  // can throttle it heavily during an active touch hold, so a small per-frame delta either
+  // has to be uncapped (letting one huge catch-up delta teleport the value) or capped
+  // (which then silently *undercounts* real elapsed time whenever frames are sparse, making
+  // progress feel stuck instead of jumpy). Recomputing fresh from `performance.now()` every
+  // time is correct regardless of how many — or how few — frames actually land.
+  const isHoldingRef = useRef(false);
+  const phaseStartTimeRef = useRef(performance.now());
+  const phaseStartRpmRef = useRef(0);
 
-      const rate = isHoldingRef.current
-        ? ANTI_STALL.RPM_INCREASE_PER_SECOND
-        : -ANTI_STALL.RPM_DECREASE_PER_SECOND;
-      rpmRef.current = Math.min(100, Math.max(0, rpmRef.current + rate * deltaSeconds));
-      setRpm(rpmRef.current);
+  const getCurrentRpm = () => {
+    const elapsedSeconds = (performance.now() - phaseStartTimeRef.current) / 1000;
+    const rate = isHoldingRef.current
+      ? ANTI_STALL.RPM_INCREASE_PER_SECOND
+      : -ANTI_STALL.RPM_DECREASE_PER_SECOND;
+    return Math.min(100, Math.max(0, phaseStartRpmRef.current + rate * elapsedSeconds));
+  };
+
+  // Calibration progress: total real time spent inside the Green Zone, summed across
+  // separate in-zone stretches — same "compute from absolute time" reasoning as RPM above,
+  // rather than accumulating a per-frame delta.
+  const accumulatedInZoneMsRef = useRef(0);
+  const zoneEnteredAtRef = useRef<number | null>(null);
+
+  const getCurrentInZoneMs = (currentRpm: number, now: number) => {
+    const inZone = currentRpm >= ANTI_STALL.TARGET_ZONE_MIN && currentRpm <= ANTI_STALL.TARGET_ZONE_MAX;
+    if (inZone) {
+      if (zoneEnteredAtRef.current === null) zoneEnteredAtRef.current = now;
+      return accumulatedInZoneMsRef.current + (now - zoneEnteredAtRef.current);
+    }
+    if (zoneEnteredAtRef.current !== null) {
+      accumulatedInZoneMsRef.current += now - zoneEnteredAtRef.current;
+      zoneEnteredAtRef.current = null;
+    }
+    return accumulatedInZoneMsRef.current;
+  };
+
+  useEffect(() => {
+    const step = () => {
+      const now = performance.now();
+      const currentRpm = getCurrentRpm();
+      setRpm(currentRpm);
 
       if (!hasResolvedRef.current) {
-        const inZone =
-          rpmRef.current >= ANTI_STALL.TARGET_ZONE_MIN &&
-          rpmRef.current <= ANTI_STALL.TARGET_ZONE_MAX;
-        if (inZone) {
-          const progressPerSecond = 100 / ANTI_STALL.HOLD_SECONDS_TO_WIN;
-          calibrationProgressRef.current = Math.min(
-            100,
-            calibrationProgressRef.current + progressPerSecond * deltaSeconds,
-          );
-          setCalibrationProgress(calibrationProgressRef.current);
+        const inZoneMs = getCurrentInZoneMs(currentRpm, now);
+        const progress = Math.min(100, (inZoneMs / (ANTI_STALL.HOLD_SECONDS_TO_WIN * 1000)) * 100);
+        setCalibrationProgress(progress);
 
-          if (calibrationProgressRef.current >= 100) {
-            hasResolvedRef.current = true;
-            stopRevSound();
-            onComplete(true);
-          }
+        if (progress >= 100) {
+          hasResolvedRef.current = true;
+          stopRevSound();
+          onComplete(true);
         }
       }
 
@@ -407,14 +525,16 @@ function AntiStallCalibrationPanel({ partLevel, perk, onComplete }: AntiStallCal
   useEffect(() => {
     handleReleaseRef.current = () => {
       if (!isHoldingRef.current) return; // already processed this release
+      const rpmAtRelease = getCurrentRpm();
+      phaseStartRpmRef.current = rpmAtRelease;
+      phaseStartTimeRef.current = performance.now();
       isHoldingRef.current = false;
       setIsHolding(false);
       stopRevSound();
 
       if (hasResolvedRef.current) return;
       const inZone =
-        rpmRef.current >= ANTI_STALL.TARGET_ZONE_MIN &&
-        rpmRef.current <= ANTI_STALL.TARGET_ZONE_MAX;
+        rpmAtRelease >= ANTI_STALL.TARGET_ZONE_MIN && rpmAtRelease <= ANTI_STALL.TARGET_ZONE_MAX;
       if (!inZone) {
         // Releasing outside the Green Zone stalls the engine instantly — this is the
         // entire "catch" of Anti-Stall calibration.
@@ -446,6 +566,10 @@ function AntiStallCalibrationPanel({ partLevel, perk, onComplete }: AntiStallCal
   const handlePressStart = (event: React.SyntheticEvent) => {
     event.preventDefault();
     if (hasResolvedRef.current || isHoldingRef.current) return;
+    // Freeze the current (correctly-computed) rpm as the new phase's starting point before
+    // flipping isHoldingRef, so there's no discontinuity at the transition instant.
+    phaseStartRpmRef.current = getCurrentRpm();
+    phaseStartTimeRef.current = performance.now();
     isHoldingRef.current = true;
     setIsHolding(true);
     playRevSound();

@@ -1,9 +1,9 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { ECONOMY, UPGRADE_BLUEPRINTS, SHOP_BLUEPRINTS, getPartBuyCost } from '../config/economy';
+import { ECONOMY, UPGRADE_BLUEPRINTS, getPartBuyCost } from '../config/economy';
 import { getPartTier, rollPartPerk, type PartPerk } from '../config/parts';
 import { getCarTier, getUpgradeRequirement } from '../config/carTiers';
-import type { CarHpStatus, CarState, Part, PlayerState, Upgrade, ShopItem } from '../types';
+import type { CarHpStatus, CarState, Part, PlayerState, Upgrade } from '../types';
 
 const LEGACY_STORAGE_KEY = 'cyber-garage-save';
 
@@ -68,8 +68,6 @@ interface GameActions {
   handleTap: () => { isCrit: boolean; amount: number };
   /** Returns false without charging if the player can't afford this upgrade's current cost. */
   buyUpgrade: (id: string) => boolean;
-  /** Returns false without charging, or if already owned, or if the player can't afford this Shop item's cost. */
-  buyShopItem: (id: string) => boolean;
   /** Once installedUpgrades reaches getUpgradeRequirement(carTier), resets installedUpgrades/totalPartsBought and advances to the next car tier. No-op otherwise. */
   tradeInCar: () => void;
   /** Fast-forwards Scrap/Energy for time elapsed since lastSaved, run once after the persisted save is rehydrated. */
@@ -118,14 +116,25 @@ function createStartingUpgrades(): Upgrade[] {
   }));
 }
 
-function createStartingShopItems(): ShopItem[] {
-  return SHOP_BLUEPRINTS.map((blueprint) => ({
-    id: blueprint.id,
-    name: blueprint.name,
-    cost: blueprint.cost,
-    description: blueprint.description,
-    owned: false,
-  }));
+/** Applies however many whole ENERGY_REGEN_INTERVAL_SECONDS chunks have elapsed since the
+ * last regen tick, advancing the regen clock by exactly that much (not to `now`) so the
+ * countdown stays phase-aligned instead of drifting. Left untouched while already at
+ * `maxEnergy`, so spending energy later starts the countdown fresh from that moment. */
+function applyEnergyRegen(
+  energy: number,
+  maxEnergy: number,
+  lastEnergyRegenAt: number,
+  now: number,
+): { energy: number; lastEnergyRegenAt: number } {
+  if (energy >= maxEnergy) return { energy, lastEnergyRegenAt };
+  const intervalMs = ECONOMY.ENERGY_REGEN_INTERVAL_SECONDS * 1000;
+  const elapsedMs = now - lastEnergyRegenAt;
+  const ticks = Math.floor(elapsedMs / intervalMs);
+  if (ticks <= 0) return { energy, lastEnergyRegenAt };
+  return {
+    energy: Math.min(maxEnergy, energy + ticks * ECONOMY.ENERGY_REGEN_AMOUNT),
+    lastEnergyRegenAt: lastEnergyRegenAt + ticks * intervalMs,
+  };
 }
 
 export const useGameStore = create<GameStore>()(
@@ -139,10 +148,10 @@ export const useGameStore = create<GameStore>()(
       totalPartsBought: 0,
       energy: ECONOMY.STARTING_MAX_ENERGY,
       maxEnergy: ECONOMY.STARTING_MAX_ENERGY,
+      lastEnergyRegenAt: Date.now(),
       pendingCalibrationPart: null,
       installedUpgrades: [],
       upgrades: createStartingUpgrades(),
-      shopItems: createStartingShopItems(),
       scrapPerClick: ECONOMY.STARTING_SCRAP_PER_CLICK,
       scrapPerSecond: ECONOMY.STARTING_SCRAP_PER_SECOND,
       critChance: ECONOMY.STARTING_CRIT_CHANCE,
@@ -157,14 +166,15 @@ export const useGameStore = create<GameStore>()(
         if (deltaTime <= 0) return;
         const deltaSeconds = deltaTime / 1000;
 
-        set((state) => ({
-          scrap: state.scrap + state.scrapPerSecond * deltaSeconds,
-          energy: Math.min(
-            state.maxEnergy,
-            state.energy + ECONOMY.ENERGY_REGEN_PER_SECOND * deltaSeconds,
-          ),
-          lastSaved: now,
-        }));
+        set((state) => {
+          const regen = applyEnergyRegen(state.energy, state.maxEnergy, state.lastEnergyRegenAt, now);
+          return {
+            scrap: state.scrap + state.scrapPerSecond * deltaSeconds,
+            energy: regen.energy,
+            lastEnergyRegenAt: regen.lastEnergyRegenAt,
+            lastSaved: now,
+          };
+        });
       },
 
       addScrap: (amount) => set((state) => ({ scrap: state.scrap + amount })),
@@ -271,9 +281,14 @@ export const useGameStore = create<GameStore>()(
           const nextInventory = [...state.inventory];
           nextInventory[draggedIndex] = null;
           nextInventory[targetIndex] = merged;
+          // Spending energy while at the cap is what starts the 5-minute regen countdown —
+          // if it was already ticking down (energy already below cap), leave it alone so
+          // repeated merges can't keep resetting the timer and blocking regen forever.
+          const wasFull = state.energy >= state.maxEnergy;
           return {
             inventory: nextInventory,
             energy: state.energy - ECONOMY.MERGE_ENERGY_COST,
+            lastEnergyRegenAt: wasFull ? Date.now() : state.lastEnergyRegenAt,
           };
         });
         return { part: merged, isCrit };
@@ -380,18 +395,6 @@ export const useGameStore = create<GameStore>()(
         return true;
       },
 
-      buyShopItem: (id) => {
-        const { shopItems, scrap } = get();
-        const item = shopItems.find((i) => i.id === id);
-        if (!item || item.owned || scrap < item.cost) return false;
-
-        set((state) => ({
-          scrap: state.scrap - item.cost,
-          shopItems: state.shopItems.map((i) => (i.id === id ? { ...i, owned: true } : i)),
-        }));
-        return true;
-      },
-
       tradeInCar: () => {
         const { installedUpgrades, carTier } = get();
         if (installedUpgrades.length < getUpgradeRequirement(carTier)) return;
@@ -405,16 +408,22 @@ export const useGameStore = create<GameStore>()(
       },
 
       applyOfflineProgress: () => {
+        const now = Date.now();
+
         // Re-syncs the car's display name to its tier's current name, so a naming/asset
-        // update (e.g. adding tier art) applies even to saves made before it existed.
+        // update (e.g. adding tier art) applies even to saves made before it existed, and
+        // catches up on however many 5-minute Energy ticks passed while away — both run
+        // unconditionally, independent of the elapsedSeconds-gated Scrap payout below.
         set((state) => {
           const correctName = getCarTier(state.carTier).name;
-          return correctName === state.car.name
-            ? {}
-            : { car: { ...state.car, name: correctName } };
+          const regen = applyEnergyRegen(state.energy, state.maxEnergy, state.lastEnergyRegenAt, now);
+          return {
+            ...(correctName !== state.car.name && { car: { ...state.car, name: correctName } }),
+            energy: regen.energy,
+            lastEnergyRegenAt: regen.lastEnergyRegenAt,
+          };
         });
 
-        const now = Date.now();
         const { lastSaved, scrapPerSecond } = get();
         const elapsedSeconds = Math.min(
           Math.max(0, (now - lastSaved) / 1000),
@@ -429,10 +438,6 @@ export const useGameStore = create<GameStore>()(
 
         set((state) => ({
           scrap: state.scrap + earnedScrap,
-          energy: Math.min(
-            state.maxEnergy,
-            state.energy + elapsedSeconds * ECONOMY.ENERGY_REGEN_PER_SECOND,
-          ),
           lastSaved: now,
           offlineEarnings:
             earnedScrap >= ECONOMY.MIN_OFFLINE_EARNINGS_TO_SHOW

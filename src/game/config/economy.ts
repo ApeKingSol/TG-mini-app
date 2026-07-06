@@ -21,18 +21,24 @@ export const ECONOMY = {
   MAX_PART_LEVEL: 4,
   /** Base Scrap cost to buy one new Level 1 part in the Garage, before the exponential ramp. */
   BUY_PART_COST_SCRAP: 150,
-  /** Each part bought multiplies the next one's cost by this factor — steep on purpose (each
-   * purchase costs half again as much as the last) so buying parts stays a real Scrap sink
-   * instead of trivially stockpiling merge fodder late-game. */
-  PART_BUY_COST_MULTIPLIER: 1.5,
+  /** Each part bought multiplies the next one's cost by this factor, so buying parts stays
+   * a real Scrap sink instead of trivially stockpiling merge fodder late-game. */
+  PART_BUY_COST_MULTIPLIER: 1.2,
+  /** Hard ceiling on a single part's cost, regardless of how many have been bought — without
+   * this, uncapped exponential growth over a long grinding session produces absurd,
+   * unpayable numbers (150 * 1.5^80 is a 17-digit Scrap cost, which is a display/balance
+   * bug from the player's perspective no matter how "correct" the formula is). */
+  PART_BUY_COST_CAP: 50_000,
 
   /** Starting max value of Energy, before any Expanded Battery upgrades — used exclusively
    * by the Garage merge grid. The Junkyard's tap loop doesn't touch this at all; taps are
    * free. */
   STARTING_MAX_ENERGY: 1000,
-  /** Added to Energy per second. Deliberately slow relative to the 50-per-merge cost, so
-   * merging stays a deliberate, rate-limited action rather than something to spam. */
-  ENERGY_REGEN_PER_SECOND: 1,
+  /** Energy is granted in this lump sum... */
+  ENERGY_REGEN_AMOUNT: 25,
+  /** ...once every this many seconds, rather than trickling in continuously — a discrete
+   * "refill" players can watch count down, like a mobile game's energy timer. */
+  ENERGY_REGEN_INTERVAL_SECONDS: 5 * 60,
   /** Energy spent per merge attempt. */
   MERGE_ENERGY_COST: 50,
   /** Chance (0-1) a merge crits, jumping the result an extra tier above normal. */
@@ -65,36 +71,29 @@ export const ECONOMY = {
  * straightforward, repeatable Scrap sink for incremental tap/passive gains.
  */
 export const UPGRADE_BLUEPRINTS = [
-  { id: 'rusty-clicker', name: 'Rusty Clicker', baseCost: 25, effect: 'scrapPerClick', boost: 1 },
-  { id: 'auto-scrapper', name: 'Auto-Scrapper', baseCost: 50, effect: 'scrapPerSecond', boost: 2 },
   { id: 'expanded-battery', name: 'Expanded Battery', baseCost: 200, effect: 'maxEnergy', boost: 200 },
 ] as const;
 
-/**
- * Starting blueprint for the Junkyard Shop modal — one-time cosmetic novelties, unrelated
- * to the stat-boosting upgrade list above. Purely flavor for now (no visual skin-swap is
- * wired up yet); the store seeds its `shopItems` array from this.
- */
-export const SHOP_BLUEPRINTS = [
-  {
-    id: 'chrome-skin',
-    name: 'Chrome Skin',
-    cost: 100,
-    description: 'A blinding chrome paint job. Purely cosmetic.',
-  },
-  {
-    id: 'neon-graffiti-skin',
-    name: 'Neon Graffiti Skin',
-    cost: 150,
-    description: 'Hand-tagged neon graffiti wrap. Purely cosmetic.',
-  },
-] as const;
-
-/** Cost of the Nth part bought (0-indexed), after the exponential ramp. */
+/** Cost of the Nth part bought (0-indexed), after the exponential ramp, capped so a long
+ * grinding session can't run the price into unpayable, absurd-looking territory. */
 export function getPartBuyCost(totalPartsBought: number): number {
-  return Math.round(
-    ECONOMY.BUY_PART_COST_SCRAP * ECONOMY.PART_BUY_COST_MULTIPLIER ** totalPartsBought,
-  );
+  const raw = ECONOMY.BUY_PART_COST_SCRAP * ECONOMY.PART_BUY_COST_MULTIPLIER ** totalPartsBought;
+  return Math.round(Math.min(raw, ECONOMY.PART_BUY_COST_CAP));
+}
+
+/** Seconds remaining until the next discrete Energy tick, for the Garage's countdown
+ * readout. 0 once `energy` has already reached `maxEnergy` (nothing left to wait for). */
+export function getSecondsUntilNextEnergyRegen(
+  energy: number,
+  maxEnergy: number,
+  lastEnergyRegenAt: number,
+  now: number,
+): number {
+  if (energy >= maxEnergy) return 0;
+  const intervalMs = ECONOMY.ENERGY_REGEN_INTERVAL_SECONDS * 1000;
+  const elapsedMs = now - lastEnergyRegenAt;
+  const remainderMs = intervalMs - (elapsedMs % intervalMs);
+  return Math.ceil(remainderMs / 1000);
 }
 
 /** Tuning for the Garage's "Anti-Stall" engine calibration mini-game. */
@@ -109,11 +108,6 @@ export const ANTI_STALL = {
   RPM_INCREASE_PER_SECOND: 35,
   /** How fast RPM falls per second once the pedal is released (and hasn't stalled). */
   RPM_DECREASE_PER_SECOND: 25,
-  /** Caps the per-frame deltaSeconds fed into the RPM calculation. iOS Safari can briefly
-   * pause rAF while it decides whether a touch is a tap/scroll/gesture; without this cap,
-   * the next frame's huge delta would teleport the needle straight to 0 or 100 instead of
-   * moving smoothly. */
-  MAX_FRAME_DELTA_SECONDS: 0.1,
 } as const;
 
 /** Tuning for the Toll Roads race loop. */

@@ -33,15 +33,6 @@ export interface Upgrade {
   owned: number;
 }
 
-/** A one-time cosmetic novelty sold in the Junkyard Shop modal — no stat effect. */
-export interface ShopItem {
-  id: string;
-  name: string;
-  cost: number;
-  description: string;
-  owned: boolean;
-}
-
 export interface PlayerState {
   scrap: number;
   neon: number;
@@ -57,6 +48,11 @@ export interface PlayerState {
   energy: number;
   /** Cap for `energy`, raised permanently by the Junkyard's Expanded Battery upgrade. */
   maxEnergy: number;
+  /** Unix ms timestamp of the last discrete +ENERGY_REGEN_AMOUNT tick (or store creation, if
+   * none have fired yet) — used to compute both the next regen and the countdown shown next
+   * to the Energy bar. Distinct from `lastSaved`, which updates every tick(), not just once
+   * every 5 minutes. */
+  lastEnergyRegenAt: number;
   /** The Lv.4 part currently pulled out of inventory and undergoing Anti-Stall calibration on the car, if any. */
   pendingCalibrationPart: Part | null;
   /** The perks already installed on the current car via successful calibration. Once its
@@ -67,8 +63,6 @@ export interface PlayerState {
   /** The Junkyard's always-visible upgrade list — a straightforward, repeatable Scrap sink
    * for incremental tap/passive gains, separate from the Garage's perk system. */
   upgrades: Upgrade[];
-  /** The Junkyard Shop modal's one-time cosmetic novelties. */
-  shopItems: ShopItem[];
   scrapPerClick: number;
   scrapPerSecond: number;
   /** Chance (0–1) that a tap is a critical hit, awarding scrapPerClick * critMultiplier instead. */

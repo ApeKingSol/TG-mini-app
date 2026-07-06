@@ -1,6 +1,5 @@
 import { useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Store, X, Check } from 'lucide-react';
 import { useGameStore } from '../game/store/GameStore';
 import { AnimatedNumber } from '../components/AnimatedNumber';
 import { ScrapPileIcon } from '../components/ScrapPileIcon';
@@ -33,11 +32,8 @@ export function JunkyardScreen() {
   const handleTap = useGameStore((state) => state.handleTap);
   const upgrades = useGameStore((state) => state.upgrades);
   const buyUpgrade = useGameStore((state) => state.buyUpgrade);
-  const shopItems = useGameStore((state) => state.shopItems);
-  const buyShopItem = useGameStore((state) => state.buyShopItem);
 
   const [floatingTexts, setFloatingTexts] = useState<FloatingText[]>([]);
-  const [isShopOpen, setIsShopOpen] = useState(false);
   const tapAreaRef = useRef<HTMLDivElement>(null);
 
   const handleTapArea = (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -69,19 +65,9 @@ export function JunkyardScreen() {
       transition={{ duration: 0.2 }}
       className="flex flex-col items-center gap-6 pt-8 text-center"
     >
-      <div className="flex w-full max-w-xs items-center justify-between">
-        <p className="text-xs uppercase tracking-widest text-neutral-500">Junkyard</p>
-        <motion.button
-          type="button"
-          onClick={() => setIsShopOpen(true)}
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          className="flex items-center gap-1 rounded-md border border-neon-cyan/40 bg-neon-cyan/10 px-3 py-1.5 text-xs font-semibold text-neon-cyan"
-        >
-          <Store className="h-3.5 w-3.5" strokeWidth={2} />
-          SHOP
-        </motion.button>
-      </div>
+      <p className="w-full max-w-xs text-left text-xs uppercase tracking-widest text-neutral-500">
+        Junkyard
+      </p>
 
       <div ref={tapAreaRef} className="relative flex items-center justify-center">
         {/* Pulsating glow behind the pile, hinting this junk is worth something */}
@@ -177,74 +163,6 @@ export function JunkyardScreen() {
           })}
         </div>
       </div>
-
-      <AnimatePresence>
-        {isShopOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setIsShopOpen(false)}
-            className="fixed inset-0 z-50 flex items-start justify-center bg-black/70 px-4 pt-24 backdrop-blur-sm"
-          >
-            <motion.div
-              initial={{ opacity: 0, y: -24, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -24, scale: 0.95 }}
-              transition={{ duration: 0.25, ease: 'easeOut' }}
-              onClick={(event) => event.stopPropagation()}
-              className="w-full max-w-xs rounded-xl border border-neon-cyan/40 bg-bg-panel p-4 text-left shadow-lg"
-            >
-              <div className="mb-2 flex items-center justify-between">
-                <p className="font-display text-sm font-bold uppercase tracking-widest text-neon-cyan">
-                  Shop
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setIsShopOpen(false)}
-                  className="rounded-md p-1 text-neutral-500 hover:text-neutral-300"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-              <p className="mb-2 text-xs text-neutral-500">
-                Cosmetic novelties. One of each — flex, don't stack.
-              </p>
-
-              <div className="flex flex-col gap-2">
-                {shopItems.map((item) => {
-                  const canAfford = scrap >= item.cost;
-                  return (
-                    <motion.button
-                      key={item.id}
-                      type="button"
-                      onClick={() => buyShopItem(item.id)}
-                      disabled={!canAfford || item.owned}
-                      whileHover={canAfford && !item.owned ? { scale: 1.02 } : undefined}
-                      whileTap={canAfford && !item.owned ? { scale: 0.97 } : undefined}
-                      className="flex items-center justify-between rounded-lg border border-neutral-800 bg-black/30 px-3 py-2 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <div>
-                        <p className="text-sm font-medium text-neutral-200">{item.name}</p>
-                        <p className="text-xs text-neutral-500">{item.description}</p>
-                      </div>
-                      {item.owned ? (
-                        <span className="flex items-center gap-1 text-xs font-medium text-green-400">
-                          <Check className="h-3.5 w-3.5" /> Owned
-                        </span>
-                      ) : (
-                        <span className="font-display text-sm text-neon-cyan tabular-nums">
-                          {Math.round(item.cost).toLocaleString()}
-                        </span>
-                      )}
-                    </motion.button>
-                  );
-                })}
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </motion.div>
   );
 }

@@ -35,3 +35,22 @@ export function getCarTier(tier: number): CarTierInfo {
 export function getUpgradeRequirement(carTier: number): number {
   return 3 + Math.floor((carTier - 1) / 2);
 }
+
+export interface CarSkin {
+  id: string;
+  name: string;
+  cost: number;
+}
+
+const SKIN_VARIANT_LABELS = ['Chrome Finish', 'Neon Wrap', 'Battle Damage'];
+
+/** 3 skins per car, purely cosmetic and not purchasable yet — the Garage Shop shows these
+ * as "In Development" placeholders until real skin-swap art and a purchase flow exist. */
+export function getCarSkins(carTier: number): CarSkin[] {
+  const { name } = getCarTier(carTier);
+  return SKIN_VARIANT_LABELS.map((label, index) => ({
+    id: `tier-${carTier}-skin-${index + 1}`,
+    name: `${name} — ${label}`,
+    cost: 300 + index * 150,
+  }));
+}
