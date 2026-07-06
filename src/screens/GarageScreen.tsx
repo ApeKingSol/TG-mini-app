@@ -115,7 +115,11 @@ export function GarageScreen() {
       className="flex flex-col gap-4 pt-4"
     >
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <CarInstallationZone carName={car.name} carTier={carTier} />
+        <CarInstallationZone
+          carName={car.name}
+          carTier={carTier}
+          upgradesInstalled={installedUpgrades.length}
+        />
 
         {isMastered ? (
           <TradeInPanel installedUpgrades={installedUpgrades} onTradeIn={tradeInCar} />
@@ -213,10 +217,12 @@ export function GarageScreen() {
 interface CarInstallationZoneProps {
   carName: string;
   carTier: number;
+  upgradesInstalled: number;
 }
 
-function CarInstallationZone({ carName, carTier }: CarInstallationZoneProps) {
+function CarInstallationZone({ carName, carTier, upgradesInstalled }: CarInstallationZoneProps) {
   const { setNodeRef, isOver } = useDroppable({ id: CAR_INSTALLATION_ZONE_ID });
+  const upgradesRemaining = Math.max(0, 3 - upgradesInstalled);
 
   return (
     // No background fill or box-shadow here on purpose: a `drop-shadow`/`shadow-*` glow
@@ -232,6 +238,12 @@ function CarInstallationZone({ carName, carTier }: CarInstallationZoneProps) {
     >
       <p className="mb-1 text-center text-xs uppercase tracking-widest text-neutral-500">
         {carName}
+      </p>
+      <p className="text-center text-sm font-semibold text-neon-cyan">
+        Upgrades Installed: {upgradesInstalled} / 3
+      </p>
+      <p className="mb-1 text-center text-xs text-neutral-500">
+        {upgradesRemaining} parts left until Next Tier
       </p>
       {/* Keyed on carTier so a trade-in re-triggers this AnimatePresence: the outgoing car
          drives off to the right while the new one drops in from the top. The outer element
@@ -430,6 +442,16 @@ function AntiStallCalibrationPanel({ partLevel, perk, onComplete }: AntiStallCal
     playRevSound();
   };
 
+  // onPointerUp/Leave/Cancel all route through the same idempotent release logic (see the
+  // effect above) — wiring all three directly to the element, in addition to the
+  // window-level listeners, maximizes the chance that at least one fires on iOS Safari,
+  // where native gesture handling (text-selection loupe, scroll-vs-tap arbitration) can
+  // swallow individual events. Whichever fires first sets isHoldingRef.current = false
+  // immediately; the rest are no-ops.
+  const handleDirectRelease = () => {
+    handleReleaseRef.current();
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.95, height: 0 }}
@@ -487,6 +509,9 @@ function AntiStallCalibrationPanel({ partLevel, perk, onComplete }: AntiStallCal
           type="button"
           onPointerDown={handlePressStart}
           onTouchStart={handlePressStart}
+          onPointerUp={handleDirectRelease}
+          onPointerLeave={handleDirectRelease}
+          onPointerCancel={handleDirectRelease}
           onContextMenu={(event) => event.preventDefault()}
           animate={isHolding ? { scale: 1.05 } : { scale: [1, 1.04, 1] }}
           transition={
@@ -494,7 +519,12 @@ function AntiStallCalibrationPanel({ partLevel, perk, onComplete }: AntiStallCal
               ? { duration: 0.15 }
               : { duration: 1.6, repeat: Infinity, ease: 'easeInOut' }
           }
-          className="touch-none [-webkit-tap-highlight-color:transparent] [-webkit-touch-callout:none] select-none rounded-full border-2 border-neon-cyan bg-neon-cyan/10 px-10 py-4 font-display text-base font-bold tracking-wide text-neon-cyan shadow-[0_0_20px_rgba(0,240,255,0.5)] active:bg-neon-cyan/20"
+          style={{
+            WebkitUserSelect: 'none',
+            WebkitTouchCallout: 'none',
+            touchAction: 'none',
+          }}
+          className="touch-none select-none outline-none [-webkit-tap-highlight-color:transparent] [-webkit-touch-callout:none] rounded-full border-2 border-neon-cyan bg-neon-cyan/10 px-10 py-4 font-display text-base font-bold tracking-wide text-neon-cyan shadow-[0_0_20px_rgba(0,240,255,0.5)] active:bg-neon-cyan/20"
         >
           GAS PEDAL
         </motion.button>

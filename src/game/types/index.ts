@@ -19,6 +19,20 @@ export interface Part {
   perk?: PartPerk;
 }
 
+/** Which player stat a Junkyard Shop item increases. */
+export type ShopItemEffect = 'scrapPerClick' | 'scrapPerSecond';
+
+export interface ShopItem {
+  id: string;
+  name: string;
+  /** Scrap cost of the next purchase; escalates each time this item is bought. */
+  cost: number;
+  effect: ShopItemEffect;
+  /** Added to the stat named by `effect` per unit owned. */
+  boost: number;
+  owned: number;
+}
+
 export interface PlayerState {
   scrap: number;
   neon: number;
@@ -38,6 +52,8 @@ export interface PlayerState {
    * distinct values possible. Once all 3 are present the car is "MASTERED" and ready to
    * trade in; resets to empty on trade-in. */
   installedUpgrades: PartPerk[];
+  /** Junkyard Shop items — a straightforward Scrap sink for incremental tap/passive gains, separate from the Garage's perk system. */
+  shopItems: ShopItem[];
   scrapPerClick: number;
   scrapPerSecond: number;
   /** Chance (0–1) that a tap is a critical hit, awarding scrapPerClick * critMultiplier instead. */

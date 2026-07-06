@@ -1,9 +1,9 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { ECONOMY, getPartBuyCost } from '../config/economy';
+import { ECONOMY, SHOP_BLUEPRINTS, getPartBuyCost } from '../config/economy';
 import { getPartTier, rollPartPerk, type PartPerk } from '../config/parts';
 import { getCarTier } from '../config/carTiers';
-import type { CarHpStatus, CarState, Part, PlayerState } from '../types';
+import type { CarHpStatus, CarState, Part, PlayerState, ShopItem } from '../types';
 
 const LEGACY_STORAGE_KEY = 'cyber-garage-save';
 
@@ -66,7 +66,9 @@ interface GameActions {
   completeCalibration: (success: boolean) => void;
   /** Awards Scrap for a tap (possibly a critical hit). Taps are free — no resource is spent. */
   handleTap: () => { isCrit: boolean; amount: number };
-  /** Once all 3 upgrade slots are filled, resets `installedUpgrades` and advances to the next car tier. No-op otherwise. */
+  /** Returns false without charging if the player can't afford this Shop item's current cost. */
+  buyShopItem: (id: string) => boolean;
+  /** Once all 3 upgrade slots are filled, resets `installedUpgrades`/`totalPartsBought` and advances to the next car tier. No-op otherwise. */
   tradeInCar: () => void;
   /** Fast-forwards Scrap/Energy for time elapsed since lastSaved, run once after the persisted save is rehydrated. */
   applyOfflineProgress: () => void;
@@ -103,6 +105,17 @@ function createStartingInventory(): (Part | null)[] {
   );
 }
 
+function createStartingShopItems(): ShopItem[] {
+  return SHOP_BLUEPRINTS.map((blueprint) => ({
+    id: blueprint.id,
+    name: blueprint.name,
+    cost: blueprint.baseCost,
+    effect: blueprint.effect,
+    boost: blueprint.boost,
+    owned: 0,
+  }));
+}
+
 export const useGameStore = create<GameStore>()(
   persist(
     (set, get) => ({
@@ -115,6 +128,7 @@ export const useGameStore = create<GameStore>()(
       energy: ECONOMY.MAX_ENERGY,
       pendingCalibrationPart: null,
       installedUpgrades: [],
+      shopItems: createStartingShopItems(),
       scrapPerClick: ECONOMY.STARTING_SCRAP_PER_CLICK,
       scrapPerSecond: ECONOMY.STARTING_SCRAP_PER_SECOND,
       critChance: ECONOMY.STARTING_CRIT_CHANCE,
@@ -323,12 +337,39 @@ export const useGameStore = create<GameStore>()(
         return { isCrit, amount };
       },
 
+      buyShopItem: (id) => {
+        const { shopItems, scrap } = get();
+        const item = shopItems.find((i) => i.id === id);
+        if (!item || scrap < item.cost) return false;
+
+        set((state) => ({
+          scrap: state.scrap - item.cost,
+          ...(item.effect === 'scrapPerSecond' && {
+            scrapPerSecond: state.scrapPerSecond + item.boost,
+          }),
+          ...(item.effect === 'scrapPerClick' && {
+            scrapPerClick: state.scrapPerClick + item.boost,
+          }),
+          shopItems: state.shopItems.map((i) =>
+            i.id === id
+              ? {
+                  ...i,
+                  owned: i.owned + 1,
+                  cost: Math.round(i.cost * ECONOMY.SHOP_COST_MULTIPLIER),
+                }
+              : i,
+          ),
+        }));
+        return true;
+      },
+
       tradeInCar: () => {
         const { installedUpgrades, carTier } = get();
         if (installedUpgrades.length < 3) return;
 
         set((state) => ({
           installedUpgrades: [],
+          totalPartsBought: 0,
           carTier: state.carTier + 1,
           car: { ...state.car, name: getCarTier(carTier + 1).name },
         }));
