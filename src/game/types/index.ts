@@ -1,3 +1,5 @@
+import type { PartPerk } from '../config/parts';
+
 /** Car durability expressed as a 0–100 HP value, bucketed into a traffic-light status for UI. */
 export type CarHpStatus = 'green' | 'yellow' | 'red';
 
@@ -13,6 +15,8 @@ export interface Part {
   /** Merge level, starting at 1. Two parts of the same level merge into one of level + 1, up to MAX_PART_LEVEL. */
   level: number;
   name: string;
+  /** Rolled once a part reaches Max Level; unlocked permanently when installed via Anti-Stall calibration. */
+  perk?: PartPerk;
 }
 
 /** Which player stat an upgrade purchase increases. */
@@ -35,7 +39,11 @@ export interface PlayerState {
   car: CarState;
   /** Fixed-size 8-slot merge grid; `null` marks an empty socket. */
   inventory: (Part | null)[];
-  /** The Lv.4 part currently pulled out of inventory and undergoing Core Calibration on the Dyno, if any. */
+  /** How many parts have been bought via `buyPart`, driving the exponential cost ramp. Starting parts don't count. */
+  totalPartsBought: number;
+  /** The Garage's separate "Mechanic Focus" energy pool (0-MAX_MECHANIC_ENERGY), spent on merges — distinct from the tap Energy used in the Junkyard. */
+  energy: number;
+  /** The Lv.4 part currently pulled out of inventory and undergoing Anti-Stall calibration on the car, if any. */
   pendingCalibrationPart: Part | null;
   scrapPerClick: number;
   scrapPerSecond: number;

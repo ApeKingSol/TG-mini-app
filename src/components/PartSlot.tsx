@@ -90,6 +90,11 @@ export function PartSlot({ index, part, justMerged = false }: PartSlotProps) {
         <span className="mt-1 font-display text-[10px] font-semibold tracking-wide">
           Lv.{part.level}
         </span>
+        {part.perk && (
+          <span className="mt-0.5 px-1 text-center text-[8px] leading-tight text-neon-cyan/80">
+            {part.perk}
+          </span>
+        )}
       </motion.div>
     </div>
   );

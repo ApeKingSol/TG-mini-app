@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { ECONOMY, UPGRADE_BLUEPRINTS } from '../config/economy';
-import { getPartTier } from '../config/parts';
+import { ECONOMY, UPGRADE_BLUEPRINTS, getPartBuyCost } from '../config/economy';
+import { getPartTier, rollPartPerk } from '../config/parts';
 import type {
   CarHpStatus,
   CarState,
@@ -59,15 +59,15 @@ interface GameActions {
   damageCar: (amount: number) => void;
   repairCar: (amount: number) => void;
   getCarHpStatus: () => CarHpStatus;
-  /** Buys a new Lv.1 part into the first empty inventory slot. Returns false without charging if there's no empty slot or the player can't afford it. */
+  /** Buys a new Lv.1 part into the first empty inventory slot, at the current exponential price. Returns false without charging if there's no empty slot or the player can't afford it. */
   buyPart: () => boolean;
   /** Moves (or swaps, if the target is occupied) a part between two inventory slots. */
   movePart: (fromIndex: number, toIndex: number) => void;
-  /** Merges two identical-level parts into one of level + 1 at the target slot, clearing the dragged slot. Returns the new part on success, or null if the pair is invalid (caller should snap the dragged part back). */
-  mergeParts: (draggedIndex: number, targetIndex: number) => Part | null;
-  /** Pulls a Lv.4 part out of inventory and onto the Dyno for Core Calibration. No-op if the slot isn't a maxed part or a calibration is already pending. */
+  /** Merges two identical-level parts into one of level + 1 (or +2 on a crit) at the target slot, clearing the dragged slot and spending Mechanic Focus. Returns the new part and whether it crit on success, or null if the pair/energy is invalid (caller should snap the dragged part back). */
+  mergeParts: (draggedIndex: number, targetIndex: number) => { part: Part; isCrit: boolean } | null;
+  /** Pulls a Lv.4 part out of inventory and onto the car for Anti-Stall calibration. No-op if the slot isn't a maxed part or a calibration is already pending. */
   startCalibration: (partIndex: number) => void;
-  /** Resolves the pending calibration: on success the part is consumed for a permanent scrapPerSecond boost; otherwise it's returned to inventory. */
+  /** Resolves the pending calibration: on success the part is consumed to permanently unlock its perk's effect; otherwise it's returned to inventory. */
   completeCalibration: (success: boolean) => void;
   /** Spends 1 Energy for Scrap (possibly a critical hit). Returns null if Energy is empty. */
   handleTap: () => { isCrit: boolean; amount: number } | null;
@@ -99,7 +99,8 @@ function hpToStatus(hp: number, maxHp: number): CarHpStatus {
 }
 
 function createPart(level: number): Part {
-  return { id: crypto.randomUUID(), level, name: getPartTier(level).name };
+  const perk = level >= ECONOMY.MAX_PART_LEVEL ? rollPartPerk() : undefined;
+  return { id: crypto.randomUUID(), level, name: getPartTier(level).name, perk };
 }
 
 /** An 8-slot grid, the first STARTING_PARTS_COUNT filled with a Lv.1 part, the rest empty. */
@@ -127,6 +128,8 @@ export const useGameStore = create<GameStore>()(
       neon: ECONOMY.STARTING_NEON,
       car: createStartingCar(),
       inventory: createStartingInventory(),
+      totalPartsBought: 0,
+      energy: ECONOMY.MAX_MECHANIC_ENERGY,
       pendingCalibrationPart: null,
       scrapPerClick: ECONOMY.STARTING_SCRAP_PER_CLICK,
       scrapPerSecond: ECONOMY.STARTING_SCRAP_PER_SECOND,
@@ -153,6 +156,10 @@ export const useGameStore = create<GameStore>()(
             currentEnergy: Math.min(
               maxEnergy,
               Math.max(0, state.currentEnergy + energyToAdd),
+            ),
+            energy: Math.min(
+              ECONOMY.MAX_MECHANIC_ENERGY,
+              state.energy + ECONOMY.MECHANIC_ENERGY_REGEN_PER_SECOND * deltaSeconds,
             ),
             lastSaved: now,
           };
@@ -194,16 +201,18 @@ export const useGameStore = create<GameStore>()(
       },
 
       buyPart: () => {
-        const { inventory, scrap } = get();
+        const { inventory, scrap, totalPartsBought } = get();
         const emptyIndex = inventory.findIndex((slot) => slot === null);
-        if (emptyIndex === -1 || scrap < ECONOMY.BUY_PART_COST_SCRAP) return false;
+        const cost = getPartBuyCost(totalPartsBought);
+        if (emptyIndex === -1 || scrap < cost) return false;
 
         set((state) => {
           const nextInventory = [...state.inventory];
           nextInventory[emptyIndex] = createPart(1);
           return {
             inventory: nextInventory,
-            scrap: state.scrap - ECONOMY.BUY_PART_COST_SCRAP,
+            scrap: state.scrap - cost,
+            totalPartsBought: state.totalPartsBought + 1,
           };
         });
         return true;
@@ -222,22 +231,37 @@ export const useGameStore = create<GameStore>()(
 
       mergeParts: (draggedIndex, targetIndex) => {
         if (draggedIndex === targetIndex) return null;
-        const { inventory } = get();
+        const { inventory, energy } = get();
         const dragged = inventory[draggedIndex];
         const target = inventory[targetIndex];
         if (!dragged || !target) return null;
         if (dragged.level !== target.level || dragged.level >= ECONOMY.MAX_PART_LEVEL) {
           return null;
         }
+        if (energy < ECONOMY.MERGE_ENERGY_COST) return null;
 
-        const merged = createPart(dragged.level + 1);
+        const isCrit = Math.random() < ECONOMY.MERGE_CRIT_CHANCE;
+        const newLevel = Math.min(
+          ECONOMY.MAX_PART_LEVEL,
+          dragged.level + (isCrit ? 2 : 1),
+        );
+        const merged = createPart(newLevel);
+        if (isCrit) {
+          console.log(
+            `[Garage] Merge crit! Jumped straight to Lv.${newLevel} (${merged.name}).`,
+          );
+        }
+
         set((state) => {
           const nextInventory = [...state.inventory];
           nextInventory[draggedIndex] = null;
           nextInventory[targetIndex] = merged;
-          return { inventory: nextInventory };
+          return {
+            inventory: nextInventory,
+            energy: state.energy - ECONOMY.MERGE_ENERGY_COST,
+          };
         });
-        return merged;
+        return { part: merged, isCrit };
       },
 
       startCalibration: (partIndex) => {
@@ -258,11 +282,33 @@ export const useGameStore = create<GameStore>()(
         if (!pendingCalibrationPart) return;
 
         if (success) {
-          set((state) => ({
-            pendingCalibrationPart: null,
-            scrapPerSecond:
-              state.scrapPerSecond + ECONOMY.CALIBRATION_SCRAP_PER_SECOND_REWARD,
-          }));
+          const perk = pendingCalibrationPart.perk;
+          set((state) => {
+            if (perk === 'Nitro Core') {
+              return {
+                pendingCalibrationPart: null,
+                scrapPerSecond: state.scrapPerSecond + ECONOMY.NITRO_CORE_SCRAP_PER_SECOND,
+              };
+            }
+            if (perk === 'EMP Charge') {
+              return {
+                pendingCalibrationPart: null,
+                critChance: state.critChance + ECONOMY.EMP_CHARGE_CRIT_CHANCE_BOOST,
+              };
+            }
+            if (perk === 'Quantum Armor') {
+              const newMaxHp = state.car.maxHp + ECONOMY.QUANTUM_ARMOR_MAX_HP_BOOST;
+              return {
+                pendingCalibrationPart: null,
+                car: {
+                  ...state.car,
+                  maxHp: newMaxHp,
+                  hp: state.car.hp + ECONOMY.QUANTUM_ARMOR_MAX_HP_BOOST,
+                },
+              };
+            }
+            return { pendingCalibrationPart: null };
+          });
           return;
         }
 
@@ -339,6 +385,10 @@ export const useGameStore = create<GameStore>()(
           currentEnergy: Math.min(
             maxEnergy,
             Math.max(0, state.currentEnergy + elapsedSeconds * energyRegenRate),
+          ),
+          energy: Math.min(
+            ECONOMY.MAX_MECHANIC_ENERGY,
+            state.energy + elapsedSeconds * ECONOMY.MECHANIC_ENERGY_REGEN_PER_SECOND,
           ),
           lastSaved: now,
           offlineEarnings:

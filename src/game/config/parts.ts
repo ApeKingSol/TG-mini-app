@@ -39,3 +39,19 @@ export const PART_TIERS: PartTier[] = [
 export function getPartTier(level: number): PartTier {
   return PART_TIERS[Math.min(level - 1, PART_TIERS.length - 1)];
 }
+
+/** Assigned to a part once it reaches Max Level, and unlocked permanently when that part is
+ * successfully calibrated on the car. */
+export type PartPerk = 'EMP Charge' | 'Nitro Core' | 'Quantum Armor';
+
+export const PART_PERKS: PartPerk[] = ['EMP Charge', 'Nitro Core', 'Quantum Armor'];
+
+export const PERK_DESCRIPTIONS: Record<PartPerk, string> = {
+  'EMP Charge': '+5% permanent Tap Crit Chance',
+  'Nitro Core': '+5.0 permanent Scrap/sec',
+  'Quantum Armor': '+50 permanent Max Car HP',
+};
+
+export function rollPartPerk(): PartPerk {
+  return PART_PERKS[Math.floor(Math.random() * PART_PERKS.length)];
+}

@@ -19,10 +19,28 @@ export const ECONOMY = {
   INVENTORY_SIZE: 8,
   /** Parts merge from Lv.1 up to this level, at which point they're ready to install on the car. */
   MAX_PART_LEVEL: 4,
-  /** Scrap cost to buy one new Level 1 part in the Garage. */
+  /** Base Scrap cost to buy one new Level 1 part in the Garage, before the exponential ramp. */
   BUY_PART_COST_SCRAP: 15,
-  /** Permanent scrapPerSecond granted for successfully calibrating a Lv.4 part on the Dyno. */
-  CALIBRATION_SCRAP_PER_SECOND_REWARD: 5.0,
+  /** Each part bought multiplies the next one's cost by this factor, so buying parts stays
+   * a real Scrap sink instead of trivially stockpiling merge fodder late-game. */
+  PART_BUY_COST_MULTIPLIER: 1.12,
+
+  /** Max value of the Garage's separate "Mechanic Focus" energy pool, spent on merges. */
+  MAX_MECHANIC_ENERGY: 100,
+  /** Added to Mechanic Focus per second — much slower than tap Energy, since a merge is a
+   * much rarer, more deliberate action than a tap. */
+  MECHANIC_ENERGY_REGEN_PER_SECOND: 1,
+  /** Mechanic Focus spent per merge attempt. */
+  MERGE_ENERGY_COST: 5,
+  /** Chance (0-1) a merge crits, jumping the result an extra tier above normal. */
+  MERGE_CRIT_CHANCE: 0.05,
+
+  /** Nitro Core perk: permanent scrapPerSecond granted on a successful install. */
+  NITRO_CORE_SCRAP_PER_SECOND: 5.0,
+  /** EMP Charge perk: permanent boost to tap critChance on a successful install. */
+  EMP_CHARGE_CRIT_CHANCE_BOOST: 0.05,
+  /** Quantum Armor perk: permanent boost to the car's max HP (and an equal heal) on install. */
+  QUANTUM_ARMOR_MAX_HP_BOOST: 50,
 
   /** Each upgrade purchase multiplies its own next cost by this factor. */
   UPGRADE_COST_MULTIPLIER: 1.15,
@@ -43,18 +61,25 @@ export const ECONOMY = {
   MIN_OFFLINE_EARNINGS_TO_SHOW: 1,
 } as const;
 
-/** Tuning for the Garage's Dyno "Core Calibration" hold-and-release mini-game. */
-export const CALIBRATION = {
-  TARGET_ZONE_MIN: 60,
-  TARGET_ZONE_MAX: 90,
-  /** Cumulative seconds the power needle must sit inside the target zone to win. */
-  HOLD_SECONDS_TO_WIN: 3,
-  /** How fast Power (0-100) climbs per second while the button is held. Slower than the
-   * original 70/s — at that rate the needle crossed the target zone in ~200ms, well under
-   * human reaction time on a touchscreen and making the game feel broken rather than hard. */
-  POWER_INCREASE_PER_SECOND: 40,
-  /** How fast Power falls per second once released. */
-  POWER_DECREASE_PER_SECOND: 30,
+/** Cost of the Nth part bought (0-indexed), after the exponential ramp. */
+export function getPartBuyCost(totalPartsBought: number): number {
+  return Math.round(
+    ECONOMY.BUY_PART_COST_SCRAP * ECONOMY.PART_BUY_COST_MULTIPLIER ** totalPartsBought,
+  );
+}
+
+/** Tuning for the Garage's "Anti-Stall" engine calibration mini-game. */
+export const ANTI_STALL = {
+  TARGET_ZONE_MIN: 65,
+  TARGET_ZONE_MAX: 85,
+  /** Cumulative seconds the RPM needle must sit inside the Stable Green Zone to win. */
+  HOLD_SECONDS_TO_WIN: 5,
+  /** How fast RPM (0-100) climbs per second while the pedal is held. Deliberately gentler
+   * than the zone is narrow, since releasing outside the zone is now an instant fail rather
+   * than just losing progress — the physics need to leave room to react. */
+  RPM_INCREASE_PER_SECOND: 35,
+  /** How fast RPM falls per second once the pedal is released (and hasn't stalled). */
+  RPM_DECREASE_PER_SECOND: 25,
 } as const;
 
 /**
