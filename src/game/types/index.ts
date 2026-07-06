@@ -41,8 +41,10 @@ export interface PlayerState {
   carTier: number;
   /** Fixed-size 8-slot merge grid; `null` marks an empty socket. */
   inventory: (Part | null)[];
-  /** How many parts have been bought via `buyPart`, driving the exponential cost ramp. Starting parts don't count. */
-  totalPartsBought: number;
+  /** How many parts have been bought via `buyPart` on the current car, driving the compound
+   * cost ramp (basePrice * 1.15^partsPurchased). Starting parts don't count; resets to 0 on
+   * trade-in. */
+  partsPurchased: number;
   /** Energy (0-maxEnergy), spent exclusively on Garage merges. The Junkyard tap loop
    * neither consumes nor displays this. */
   energy: number;

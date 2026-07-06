@@ -31,7 +31,7 @@ export function GarageScreen() {
   const car = useGameStore((state) => state.car);
   const carTier = useGameStore((state) => state.carTier);
   const inventory = useGameStore((state) => state.inventory);
-  const totalPartsBought = useGameStore((state) => state.totalPartsBought);
+  const partsPurchased = useGameStore((state) => state.partsPurchased);
   const energy = useGameStore((state) => state.energy);
   const maxEnergy = useGameStore((state) => state.maxEnergy);
   const lastEnergyRegenAt = useGameStore((state) => state.lastEnergyRegenAt);
@@ -58,7 +58,7 @@ export function GarageScreen() {
     return () => window.clearInterval(interval);
   }, []);
 
-  const partCost = getPartBuyCost(totalPartsBought);
+  const partCost = getPartBuyCost(carTier, partsPurchased);
   const canBuyPart = scrap >= partCost && inventory.some((slot) => slot === null);
   const upgradeRequirement = getUpgradeRequirement(carTier);
   const isMastered = installedUpgrades.length >= upgradeRequirement;
@@ -439,7 +439,7 @@ interface AntiStallCalibrationPanelProps {
 function AntiStallCalibrationPanel({ partLevel, perk, onComplete }: AntiStallCalibrationPanelProps) {
   const tier = getPartTier(partLevel);
   const Icon = tier.icon;
-  const { playRevSound, stopRevSound, playStallSound } = useEngineAudio();
+  const { playRevSound, stopRevSound, playStallSound, setEnginePitch } = useEngineAudio();
 
   const [rpm, setRpm] = useState(0);
   const [calibrationProgress, setCalibrationProgress] = useState(0);
@@ -494,6 +494,11 @@ function AntiStallCalibrationPanel({ partLevel, perk, onComplete }: AntiStallCal
       const now = performance.now();
       const currentRpm = getCurrentRpm();
       setRpm(currentRpm);
+      // The rev sample only ever plays while the pedal is held (see handlePressStart/
+      // handleReleaseRef below), so pitch only needs updating for that same window.
+      if (isHoldingRef.current) {
+        setEnginePitch(currentRpm);
+      }
 
       if (!hasResolvedRef.current) {
         const inZoneMs = getCurrentInZoneMs(currentRpm, now);

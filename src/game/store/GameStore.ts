@@ -68,7 +68,7 @@ interface GameActions {
   handleTap: () => { isCrit: boolean; amount: number };
   /** Returns false without charging if the player can't afford this upgrade's current cost. */
   buyUpgrade: (id: string) => boolean;
-  /** Once installedUpgrades reaches getUpgradeRequirement(carTier), resets installedUpgrades/totalPartsBought and advances to the next car tier. No-op otherwise. */
+  /** Once installedUpgrades reaches getUpgradeRequirement(carTier), resets installedUpgrades/partsPurchased and advances to the next car tier. No-op otherwise. */
   tradeInCar: () => void;
   /** Fast-forwards Scrap/Energy for time elapsed since lastSaved, run once after the persisted save is rehydrated. */
   applyOfflineProgress: () => void;
@@ -145,7 +145,7 @@ export const useGameStore = create<GameStore>()(
       car: createStartingCar(),
       carTier: 1,
       inventory: createStartingInventory(),
-      totalPartsBought: 0,
+      partsPurchased: 0,
       energy: ECONOMY.STARTING_MAX_ENERGY,
       maxEnergy: ECONOMY.STARTING_MAX_ENERGY,
       lastEnergyRegenAt: Date.now(),
@@ -212,9 +212,9 @@ export const useGameStore = create<GameStore>()(
       },
 
       buyPart: () => {
-        const { inventory, scrap, totalPartsBought } = get();
+        const { inventory, scrap, carTier, partsPurchased } = get();
         const emptyIndex = inventory.findIndex((slot) => slot === null);
-        const cost = getPartBuyCost(totalPartsBought);
+        const cost = getPartBuyCost(carTier, partsPurchased);
         if (emptyIndex === -1 || scrap < cost) return false;
 
         set((state) => {
@@ -223,7 +223,7 @@ export const useGameStore = create<GameStore>()(
           return {
             inventory: nextInventory,
             scrap: state.scrap - cost,
-            totalPartsBought: state.totalPartsBought + 1,
+            partsPurchased: state.partsPurchased + 1,
           };
         });
         return true;
@@ -401,7 +401,7 @@ export const useGameStore = create<GameStore>()(
 
         set((state) => ({
           installedUpgrades: [],
-          totalPartsBought: 0,
+          partsPurchased: 0,
           carTier: state.carTier + 1,
           car: { ...state.car, name: getCarTier(carTier + 1).name },
         }));

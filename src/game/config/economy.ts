@@ -19,16 +19,15 @@ export const ECONOMY = {
   INVENTORY_SIZE: 8,
   /** Parts merge from Lv.1 up to this level, at which point they're ready to install on the car. */
   MAX_PART_LEVEL: 4,
-  /** Base Scrap cost to buy one new Level 1 part in the Garage, before the exponential ramp. */
-  BUY_PART_COST_SCRAP: 150,
-  /** Each part bought multiplies the next one's cost by this factor, so buying parts stays
-   * a real Scrap sink instead of trivially stockpiling merge fodder late-game. */
-  PART_BUY_COST_MULTIPLIER: 1.2,
-  /** Hard ceiling on a single part's cost, regardless of how many have been bought — without
-   * this, uncapped exponential growth over a long grinding session produces absurd,
-   * unpayable numbers (150 * 1.5^80 is a 17-digit Scrap cost, which is a display/balance
-   * bug from the player's perspective no matter how "correct" the formula is). */
-  PART_BUY_COST_CAP: 50_000,
+  /** Base Scrap cost to buy a part on Tier 1, before the per-purchase compound ramp. */
+  BUY_PART_COST_SCRAP: 15,
+  /** Each car tier's base part price is this many times the previous tier's — the
+   * standard idle-game move of scaling the whole economy up at every prestige step, not
+   * just letting a single car's price ramp run forever. */
+  BUY_PART_COST_TIER_MULTIPLIER: 10,
+  /** Each part bought within the current car's lifetime multiplies the next one's cost by
+   * this factor — the standard compound-growth idle-game curve. */
+  PART_BUY_COST_MULTIPLIER: 1.15,
 
   /** Starting max value of Energy, before any Expanded Battery upgrades — used exclusively
    * by the Garage merge grid. The Junkyard's tap loop doesn't touch this at all; taps are
@@ -74,11 +73,16 @@ export const UPGRADE_BLUEPRINTS = [
   { id: 'expanded-battery', name: 'Expanded Battery', baseCost: 200, effect: 'maxEnergy', boost: 200 },
 ] as const;
 
-/** Cost of the Nth part bought (0-indexed), after the exponential ramp, capped so a long
- * grinding session can't run the price into unpayable, absurd-looking territory. */
-export function getPartBuyCost(totalPartsBought: number): number {
-  const raw = ECONOMY.BUY_PART_COST_SCRAP * ECONOMY.PART_BUY_COST_MULTIPLIER ** totalPartsBought;
-  return Math.round(Math.min(raw, ECONOMY.PART_BUY_COST_CAP));
+/** The starting price for a Lv.1 part on a given car tier, before that car's own
+ * per-purchase ramp — Tier 1 is the base 15 Scrap, Tier 2 is 150, Tier 3 is 1,500, and so
+ * on, ×10 per tier. */
+export function getPartBasePrice(carTier: number): number {
+  return ECONOMY.BUY_PART_COST_SCRAP * ECONOMY.BUY_PART_COST_TIER_MULTIPLIER ** (carTier - 1);
+}
+
+/** Standard idle-game compound growth: this tier's base price times 1.15^partsPurchased. */
+export function getPartBuyCost(carTier: number, partsPurchased: number): number {
+  return Math.floor(getPartBasePrice(carTier) * Math.pow(ECONOMY.PART_BUY_COST_MULTIPLIER, partsPurchased));
 }
 
 /** Seconds remaining until the next discrete Energy tick, for the Garage's countdown
