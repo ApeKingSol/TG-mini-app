@@ -172,12 +172,15 @@ function CarInstallationZone() {
   const { setNodeRef, isOver } = useDroppable({ id: CAR_INSTALLATION_ZONE_ID });
 
   return (
+    // No background fill or box-shadow here on purpose: a `drop-shadow`/`shadow-*` glow
+    // traces the image's alpha silhouette, and its blur bleeds into the car art's own
+    // transparent gaps (e.g. between the wheels and undercarriage), reading as a muddy
+    // halo baked into the vehicle rather than a shadow behind it. The border alone gives
+    // drop-zone feedback without touching anything inside the car's silhouette.
     <div
       ref={setNodeRef}
       className={`rounded-xl border p-4 transition-colors ${
-        isOver
-          ? 'border-neon-cyan/70 bg-neon-cyan/5 shadow-[0_0_20px_rgba(0,240,255,0.3)]'
-          : 'border-neutral-800 bg-bg-panel'
+        isOver ? 'border-neon-cyan/70' : 'border-neutral-800'
       }`}
     >
       <motion.img
@@ -185,7 +188,7 @@ function CarInstallationZone() {
         alt="Cyber Car"
         animate={{ y: [0, -6, 0] }}
         transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-        className="mx-auto w-full max-w-sm object-contain drop-shadow-[0_0_15px_rgba(0,255,255,0.3)]"
+        className="mx-auto w-full max-w-sm object-contain"
       />
     </div>
   );
