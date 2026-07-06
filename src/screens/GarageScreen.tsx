@@ -16,6 +16,7 @@ import { Tachometer } from '../components/Tachometer';
 import { useEngineAudio } from '../hooks/useEngineAudio';
 import { ECONOMY, ANTI_STALL, getPartBuyCost } from '../game/config/economy';
 import { getPartTier, PERK_DESCRIPTIONS, PART_PERKS, type PartPerk } from '../game/config/parts';
+import { getCarTier } from '../game/config/carTiers';
 
 const CAR_INSTALLATION_ZONE_ID = 'car-installation-zone';
 
@@ -245,8 +246,8 @@ function CarInstallationZone({ carName, carTier }: CarInstallationZoneProps) {
           transition={{ duration: 0.6, ease: 'easeInOut' }}
         >
           <motion.img
-            src="/car-base.webp"
-            alt="Cyber Car"
+            src={getCarTier(carTier).image}
+            alt={carName}
             animate={{ y: [0, -6, 0] }}
             transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
             className="mx-auto w-full max-w-sm object-contain"

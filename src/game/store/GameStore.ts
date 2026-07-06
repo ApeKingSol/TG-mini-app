@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { ECONOMY, getPartBuyCost } from '../config/economy';
 import { getPartTier, rollPartPerk, type PartPerk } from '../config/parts';
+import { getCarTier } from '../config/carTiers';
 import type { CarHpStatus, CarState, Part, PlayerState } from '../types';
 
 const LEGACY_STORAGE_KEY = 'cyber-garage-save';
@@ -77,7 +78,7 @@ type GameStore = PlayerState & GameActions;
 function createStartingCar(): CarState {
   return {
     id: 'starter-rustbucket',
-    name: 'Rustbucket Mk I',
+    name: getCarTier(1).name,
     hp: ECONOMY.STARTING_CAR_MAX_HP,
     maxHp: ECONOMY.STARTING_CAR_MAX_HP,
   };
@@ -329,11 +330,20 @@ export const useGameStore = create<GameStore>()(
         set((state) => ({
           installedUpgrades: [],
           carTier: state.carTier + 1,
-          car: { ...state.car, name: `Rustbucket Mk ${carTier + 1}` },
+          car: { ...state.car, name: getCarTier(carTier + 1).name },
         }));
       },
 
       applyOfflineProgress: () => {
+        // Re-syncs the car's display name to its tier's current name, so a naming/asset
+        // update (e.g. adding tier art) applies even to saves made before it existed.
+        set((state) => {
+          const correctName = getCarTier(state.carTier).name;
+          return correctName === state.car.name
+            ? {}
+            : { car: { ...state.car, name: correctName } };
+        });
+
         const now = Date.now();
         const { lastSaved, scrapPerSecond } = get();
         const elapsedSeconds = Math.min(
