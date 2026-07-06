@@ -25,3 +25,13 @@ export function getCarTier(tier: number): CarTierInfo {
   const index = Math.min(tier, CAR_TIERS.length) - 1;
   return CAR_TIERS[Math.max(0, index)];
 }
+
+/**
+ * How many perk installs the current car needs before it's "MASTERED" and ready to trade
+ * in. Grows every two tiers (Tier 1-2 need 3, Tier 3-4 need 4, Tier 5-6 need 5, ...) so
+ * later cars take meaningfully longer without the requirement exploding. Since there are
+ * only 3 distinct perks, meeting a requirement above 3 means installing a repeat.
+ */
+export function getUpgradeRequirement(carTier: number): number {
+  return 3 + Math.floor((carTier - 1) / 2);
+}

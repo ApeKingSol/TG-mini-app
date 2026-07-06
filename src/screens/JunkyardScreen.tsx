@@ -1,10 +1,10 @@
 import { useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Store, X } from 'lucide-react';
+import { Store, X, Check } from 'lucide-react';
 import { useGameStore } from '../game/store/GameStore';
 import { AnimatedNumber } from '../components/AnimatedNumber';
 import { ScrapPileIcon } from '../components/ScrapPileIcon';
-import type { ShopItem } from '../game/types';
+import type { Upgrade } from '../game/types';
 
 interface FloatingText {
   id: string;
@@ -16,12 +16,12 @@ interface FloatingText {
 
 const FLOAT_DURATION_MS = 800;
 
-function formatShopItemBenefit(item: ShopItem): string {
-  switch (item.effect) {
+function formatUpgradeBenefit(upgrade: Upgrade): string {
+  switch (upgrade.effect) {
     case 'scrapPerSecond':
-      return `+${item.boost.toFixed(1)}/sec`;
+      return `+${upgrade.boost.toFixed(1)}/sec`;
     case 'scrapPerClick':
-      return `+${item.boost} per tap`;
+      return `+${upgrade.boost} per tap`;
   }
 }
 
@@ -29,6 +29,8 @@ export function JunkyardScreen() {
   const scrap = useGameStore((state) => state.scrap);
   const scrapPerSecond = useGameStore((state) => state.scrapPerSecond);
   const handleTap = useGameStore((state) => state.handleTap);
+  const upgrades = useGameStore((state) => state.upgrades);
+  const buyUpgrade = useGameStore((state) => state.buyUpgrade);
   const shopItems = useGameStore((state) => state.shopItems);
   const buyShopItem = useGameStore((state) => state.buyShopItem);
 
@@ -140,6 +142,40 @@ export function JunkyardScreen() {
         </p>
       </div>
 
+      <div className="w-full max-w-xs text-left">
+        <p className="mb-2 text-xs uppercase tracking-widest text-neutral-500">
+          Upgrades
+        </p>
+        <div className="flex max-h-64 flex-col gap-2 overflow-y-auto pr-1">
+          {upgrades.map((upgrade) => {
+            const canAfford = scrap >= upgrade.cost;
+            return (
+              <motion.button
+                key={upgrade.id}
+                type="button"
+                onClick={() => buyUpgrade(upgrade.id)}
+                disabled={!canAfford}
+                whileHover={canAfford ? { scale: 1.02 } : undefined}
+                whileTap={canAfford ? { scale: 0.97 } : undefined}
+                className="flex items-center justify-between rounded-lg border border-neutral-800 bg-bg-panel px-3 py-2 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <div>
+                  <p className="text-sm font-medium text-neutral-200">
+                    {upgrade.name}
+                  </p>
+                  <p className="text-xs text-neutral-500">
+                    Owned {upgrade.owned} · {formatUpgradeBenefit(upgrade)}
+                  </p>
+                </div>
+                <span className="font-display text-sm text-neon-cyan tabular-nums">
+                  {Math.round(upgrade.cost).toLocaleString()}
+                </span>
+              </motion.button>
+            );
+          })}
+        </div>
+      </div>
+
       <AnimatePresence>
         {isShopOpen && (
           <motion.div
@@ -169,6 +205,9 @@ export function JunkyardScreen() {
                   <X className="h-4 w-4" />
                 </button>
               </div>
+              <p className="mb-2 text-xs text-neutral-500">
+                Cosmetic novelties. One of each — flex, don't stack.
+              </p>
 
               <div className="flex flex-col gap-2">
                 {shopItems.map((item) => {
@@ -178,20 +217,24 @@ export function JunkyardScreen() {
                       key={item.id}
                       type="button"
                       onClick={() => buyShopItem(item.id)}
-                      disabled={!canAfford}
-                      whileHover={canAfford ? { scale: 1.02 } : undefined}
-                      whileTap={canAfford ? { scale: 0.97 } : undefined}
+                      disabled={!canAfford || item.owned}
+                      whileHover={canAfford && !item.owned ? { scale: 1.02 } : undefined}
+                      whileTap={canAfford && !item.owned ? { scale: 0.97 } : undefined}
                       className="flex items-center justify-between rounded-lg border border-neutral-800 bg-black/30 px-3 py-2 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <div>
                         <p className="text-sm font-medium text-neutral-200">{item.name}</p>
-                        <p className="text-xs text-neutral-500">
-                          Owned {item.owned} · {formatShopItemBenefit(item)}
-                        </p>
+                        <p className="text-xs text-neutral-500">{item.description}</p>
                       </div>
-                      <span className="font-display text-sm text-neon-cyan tabular-nums">
-                        {Math.round(item.cost).toLocaleString()}
-                      </span>
+                      {item.owned ? (
+                        <span className="flex items-center gap-1 text-xs font-medium text-green-400">
+                          <Check className="h-3.5 w-3.5" /> Owned
+                        </span>
+                      ) : (
+                        <span className="font-display text-sm text-neon-cyan tabular-nums">
+                          {Math.round(item.cost).toLocaleString()}
+                        </span>
+                      )}
                     </motion.button>
                   );
                 })}

@@ -15,8 +15,8 @@ import { PartSlot } from '../components/PartSlot';
 import { Tachometer } from '../components/Tachometer';
 import { useEngineAudio } from '../hooks/useEngineAudio';
 import { ECONOMY, ANTI_STALL, getPartBuyCost } from '../game/config/economy';
-import { getPartTier, PERK_DESCRIPTIONS, PART_PERKS, type PartPerk } from '../game/config/parts';
-import { getCarTier } from '../game/config/carTiers';
+import { getPartTier, PERK_DESCRIPTIONS, type PartPerk } from '../game/config/parts';
+import { getCarTier, getUpgradeRequirement } from '../game/config/carTiers';
 
 const CAR_INSTALLATION_ZONE_ID = 'car-installation-zone';
 
@@ -42,7 +42,8 @@ export function GarageScreen() {
   );
   const partCost = getPartBuyCost(totalPartsBought);
   const canBuyPart = scrap >= partCost && inventory.some((slot) => slot === null);
-  const isMastered = installedUpgrades.length >= PART_PERKS.length;
+  const upgradeRequirement = getUpgradeRequirement(carTier);
+  const isMastered = installedUpgrades.length >= upgradeRequirement;
 
   // PointerSensor alone covers mouse, touch, and pen — dnd-kit's own guidance is to avoid
   // layering a separate TouchSensor/MouseSensor on top, since they'd react to the same
@@ -119,6 +120,7 @@ export function GarageScreen() {
           carName={car.name}
           carTier={carTier}
           upgradesInstalled={installedUpgrades.length}
+          upgradesRequired={upgradeRequirement}
         />
 
         {isMastered ? (
@@ -218,11 +220,17 @@ interface CarInstallationZoneProps {
   carName: string;
   carTier: number;
   upgradesInstalled: number;
+  upgradesRequired: number;
 }
 
-function CarInstallationZone({ carName, carTier, upgradesInstalled }: CarInstallationZoneProps) {
+function CarInstallationZone({
+  carName,
+  carTier,
+  upgradesInstalled,
+  upgradesRequired,
+}: CarInstallationZoneProps) {
   const { setNodeRef, isOver } = useDroppable({ id: CAR_INSTALLATION_ZONE_ID });
-  const upgradesRemaining = Math.max(0, 3 - upgradesInstalled);
+  const upgradesRemaining = Math.max(0, upgradesRequired - upgradesInstalled);
 
   return (
     // No background fill or box-shadow here on purpose: a `drop-shadow`/`shadow-*` glow
@@ -240,7 +248,7 @@ function CarInstallationZone({ carName, carTier, upgradesInstalled }: CarInstall
         {carName}
       </p>
       <p className="text-center text-sm font-semibold text-neon-cyan">
-        Upgrades Installed: {upgradesInstalled} / 3
+        Upgrades Installed: {upgradesInstalled} / {upgradesRequired}
       </p>
       <p className="mb-1 text-center text-xs text-neutral-500">
         {upgradesRemaining} parts left until Next Tier

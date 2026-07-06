@@ -53,18 +53,38 @@ export const ECONOMY = {
   /** Below this many Scrap, the "Welcome back" toast doesn't bother showing. */
   MIN_OFFLINE_EARNINGS_TO_SHOW: 1,
 
-  /** Each Junkyard Shop item purchase multiplies that item's own next cost by this factor. */
-  SHOP_COST_MULTIPLIER: 1.15,
+  /** Each Junkyard upgrade purchase multiplies that upgrade's own next cost by this factor. */
+  UPGRADE_COST_MULTIPLIER: 1.15,
 } as const;
 
 /**
- * Starting blueprint for the Junkyard Shop; the store seeds its `shopItems` array from
- * this. Separate from the Garage's perk system — this is a straightforward Scrap sink for
- * incremental tap/passive gains, bought directly rather than earned via calibration.
+ * Starting blueprint for the Junkyard's always-visible upgrade list; the store seeds its
+ * `upgrades` array from this. Separate from the Garage's perk system — this is a
+ * straightforward, repeatable Scrap sink for incremental tap/passive gains.
  */
-export const SHOP_BLUEPRINTS = [
+export const UPGRADE_BLUEPRINTS = [
   { id: 'rusty-clicker', name: 'Rusty Clicker', baseCost: 25, effect: 'scrapPerClick', boost: 1 },
   { id: 'auto-scrapper', name: 'Auto-Scrapper', baseCost: 50, effect: 'scrapPerSecond', boost: 2 },
+] as const;
+
+/**
+ * Starting blueprint for the Junkyard Shop modal — one-time cosmetic novelties, unrelated
+ * to the stat-boosting upgrade list above. Purely flavor for now (no visual skin-swap is
+ * wired up yet); the store seeds its `shopItems` array from this.
+ */
+export const SHOP_BLUEPRINTS = [
+  {
+    id: 'chrome-skin',
+    name: 'Chrome Skin',
+    cost: 100,
+    description: 'A blinding chrome paint job. Purely cosmetic.',
+  },
+  {
+    id: 'neon-graffiti-skin',
+    name: 'Neon Graffiti Skin',
+    cost: 150,
+    description: 'Hand-tagged neon graffiti wrap. Purely cosmetic.',
+  },
 ] as const;
 
 /** Cost of the Nth part bought (0-indexed), after the exponential ramp. */

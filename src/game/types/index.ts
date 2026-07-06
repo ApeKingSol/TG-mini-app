@@ -19,18 +19,27 @@ export interface Part {
   perk?: PartPerk;
 }
 
-/** Which player stat a Junkyard Shop item increases. */
-export type ShopItemEffect = 'scrapPerClick' | 'scrapPerSecond';
+/** Which player stat a Junkyard upgrade increases. */
+export type UpgradeEffect = 'scrapPerClick' | 'scrapPerSecond';
 
-export interface ShopItem {
+export interface Upgrade {
   id: string;
   name: string;
-  /** Scrap cost of the next purchase; escalates each time this item is bought. */
+  /** Scrap cost of the next purchase; escalates each time this upgrade is bought. */
   cost: number;
-  effect: ShopItemEffect;
+  effect: UpgradeEffect;
   /** Added to the stat named by `effect` per unit owned. */
   boost: number;
   owned: number;
+}
+
+/** A one-time cosmetic novelty sold in the Junkyard Shop modal — no stat effect. */
+export interface ShopItem {
+  id: string;
+  name: string;
+  cost: number;
+  description: string;
+  owned: boolean;
 }
 
 export interface PlayerState {
@@ -48,11 +57,15 @@ export interface PlayerState {
   energy: number;
   /** The Lv.4 part currently pulled out of inventory and undergoing Anti-Stall calibration on the car, if any. */
   pendingCalibrationPart: Part | null;
-  /** The perks already installed on the current car via successful calibration — exactly 3
-   * distinct values possible. Once all 3 are present the car is "MASTERED" and ready to
-   * trade in; resets to empty on trade-in. */
+  /** The perks already installed on the current car via successful calibration. Once its
+   * length reaches getUpgradeRequirement(carTier) the car is "MASTERED" and ready to trade
+   * in; resets to empty on trade-in. Only 3 distinct perks exist, so meeting a requirement
+   * above 3 means installing a repeat. */
   installedUpgrades: PartPerk[];
-  /** Junkyard Shop items — a straightforward Scrap sink for incremental tap/passive gains, separate from the Garage's perk system. */
+  /** The Junkyard's always-visible upgrade list — a straightforward, repeatable Scrap sink
+   * for incremental tap/passive gains, separate from the Garage's perk system. */
+  upgrades: Upgrade[];
+  /** The Junkyard Shop modal's one-time cosmetic novelties. */
   shopItems: ShopItem[];
   scrapPerClick: number;
   scrapPerSecond: number;

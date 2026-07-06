@@ -1,9 +1,9 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { ECONOMY, SHOP_BLUEPRINTS, getPartBuyCost } from '../config/economy';
+import { ECONOMY, UPGRADE_BLUEPRINTS, SHOP_BLUEPRINTS, getPartBuyCost } from '../config/economy';
 import { getPartTier, rollPartPerk, type PartPerk } from '../config/parts';
-import { getCarTier } from '../config/carTiers';
-import type { CarHpStatus, CarState, Part, PlayerState, ShopItem } from '../types';
+import { getCarTier, getUpgradeRequirement } from '../config/carTiers';
+import type { CarHpStatus, CarState, Part, PlayerState, Upgrade, ShopItem } from '../types';
 
 const LEGACY_STORAGE_KEY = 'cyber-garage-save';
 
@@ -66,9 +66,11 @@ interface GameActions {
   completeCalibration: (success: boolean) => void;
   /** Awards Scrap for a tap (possibly a critical hit). Taps are free — no resource is spent. */
   handleTap: () => { isCrit: boolean; amount: number };
-  /** Returns false without charging if the player can't afford this Shop item's current cost. */
+  /** Returns false without charging if the player can't afford this upgrade's current cost. */
+  buyUpgrade: (id: string) => boolean;
+  /** Returns false without charging, or if already owned, or if the player can't afford this Shop item's cost. */
   buyShopItem: (id: string) => boolean;
-  /** Once all 3 upgrade slots are filled, resets `installedUpgrades`/`totalPartsBought` and advances to the next car tier. No-op otherwise. */
+  /** Once installedUpgrades reaches getUpgradeRequirement(carTier), resets installedUpgrades/totalPartsBought and advances to the next car tier. No-op otherwise. */
   tradeInCar: () => void;
   /** Fast-forwards Scrap/Energy for time elapsed since lastSaved, run once after the persisted save is rehydrated. */
   applyOfflineProgress: () => void;
@@ -105,14 +107,24 @@ function createStartingInventory(): (Part | null)[] {
   );
 }
 
-function createStartingShopItems(): ShopItem[] {
-  return SHOP_BLUEPRINTS.map((blueprint) => ({
+function createStartingUpgrades(): Upgrade[] {
+  return UPGRADE_BLUEPRINTS.map((blueprint) => ({
     id: blueprint.id,
     name: blueprint.name,
     cost: blueprint.baseCost,
     effect: blueprint.effect,
     boost: blueprint.boost,
     owned: 0,
+  }));
+}
+
+function createStartingShopItems(): ShopItem[] {
+  return SHOP_BLUEPRINTS.map((blueprint) => ({
+    id: blueprint.id,
+    name: blueprint.name,
+    cost: blueprint.cost,
+    description: blueprint.description,
+    owned: false,
   }));
 }
 
@@ -128,6 +140,7 @@ export const useGameStore = create<GameStore>()(
       energy: ECONOMY.MAX_ENERGY,
       pendingCalibrationPart: null,
       installedUpgrades: [],
+      upgrades: createStartingUpgrades(),
       shopItems: createStartingShopItems(),
       scrapPerClick: ECONOMY.STARTING_SCRAP_PER_CLICK,
       scrapPerSecond: ECONOMY.STARTING_SCRAP_PER_SECOND,
@@ -337,35 +350,47 @@ export const useGameStore = create<GameStore>()(
         return { isCrit, amount };
       },
 
+      buyUpgrade: (id) => {
+        const { upgrades, scrap } = get();
+        const upgrade = upgrades.find((u) => u.id === id);
+        if (!upgrade || scrap < upgrade.cost) return false;
+
+        set((state) => ({
+          scrap: state.scrap - upgrade.cost,
+          ...(upgrade.effect === 'scrapPerSecond' && {
+            scrapPerSecond: state.scrapPerSecond + upgrade.boost,
+          }),
+          ...(upgrade.effect === 'scrapPerClick' && {
+            scrapPerClick: state.scrapPerClick + upgrade.boost,
+          }),
+          upgrades: state.upgrades.map((u) =>
+            u.id === id
+              ? {
+                  ...u,
+                  owned: u.owned + 1,
+                  cost: Math.round(u.cost * ECONOMY.UPGRADE_COST_MULTIPLIER),
+                }
+              : u,
+          ),
+        }));
+        return true;
+      },
+
       buyShopItem: (id) => {
         const { shopItems, scrap } = get();
         const item = shopItems.find((i) => i.id === id);
-        if (!item || scrap < item.cost) return false;
+        if (!item || item.owned || scrap < item.cost) return false;
 
         set((state) => ({
           scrap: state.scrap - item.cost,
-          ...(item.effect === 'scrapPerSecond' && {
-            scrapPerSecond: state.scrapPerSecond + item.boost,
-          }),
-          ...(item.effect === 'scrapPerClick' && {
-            scrapPerClick: state.scrapPerClick + item.boost,
-          }),
-          shopItems: state.shopItems.map((i) =>
-            i.id === id
-              ? {
-                  ...i,
-                  owned: i.owned + 1,
-                  cost: Math.round(i.cost * ECONOMY.SHOP_COST_MULTIPLIER),
-                }
-              : i,
-          ),
+          shopItems: state.shopItems.map((i) => (i.id === id ? { ...i, owned: true } : i)),
         }));
         return true;
       },
 
       tradeInCar: () => {
         const { installedUpgrades, carTier } = get();
-        if (installedUpgrades.length < 3) return;
+        if (installedUpgrades.length < getUpgradeRequirement(carTier)) return;
 
         set((state) => ({
           installedUpgrades: [],
