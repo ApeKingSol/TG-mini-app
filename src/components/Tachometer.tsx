@@ -58,18 +58,18 @@ export function Tachometer({ rpm, zoneMin, zoneMax }: TachometerProps) {
         strokeLinecap="round"
       />
       {/* Outer <g> carries the real RPM angle, driven imperatively every animation frame by
-         the mini-game's rAF loop — a plain CSS transform, not Framer, so it tracks the
-         needle 1:1 with no spring/tween lag. The inner motion.g layers a small continuous
-         jitter on top via its own independent transform, so it vibrates without fighting
-         the outer element's per-frame rotation updates (same lesson as PartSlot's drag
+         the mini-game's rAF loop. Rotation uses the SVG `transform` ATTRIBUTE
+         (`rotate(angle, cx, cy)`), not the CSS `transform`/`transform-origin` properties —
+         CSS transforms on SVG elements are notoriously inconsistent about which coordinate
+         space `transform-origin` resolves in across browsers, and on iOS Safari this made
+         the pivot land somewhere far from the needle's actual center, so any real rotation
+         looked like the needle snapping straight to one extreme or the other instead of
+         sweeping smoothly. The SVG attribute form operates directly in the SVG's own user
+         units with no such ambiguity. The inner motion.g layers a small continuous jitter
+         on top via its own independent (CSS) transform, so it vibrates without fighting the
+         outer element's per-frame rotation updates (same lesson as PartSlot's drag
          transform vs. Framer Motion pop animation). */}
-      <g
-        style={{
-          transform: `rotate(${needleDeg}deg)`,
-          transformOrigin: `${CENTER}px ${CENTER}px`,
-          transition: 'transform 40ms linear',
-        }}
-      >
+      <g transform={`rotate(${needleDeg}, ${CENTER}, ${CENTER})`}>
         <motion.g
           animate={{ x: [-1.5, 1.5, -1, 1, 0], y: [1, -1, 0.5, -0.5, 0] }}
           transition={{ duration: 0.1, repeat: Infinity, ease: 'linear' }}

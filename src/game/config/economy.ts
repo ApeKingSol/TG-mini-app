@@ -20,14 +20,16 @@ export const ECONOMY = {
   /** Parts merge from Lv.1 up to this level, at which point they're ready to install on the car. */
   MAX_PART_LEVEL: 4,
   /** Base Scrap cost to buy one new Level 1 part in the Garage, before the exponential ramp. */
-  BUY_PART_COST_SCRAP: 15,
-  /** Each part bought multiplies the next one's cost by this factor, so buying parts stays
-   * a real Scrap sink instead of trivially stockpiling merge fodder late-game. */
-  PART_BUY_COST_MULTIPLIER: 1.12,
+  BUY_PART_COST_SCRAP: 150,
+  /** Each part bought multiplies the next one's cost by this factor — steep on purpose (each
+   * purchase costs half again as much as the last) so buying parts stays a real Scrap sink
+   * instead of trivially stockpiling merge fodder late-game. */
+  PART_BUY_COST_MULTIPLIER: 1.5,
 
-  /** Max value of Energy — used exclusively by the Garage merge grid. The Junkyard's tap
-   * loop doesn't touch this at all; taps are free. */
-  MAX_ENERGY: 1000,
+  /** Starting max value of Energy, before any Expanded Battery upgrades — used exclusively
+   * by the Garage merge grid. The Junkyard's tap loop doesn't touch this at all; taps are
+   * free. */
+  STARTING_MAX_ENERGY: 1000,
   /** Added to Energy per second. Deliberately slow relative to the 50-per-merge cost, so
    * merging stays a deliberate, rate-limited action rather than something to spam. */
   ENERGY_REGEN_PER_SECOND: 1,
@@ -65,6 +67,7 @@ export const ECONOMY = {
 export const UPGRADE_BLUEPRINTS = [
   { id: 'rusty-clicker', name: 'Rusty Clicker', baseCost: 25, effect: 'scrapPerClick', boost: 1 },
   { id: 'auto-scrapper', name: 'Auto-Scrapper', baseCost: 50, effect: 'scrapPerSecond', boost: 2 },
+  { id: 'expanded-battery', name: 'Expanded Battery', baseCost: 200, effect: 'maxEnergy', boost: 200 },
 ] as const;
 
 /**

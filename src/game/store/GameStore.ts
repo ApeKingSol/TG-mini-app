@@ -137,7 +137,8 @@ export const useGameStore = create<GameStore>()(
       carTier: 1,
       inventory: createStartingInventory(),
       totalPartsBought: 0,
-      energy: ECONOMY.MAX_ENERGY,
+      energy: ECONOMY.STARTING_MAX_ENERGY,
+      maxEnergy: ECONOMY.STARTING_MAX_ENERGY,
       pendingCalibrationPart: null,
       installedUpgrades: [],
       upgrades: createStartingUpgrades(),
@@ -159,7 +160,7 @@ export const useGameStore = create<GameStore>()(
         set((state) => ({
           scrap: state.scrap + state.scrapPerSecond * deltaSeconds,
           energy: Math.min(
-            ECONOMY.MAX_ENERGY,
+            state.maxEnergy,
             state.energy + ECONOMY.ENERGY_REGEN_PER_SECOND * deltaSeconds,
           ),
           lastSaved: now,
@@ -363,6 +364,9 @@ export const useGameStore = create<GameStore>()(
           ...(upgrade.effect === 'scrapPerClick' && {
             scrapPerClick: state.scrapPerClick + upgrade.boost,
           }),
+          ...(upgrade.effect === 'maxEnergy' && {
+            maxEnergy: state.maxEnergy + upgrade.boost,
+          }),
           upgrades: state.upgrades.map((u) =>
             u.id === id
               ? {
@@ -426,7 +430,7 @@ export const useGameStore = create<GameStore>()(
         set((state) => ({
           scrap: state.scrap + earnedScrap,
           energy: Math.min(
-            ECONOMY.MAX_ENERGY,
+            state.maxEnergy,
             state.energy + elapsedSeconds * ECONOMY.ENERGY_REGEN_PER_SECOND,
           ),
           lastSaved: now,

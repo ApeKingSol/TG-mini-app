@@ -20,7 +20,7 @@ export interface Part {
 }
 
 /** Which player stat a Junkyard upgrade increases. */
-export type UpgradeEffect = 'scrapPerClick' | 'scrapPerSecond';
+export type UpgradeEffect = 'scrapPerClick' | 'scrapPerSecond' | 'maxEnergy';
 
 export interface Upgrade {
   id: string;
@@ -52,9 +52,11 @@ export interface PlayerState {
   inventory: (Part | null)[];
   /** How many parts have been bought via `buyPart`, driving the exponential cost ramp. Starting parts don't count. */
   totalPartsBought: number;
-  /** Energy (0-MAX_ENERGY), spent exclusively on Garage merges. The Junkyard tap loop
+  /** Energy (0-maxEnergy), spent exclusively on Garage merges. The Junkyard tap loop
    * neither consumes nor displays this. */
   energy: number;
+  /** Cap for `energy`, raised permanently by the Junkyard's Expanded Battery upgrade. */
+  maxEnergy: number;
   /** The Lv.4 part currently pulled out of inventory and undergoing Anti-Stall calibration on the car, if any. */
   pendingCalibrationPart: Part | null;
   /** The perks already installed on the current car via successful calibration. Once its

@@ -27,6 +27,7 @@ export function GarageScreen() {
   const inventory = useGameStore((state) => state.inventory);
   const totalPartsBought = useGameStore((state) => state.totalPartsBought);
   const energy = useGameStore((state) => state.energy);
+  const maxEnergy = useGameStore((state) => state.maxEnergy);
   const installedUpgrades = useGameStore((state) => state.installedUpgrades);
   const buyPart = useGameStore((state) => state.buyPart);
   const movePart = useGameStore((state) => state.movePart);
@@ -165,13 +166,13 @@ export function GarageScreen() {
                     Energy
                   </span>
                   <span className="tabular-nums">
-                    {Math.floor(energy)} / {ECONOMY.MAX_ENERGY}
+                    {Math.floor(energy)} / {maxEnergy}
                   </span>
                 </div>
                 <div className="h-2 w-full overflow-hidden rounded-full bg-neutral-800">
                   <motion.div
                     className="h-full rounded-full bg-gradient-to-r from-neon-magenta to-neon-cyan"
-                    animate={{ width: `${(energy / ECONOMY.MAX_ENERGY) * 100}%` }}
+                    animate={{ width: `${(energy / maxEnergy) * 100}%` }}
                     transition={{ duration: 0.3, ease: 'easeOut' }}
                   />
                 </div>
