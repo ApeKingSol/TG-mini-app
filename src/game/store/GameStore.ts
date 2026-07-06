@@ -1,14 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { ECONOMY, UPGRADE_BLUEPRINTS, getPartBuyCost } from '../config/economy';
-import { getPartTier, rollPartPerk } from '../config/parts';
-import type {
-  CarHpStatus,
-  CarState,
-  Part,
-  PlayerState,
-  Upgrade,
-} from '../types';
+import { ECONOMY, getPartBuyCost } from '../config/economy';
+import { getPartTier, rollPartPerk, type PartPerk } from '../config/parts';
+import type { CarHpStatus, CarState, Part, PlayerState } from '../types';
 
 const LEGACY_STORAGE_KEY = 'cyber-garage-save';
 
@@ -63,21 +57,19 @@ interface GameActions {
   buyPart: () => boolean;
   /** Moves (or swaps, if the target is occupied) a part between two inventory slots. */
   movePart: (fromIndex: number, toIndex: number) => void;
-  /** Merges two identical-level parts into one of level + 1 (or +2 on a crit) at the target slot, clearing the dragged slot and spending Mechanic Focus. Returns the new part and whether it crit on success, or null if the pair/energy is invalid (caller should snap the dragged part back). */
+  /** Merges two identical-level parts into one of level + 1 (or +2 on a crit) at the target slot, clearing the dragged slot and spending Energy. Returns the new part and whether it crit on success, or null if the pair/energy is invalid (caller should snap the dragged part back). */
   mergeParts: (draggedIndex: number, targetIndex: number) => { part: Part; isCrit: boolean } | null;
   /** Pulls a Lv.4 part out of inventory and onto the car for Anti-Stall calibration. No-op if the slot isn't a maxed part or a calibration is already pending. */
   startCalibration: (partIndex: number) => void;
-  /** Resolves the pending calibration: on success the part is consumed to permanently unlock its perk's effect; otherwise it's returned to inventory. */
+  /** Resolves the pending calibration: on success the part is consumed to permanently unlock its perk's effect and record it in `installedUpgrades`; otherwise it's returned to inventory. */
   completeCalibration: (success: boolean) => void;
-  /** Spends 1 Energy for Scrap (possibly a critical hit). Returns null if Energy is empty. */
-  handleTap: () => { isCrit: boolean; amount: number } | null;
-  /** Returns false without charging if the player can't afford this upgrade's current cost. */
-  buyUpgrade: (id: string) => boolean;
+  /** Awards Scrap for a tap (possibly a critical hit). Taps are free — no resource is spent. */
+  handleTap: () => { isCrit: boolean; amount: number };
+  /** Once all 3 upgrade slots are filled, resets `installedUpgrades` and advances to the next car tier. No-op otherwise. */
+  tradeInCar: () => void;
   /** Fast-forwards Scrap/Energy for time elapsed since lastSaved, run once after the persisted save is rehydrated. */
   applyOfflineProgress: () => void;
   dismissOfflineEarnings: () => void;
-  /** Adds any upgrade blueprints missing from a persisted save (e.g. ones introduced in a later update), without touching existing progress. */
-  reconcileUpgrades: () => void;
 }
 
 type GameStore = PlayerState & GameActions;
@@ -98,8 +90,8 @@ function hpToStatus(hp: number, maxHp: number): CarHpStatus {
   return 'red';
 }
 
-function createPart(level: number): Part {
-  const perk = level >= ECONOMY.MAX_PART_LEVEL ? rollPartPerk() : undefined;
+function createPart(level: number, excludePerks: PartPerk[] = []): Part {
+  const perk = level >= ECONOMY.MAX_PART_LEVEL ? rollPartPerk(excludePerks) : undefined;
   return { id: crypto.randomUUID(), level, name: getPartTier(level).name, perk };
 }
 
@@ -110,33 +102,20 @@ function createStartingInventory(): (Part | null)[] {
   );
 }
 
-function createStartingUpgrades(): Upgrade[] {
-  return UPGRADE_BLUEPRINTS.map((blueprint) => ({
-    id: blueprint.id,
-    name: blueprint.name,
-    cost: blueprint.baseCost,
-    effect: blueprint.effect,
-    boost: blueprint.boost,
-    owned: 0,
-  }));
-}
-
 export const useGameStore = create<GameStore>()(
   persist(
     (set, get) => ({
       scrap: ECONOMY.STARTING_SCRAP,
       neon: ECONOMY.STARTING_NEON,
       car: createStartingCar(),
+      carTier: 1,
       inventory: createStartingInventory(),
       totalPartsBought: 0,
-      energy: ECONOMY.MAX_MECHANIC_ENERGY,
+      energy: ECONOMY.MAX_ENERGY,
       pendingCalibrationPart: null,
+      installedUpgrades: [],
       scrapPerClick: ECONOMY.STARTING_SCRAP_PER_CLICK,
       scrapPerSecond: ECONOMY.STARTING_SCRAP_PER_SECOND,
-      upgrades: createStartingUpgrades(),
-      maxEnergy: ECONOMY.STARTING_MAX_ENERGY,
-      currentEnergy: ECONOMY.STARTING_MAX_ENERGY,
-      energyRegenRate: ECONOMY.ENERGY_REGEN_PER_SECOND,
       critChance: ECONOMY.STARTING_CRIT_CHANCE,
       critMultiplier: ECONOMY.STARTING_CRIT_MULTIPLIER,
       offlineEarnings: null,
@@ -144,26 +123,19 @@ export const useGameStore = create<GameStore>()(
 
       tick: () => {
         const now = Date.now();
-        const { lastSaved, maxEnergy } = get();
+        const { lastSaved } = get();
         const deltaTime = now - lastSaved; // ms
         if (deltaTime <= 0) return;
         const deltaSeconds = deltaTime / 1000;
 
-        set((state) => {
-          const energyToAdd = state.energyRegenRate * deltaSeconds;
-          return {
-            scrap: state.scrap + state.scrapPerSecond * deltaSeconds,
-            currentEnergy: Math.min(
-              maxEnergy,
-              Math.max(0, state.currentEnergy + energyToAdd),
-            ),
-            energy: Math.min(
-              ECONOMY.MAX_MECHANIC_ENERGY,
-              state.energy + ECONOMY.MECHANIC_ENERGY_REGEN_PER_SECOND * deltaSeconds,
-            ),
-            lastSaved: now,
-          };
-        });
+        set((state) => ({
+          scrap: state.scrap + state.scrapPerSecond * deltaSeconds,
+          energy: Math.min(
+            ECONOMY.MAX_ENERGY,
+            state.energy + ECONOMY.ENERGY_REGEN_PER_SECOND * deltaSeconds,
+          ),
+          lastSaved: now,
+        }));
       },
 
       addScrap: (amount) => set((state) => ({ scrap: state.scrap + amount })),
@@ -231,7 +203,7 @@ export const useGameStore = create<GameStore>()(
 
       mergeParts: (draggedIndex, targetIndex) => {
         if (draggedIndex === targetIndex) return null;
-        const { inventory, energy } = get();
+        const { inventory, energy, installedUpgrades, pendingCalibrationPart } = get();
         const dragged = inventory[draggedIndex];
         const target = inventory[targetIndex];
         if (!dragged || !target) return null;
@@ -245,7 +217,21 @@ export const useGameStore = create<GameStore>()(
           ECONOMY.MAX_PART_LEVEL,
           dragged.level + (isCrit ? 2 : 1),
         );
-        const merged = createPart(newLevel);
+
+        let merged: Part;
+        if (newLevel >= ECONOMY.MAX_PART_LEVEL) {
+          // A brand-new Lv.4 part needs a perk that isn't already installed or already
+          // sitting on another Lv.4 part in play, so all 3 upgrade slots stay reachable.
+          const usedPerks = [
+            ...installedUpgrades,
+            ...inventory.flatMap((part) => (part?.perk ? [part.perk] : [])),
+            ...(pendingCalibrationPart?.perk ? [pendingCalibrationPart.perk] : []),
+          ];
+          merged = createPart(newLevel, usedPerks);
+        } else {
+          merged = createPart(newLevel);
+        }
+
         if (isCrit) {
           console.log(
             `[Garage] Merge crit! Jumped straight to Lv.${newLevel} (${merged.name}).`,
@@ -284,30 +270,38 @@ export const useGameStore = create<GameStore>()(
         if (success) {
           const perk = pendingCalibrationPart.perk;
           set((state) => {
-            if (perk === 'Nitro Core') {
+            const installedUpgrades = perk
+              ? [...state.installedUpgrades, perk]
+              : state.installedUpgrades;
+
+            if (perk === 'Quantum Injector') {
               return {
                 pendingCalibrationPart: null,
-                scrapPerSecond: state.scrapPerSecond + ECONOMY.NITRO_CORE_SCRAP_PER_SECOND,
+                installedUpgrades,
+                scrapPerSecond:
+                  state.scrapPerSecond + ECONOMY.QUANTUM_INJECTOR_SCRAP_PER_SECOND,
               };
             }
-            if (perk === 'EMP Charge') {
+            if (perk === 'Neuro-Optimizer') {
               return {
                 pendingCalibrationPart: null,
-                critChance: state.critChance + ECONOMY.EMP_CHARGE_CRIT_CHANCE_BOOST,
+                installedUpgrades,
+                critChance: state.critChance + ECONOMY.NEURO_OPTIMIZER_CRIT_CHANCE_BOOST,
               };
             }
-            if (perk === 'Quantum Armor') {
-              const newMaxHp = state.car.maxHp + ECONOMY.QUANTUM_ARMOR_MAX_HP_BOOST;
+            if (perk === 'Syndicate Transponder') {
+              const boost = ECONOMY.SYNDICATE_TRANSPONDER_MAX_HP_BOOST;
               return {
                 pendingCalibrationPart: null,
+                installedUpgrades,
                 car: {
                   ...state.car,
-                  maxHp: newMaxHp,
-                  hp: state.car.hp + ECONOMY.QUANTUM_ARMOR_MAX_HP_BOOST,
+                  maxHp: state.car.maxHp + boost,
+                  hp: state.car.hp + boost,
                 },
               };
             }
-            return { pendingCalibrationPart: null };
+            return { pendingCalibrationPart: null, installedUpgrades };
           });
           return;
         }
@@ -321,54 +315,27 @@ export const useGameStore = create<GameStore>()(
       },
 
       handleTap: () => {
-        const { currentEnergy, scrapPerClick, critChance, critMultiplier } = get();
-        if (currentEnergy <= 0) return null;
-
+        const { scrapPerClick, critChance, critMultiplier } = get();
         const isCrit = Math.random() < critChance;
         const amount = isCrit ? scrapPerClick * critMultiplier : scrapPerClick;
-
-        set((state) => ({
-          scrap: state.scrap + amount,
-          currentEnergy: Math.max(
-            0,
-            state.currentEnergy - ECONOMY.ENERGY_COST_PER_TAP,
-          ),
-        }));
+        set((state) => ({ scrap: state.scrap + amount }));
         return { isCrit, amount };
       },
 
-      buyUpgrade: (id) => {
-        const { upgrades, scrap } = get();
-        const upgrade = upgrades.find((u) => u.id === id);
-        if (!upgrade || scrap < upgrade.cost) return false;
+      tradeInCar: () => {
+        const { installedUpgrades, carTier } = get();
+        if (installedUpgrades.length < 3) return;
 
         set((state) => ({
-          scrap: state.scrap - upgrade.cost,
-          ...(upgrade.effect === 'scrapPerSecond' && {
-            scrapPerSecond: state.scrapPerSecond + upgrade.boost,
-          }),
-          ...(upgrade.effect === 'scrapPerClick' && {
-            scrapPerClick: state.scrapPerClick + upgrade.boost,
-          }),
-          ...(upgrade.effect === 'maxEnergy' && {
-            maxEnergy: state.maxEnergy + upgrade.boost,
-          }),
-          upgrades: state.upgrades.map((u) =>
-            u.id === id
-              ? {
-                  ...u,
-                  owned: u.owned + 1,
-                  cost: Math.round(u.cost * ECONOMY.UPGRADE_COST_MULTIPLIER),
-                }
-              : u,
-          ),
+          installedUpgrades: [],
+          carTier: state.carTier + 1,
+          car: { ...state.car, name: `Rustbucket Mk ${carTier + 1}` },
         }));
-        return true;
       },
 
       applyOfflineProgress: () => {
         const now = Date.now();
-        const { lastSaved, scrapPerSecond, energyRegenRate, maxEnergy } = get();
+        const { lastSaved, scrapPerSecond } = get();
         const elapsedSeconds = Math.min(
           Math.max(0, (now - lastSaved) / 1000),
           ECONOMY.MAX_OFFLINE_SECONDS,
@@ -382,13 +349,9 @@ export const useGameStore = create<GameStore>()(
 
         set((state) => ({
           scrap: state.scrap + earnedScrap,
-          currentEnergy: Math.min(
-            maxEnergy,
-            Math.max(0, state.currentEnergy + elapsedSeconds * energyRegenRate),
-          ),
           energy: Math.min(
-            ECONOMY.MAX_MECHANIC_ENERGY,
-            state.energy + elapsedSeconds * ECONOMY.MECHANIC_ENERGY_REGEN_PER_SECOND,
+            ECONOMY.MAX_ENERGY,
+            state.energy + elapsedSeconds * ECONOMY.ENERGY_REGEN_PER_SECOND,
           ),
           lastSaved: now,
           offlineEarnings:
@@ -399,46 +362,6 @@ export const useGameStore = create<GameStore>()(
       },
 
       dismissOfflineEarnings: () => set({ offlineEarnings: null }),
-
-      reconcileUpgrades: () => {
-        set((state) => {
-          const blueprintById = new Map<string, (typeof UPGRADE_BLUEPRINTS)[number]>(
-            UPGRADE_BLUEPRINTS.map((blueprint) => [blueprint.id, blueprint]),
-          );
-
-          // Drop upgrades that were retired from the blueprint (e.g. Magnetic Harvester),
-          // and re-sync static metadata (name/effect/boost) for the rest so a balance
-          // patch applies even to saves made before that blueprint existed — only
-          // `cost`/`owned` (actual player progress) come from the save. Any stat boost a
-          // retired upgrade already granted stays intact, since it lives in scrapPerSecond
-          // etc. directly, not derived from this array.
-          const migrated = state.upgrades
-            .filter((upgrade) => blueprintById.has(upgrade.id))
-            .map((upgrade) => {
-              const blueprint = blueprintById.get(upgrade.id)!;
-              return {
-                ...upgrade,
-                name: blueprint.name,
-                effect: blueprint.effect,
-                boost: blueprint.boost,
-              };
-            });
-
-          const existingIds = new Set(migrated.map((u) => u.id));
-          const missing = UPGRADE_BLUEPRINTS.filter(
-            (blueprint) => !existingIds.has(blueprint.id),
-          ).map((blueprint) => ({
-            id: blueprint.id,
-            name: blueprint.name,
-            cost: blueprint.baseCost,
-            effect: blueprint.effect,
-            boost: blueprint.boost,
-            owned: 0,
-          }));
-
-          return { upgrades: [...migrated, ...missing] };
-        });
-      },
     }),
     {
       name: STORAGE_KEY,
@@ -449,7 +372,6 @@ export const useGameStore = create<GameStore>()(
         return persisted;
       },
       onRehydrateStorage: () => (state) => {
-        state?.reconcileUpgrades();
         state?.applyOfflineProgress();
       },
     },

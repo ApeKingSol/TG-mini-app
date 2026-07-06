@@ -19,39 +19,27 @@ export interface Part {
   perk?: PartPerk;
 }
 
-/** Which player stat an upgrade purchase increases. */
-export type UpgradeEffect = 'scrapPerSecond' | 'scrapPerClick' | 'maxEnergy';
-
-export interface Upgrade {
-  id: string;
-  name: string;
-  /** Scrap cost of the next purchase; escalates each time this upgrade is bought. */
-  cost: number;
-  effect: UpgradeEffect;
-  /** Added to the stat named by `effect` per unit owned. */
-  boost: number;
-  owned: number;
-}
-
 export interface PlayerState {
   scrap: number;
   neon: number;
   car: CarState;
+  /** Which trade-in generation the current car is — starts at 1, +1 each successful trade-in. */
+  carTier: number;
   /** Fixed-size 8-slot merge grid; `null` marks an empty socket. */
   inventory: (Part | null)[];
   /** How many parts have been bought via `buyPart`, driving the exponential cost ramp. Starting parts don't count. */
   totalPartsBought: number;
-  /** The Garage's separate "Mechanic Focus" energy pool (0-MAX_MECHANIC_ENERGY), spent on merges — distinct from the tap Energy used in the Junkyard. */
+  /** Energy (0-MAX_ENERGY), spent exclusively on Garage merges. The Junkyard tap loop
+   * neither consumes nor displays this. */
   energy: number;
   /** The Lv.4 part currently pulled out of inventory and undergoing Anti-Stall calibration on the car, if any. */
   pendingCalibrationPart: Part | null;
+  /** The perks already installed on the current car via successful calibration — exactly 3
+   * distinct values possible. Once all 3 are present the car is "MASTERED" and ready to
+   * trade in; resets to empty on trade-in. */
+  installedUpgrades: PartPerk[];
   scrapPerClick: number;
   scrapPerSecond: number;
-  upgrades: Upgrade[];
-  maxEnergy: number;
-  currentEnergy: number;
-  /** Added to currentEnergy per second, applied in the same tick as passive Scrap. */
-  energyRegenRate: number;
   /** Chance (0–1) that a tap is a critical hit, awarding scrapPerClick * critMultiplier instead. */
   critChance: number;
   critMultiplier: number;

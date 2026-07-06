@@ -25,30 +25,23 @@ export const ECONOMY = {
    * a real Scrap sink instead of trivially stockpiling merge fodder late-game. */
   PART_BUY_COST_MULTIPLIER: 1.12,
 
-  /** Max value of the Garage's separate "Mechanic Focus" energy pool, spent on merges. */
-  MAX_MECHANIC_ENERGY: 100,
-  /** Added to Mechanic Focus per second — much slower than tap Energy, since a merge is a
-   * much rarer, more deliberate action than a tap. */
-  MECHANIC_ENERGY_REGEN_PER_SECOND: 1,
-  /** Mechanic Focus spent per merge attempt. */
-  MERGE_ENERGY_COST: 5,
+  /** Max value of Energy — used exclusively by the Garage merge grid. The Junkyard's tap
+   * loop doesn't touch this at all; taps are free. */
+  MAX_ENERGY: 1000,
+  /** Added to Energy per second. Deliberately slow relative to the 50-per-merge cost, so
+   * merging stays a deliberate, rate-limited action rather than something to spam. */
+  ENERGY_REGEN_PER_SECOND: 1,
+  /** Energy spent per merge attempt. */
+  MERGE_ENERGY_COST: 50,
   /** Chance (0-1) a merge crits, jumping the result an extra tier above normal. */
   MERGE_CRIT_CHANCE: 0.05,
 
-  /** Nitro Core perk: permanent scrapPerSecond granted on a successful install. */
-  NITRO_CORE_SCRAP_PER_SECOND: 5.0,
-  /** EMP Charge perk: permanent boost to tap critChance on a successful install. */
-  EMP_CHARGE_CRIT_CHANCE_BOOST: 0.05,
-  /** Quantum Armor perk: permanent boost to the car's max HP (and an equal heal) on install. */
-  QUANTUM_ARMOR_MAX_HP_BOOST: 50,
-
-  /** Each upgrade purchase multiplies its own next cost by this factor. */
-  UPGRADE_COST_MULTIPLIER: 1.15,
-
-  STARTING_MAX_ENERGY: 1000,
-  ENERGY_COST_PER_TAP: 1,
-  /** Added to currentEnergy per second, same cadence as passive Scrap. */
-  ENERGY_REGEN_PER_SECOND: 5,
+  /** Quantum Injector perk: permanent scrapPerSecond granted on a successful install. */
+  QUANTUM_INJECTOR_SCRAP_PER_SECOND: 5.0,
+  /** Neuro-Optimizer perk: permanent boost to tap critChance on a successful install. */
+  NEURO_OPTIMIZER_CRIT_CHANCE_BOOST: 0.05,
+  /** Syndicate Transponder perk: permanent boost to the car's max HP (and an equal heal) on install. */
+  SYNDICATE_TRANSPONDER_MAX_HP_BOOST: 50,
 
   /** Chance (0-1) that a tap lands as a critical hit. */
   STARTING_CRIT_CHANCE: 0.1,
@@ -80,18 +73,12 @@ export const ANTI_STALL = {
   RPM_INCREASE_PER_SECOND: 35,
   /** How fast RPM falls per second once the pedal is released (and hasn't stalled). */
   RPM_DECREASE_PER_SECOND: 25,
+  /** Caps the per-frame deltaSeconds fed into the RPM calculation. iOS Safari can briefly
+   * pause rAF while it decides whether a touch is a tap/scroll/gesture; without this cap,
+   * the next frame's huge delta would teleport the needle straight to 0 or 100 instead of
+   * moving smoothly. */
+  MAX_FRAME_DELTA_SECONDS: 0.1,
 } as const;
-
-/**
- * Starting blueprint for upgrades; the store seeds its `upgrades` array from this.
- * Kept to exactly 3 entries — one lever per playstyle (passive / active tap / energy pool) —
- * to keep the upgrade loop legible rather than a wall of redundant passive-income cards.
- */
-export const UPGRADE_BLUEPRINTS = [
-  { id: 'scrap-drone', name: 'Scrap Drone', baseCost: 25, effect: 'scrapPerSecond', boost: 0.2 },
-  { id: 'plasma-multitool', name: 'Plasma Multi-tool', baseCost: 100, effect: 'scrapPerClick', boost: 1 },
-  { id: 'expanded-battery', name: 'Expanded Battery', baseCost: 200, effect: 'maxEnergy', boost: 100 },
-] as const;
 
 /** Tuning for the Toll Roads race loop. */
 export const RACE = {

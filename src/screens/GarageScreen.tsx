@@ -15,21 +15,25 @@ import { PartSlot } from '../components/PartSlot';
 import { Tachometer } from '../components/Tachometer';
 import { useEngineAudio } from '../hooks/useEngineAudio';
 import { ECONOMY, ANTI_STALL, getPartBuyCost } from '../game/config/economy';
-import { getPartTier, PERK_DESCRIPTIONS, type PartPerk } from '../game/config/parts';
+import { getPartTier, PERK_DESCRIPTIONS, PART_PERKS, type PartPerk } from '../game/config/parts';
 
 const CAR_INSTALLATION_ZONE_ID = 'car-installation-zone';
 
 export function GarageScreen() {
   const scrap = useGameStore((state) => state.scrap);
+  const car = useGameStore((state) => state.car);
+  const carTier = useGameStore((state) => state.carTier);
   const inventory = useGameStore((state) => state.inventory);
   const totalPartsBought = useGameStore((state) => state.totalPartsBought);
   const energy = useGameStore((state) => state.energy);
+  const installedUpgrades = useGameStore((state) => state.installedUpgrades);
   const buyPart = useGameStore((state) => state.buyPart);
   const movePart = useGameStore((state) => state.movePart);
   const mergeParts = useGameStore((state) => state.mergeParts);
   const pendingCalibrationPart = useGameStore((state) => state.pendingCalibrationPart);
   const startCalibration = useGameStore((state) => state.startCalibration);
   const completeCalibration = useGameStore((state) => state.completeCalibration);
+  const tradeInCar = useGameStore((state) => state.tradeInCar);
 
   const [justMergedId, setJustMergedId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; variant: 'error' | 'success' } | null>(
@@ -37,6 +41,7 @@ export function GarageScreen() {
   );
   const partCost = getPartBuyCost(totalPartsBought);
   const canBuyPart = scrap >= partCost && inventory.some((slot) => slot === null);
+  const isMastered = installedUpgrades.length >= PART_PERKS.length;
 
   // PointerSensor alone covers mouse, touch, and pen — dnd-kit's own guidance is to avoid
   // layering a separate TouchSensor/MouseSensor on top, since they'd react to the same
@@ -55,7 +60,7 @@ export function GarageScreen() {
     const perk = pendingCalibrationPart?.perk;
     completeCalibration(success);
     if (success && perk) {
-      showToast(`Perk unlocked — ${perk}: ${PERK_DESCRIPTIONS[perk]}`, 'success');
+      showToast(`Upgrade installed — ${perk}: ${PERK_DESCRIPTIONS[perk]}`, 'success');
     }
   };
 
@@ -84,7 +89,7 @@ export function GarageScreen() {
     const target = inventory[targetIndex];
     if (target && target.level === dragged.level && dragged.level < ECONOMY.MAX_PART_LEVEL) {
       if (energy < ECONOMY.MERGE_ENERGY_COST) {
-        showToast(`Not enough Mechanic Focus to merge (-${ECONOMY.MERGE_ENERGY_COST}).`);
+        showToast(`Not enough energy to merge (-${ECONOMY.MERGE_ENERGY_COST}).`);
         return;
       }
       const result = mergeParts(draggedIndex, targetIndex);
@@ -109,69 +114,75 @@ export function GarageScreen() {
       className="flex flex-col gap-4 pt-4"
     >
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <CarInstallationZone />
+        <CarInstallationZone carName={car.name} carTier={carTier} />
 
-        <AnimatePresence>
-          {pendingCalibrationPart && (
-            <AntiStallCalibrationPanel
-              partLevel={pendingCalibrationPart.level}
-              perk={pendingCalibrationPart.perk}
-              onComplete={handleCalibrationComplete}
-            />
-          )}
-        </AnimatePresence>
+        {isMastered ? (
+          <TradeInPanel installedUpgrades={installedUpgrades} onTradeIn={tradeInCar} />
+        ) : (
+          <>
+            <AnimatePresence>
+              {pendingCalibrationPart && (
+                <AntiStallCalibrationPanel
+                  partLevel={pendingCalibrationPart.level}
+                  perk={pendingCalibrationPart.perk}
+                  onComplete={handleCalibrationComplete}
+                />
+              )}
+            </AnimatePresence>
 
-        <div className="rounded-xl border border-neutral-800 bg-bg-panel p-4">
-          <div className="flex items-center justify-between">
-            <p className="text-xs uppercase tracking-widest text-neutral-500">
-              Merge Grid
-            </p>
-            <motion.button
-              type="button"
-              onClick={buyPart}
-              disabled={!canBuyPart}
-              whileHover={canBuyPart ? { scale: 1.05 } : undefined}
-              whileTap={canBuyPart ? { scale: 0.95 } : undefined}
-              className="rounded-md border border-neutral-700 px-2 py-1 text-xs text-neutral-300 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              Buy Part (-{partCost})
-            </motion.button>
-          </div>
-          <p className="mt-1 text-xs text-neutral-600">
-            Drag a part onto a matching part to merge it up a tier ({ECONOMY.MERGE_ENERGY_COST}{' '}
-            Focus). Drag a Lv.{ECONOMY.MAX_PART_LEVEL} part onto the car to install it.
-          </p>
+            <div className="rounded-xl border border-neutral-800 bg-bg-panel p-4">
+              <div className="flex items-center justify-between">
+                <p className="text-xs uppercase tracking-widest text-neutral-500">
+                  Merge Grid
+                </p>
+                <motion.button
+                  type="button"
+                  onClick={buyPart}
+                  disabled={!canBuyPart}
+                  whileHover={canBuyPart ? { scale: 1.05 } : undefined}
+                  whileTap={canBuyPart ? { scale: 0.95 } : undefined}
+                  className="rounded-md border border-neutral-700 px-2 py-1 text-xs text-neutral-300 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Buy Part (-{partCost})
+                </motion.button>
+              </div>
+              <p className="mt-1 text-xs text-neutral-600">
+                Drag a part onto a matching part to merge it up a tier ({ECONOMY.MERGE_ENERGY_COST}{' '}
+                Energy). Drag a Lv.{ECONOMY.MAX_PART_LEVEL} part onto the car to install it.
+              </p>
 
-          <div className="mt-3">
-            <div className="mb-1 flex items-center justify-between text-xs text-neutral-500">
-              <span className="flex items-center gap-1">
-                <Zap className="h-3 w-3 text-neon-magenta" strokeWidth={2} />
-                Mechanic Focus
-              </span>
-              <span className="tabular-nums">
-                {Math.floor(energy)} / {ECONOMY.MAX_MECHANIC_ENERGY}
-              </span>
+              <div className="mt-3">
+                <div className="mb-1 flex items-center justify-between text-xs text-neutral-500">
+                  <span className="flex items-center gap-1">
+                    <Zap className="h-3 w-3 text-neon-magenta" strokeWidth={2} />
+                    Energy
+                  </span>
+                  <span className="tabular-nums">
+                    {Math.floor(energy)} / {ECONOMY.MAX_ENERGY}
+                  </span>
+                </div>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-neutral-800">
+                  <motion.div
+                    className="h-full rounded-full bg-gradient-to-r from-neon-magenta to-neon-cyan"
+                    animate={{ width: `${(energy / ECONOMY.MAX_ENERGY) * 100}%` }}
+                    transition={{ duration: 0.3, ease: 'easeOut' }}
+                  />
+                </div>
+              </div>
+
+              <div className="mt-3 grid grid-cols-4 gap-3">
+                {inventory.map((part, index) => (
+                  <PartSlot
+                    key={index}
+                    index={index}
+                    part={part}
+                    justMerged={part?.id === justMergedId}
+                  />
+                ))}
+              </div>
             </div>
-            <div className="h-2 w-full overflow-hidden rounded-full bg-neutral-800">
-              <motion.div
-                className="h-full rounded-full bg-gradient-to-r from-neon-magenta to-neon-cyan"
-                animate={{ width: `${(energy / ECONOMY.MAX_MECHANIC_ENERGY) * 100}%` }}
-                transition={{ duration: 0.3, ease: 'easeOut' }}
-              />
-            </div>
-          </div>
-
-          <div className="mt-3 grid grid-cols-4 gap-3">
-            {inventory.map((part, index) => (
-              <PartSlot
-                key={index}
-                index={index}
-                part={part}
-                justMerged={part?.id === justMergedId}
-              />
-            ))}
-          </div>
-        </div>
+          </>
+        )}
       </DndContext>
 
       <AnimatePresence>
@@ -198,7 +209,12 @@ export function GarageScreen() {
   );
 }
 
-function CarInstallationZone() {
+interface CarInstallationZoneProps {
+  carName: string;
+  carTier: number;
+}
+
+function CarInstallationZone({ carName, carTier }: CarInstallationZoneProps) {
   const { setNodeRef, isOver } = useDroppable({ id: CAR_INSTALLATION_ZONE_ID });
 
   return (
@@ -209,18 +225,75 @@ function CarInstallationZone() {
     // drop-zone feedback without touching anything inside the car's silhouette.
     <div
       ref={setNodeRef}
-      className={`rounded-xl border p-4 transition-colors ${
+      className={`overflow-hidden rounded-xl border p-4 transition-colors ${
         isOver ? 'border-neon-cyan/70' : 'border-neutral-800'
       }`}
     >
-      <motion.img
-        src="/car-base.webp"
-        alt="Cyber Car"
-        animate={{ y: [0, -6, 0] }}
-        transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-        className="mx-auto w-full max-w-sm object-contain"
-      />
+      <p className="mb-1 text-center text-xs uppercase tracking-widest text-neutral-500">
+        {carName}
+      </p>
+      {/* Keyed on carTier so a trade-in re-triggers this AnimatePresence: the outgoing car
+         drives off to the right while the new one drops in from the top. The outer element
+         owns that one-shot enter/exit transform; the inner motion.img owns the perpetual
+         idle bob independently, so the two animations don't fight over the same transform. */}
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={carTier}
+          initial={{ y: '-140%', opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ x: '130%', opacity: 0 }}
+          transition={{ duration: 0.6, ease: 'easeInOut' }}
+        >
+          <motion.img
+            src="/car-base.webp"
+            alt="Cyber Car"
+            animate={{ y: [0, -6, 0] }}
+            transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+            className="mx-auto w-full max-w-sm object-contain"
+          />
+        </motion.div>
+      </AnimatePresence>
     </div>
+  );
+}
+
+interface TradeInPanelProps {
+  installedUpgrades: PartPerk[];
+  onTradeIn: () => void;
+}
+
+function TradeInPanel({ installedUpgrades, onTradeIn }: TradeInPanelProps) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className="flex flex-col items-center gap-4 rounded-xl border border-neon-cyan/40 bg-bg-panel p-6 text-center"
+    >
+      <p className="font-display text-lg font-bold tracking-wide text-neon-cyan drop-shadow-[0_0_10px_rgba(0,240,255,0.7)]">
+        CAR MASTERED
+      </p>
+      <div className="flex flex-col gap-1 text-sm text-neutral-400">
+        {installedUpgrades.map((perk) => (
+          <span key={perk}>✓ {perk}</span>
+        ))}
+      </div>
+      <motion.button
+        type="button"
+        onClick={onTradeIn}
+        animate={{
+          boxShadow: [
+            '0 0 20px 4px rgba(0,240,255,0.4)',
+            '0 0 32px 8px rgba(0,240,255,0.7)',
+            '0 0 20px 4px rgba(0,240,255,0.4)',
+          ],
+        }}
+        transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
+        whileTap={{ scale: 0.96 }}
+        className="w-full rounded-full border-2 border-neon-cyan bg-neon-cyan/10 px-6 py-4 font-display text-base font-extrabold tracking-wide text-neon-cyan"
+      >
+        CONTACT SYNDICATE (TRADE-IN)
+      </motion.button>
+    </motion.div>
   );
 }
 
@@ -245,18 +318,27 @@ function AntiStallCalibrationPanel({ partLevel, perk, onComplete }: AntiStallCal
   const [isHolding, setIsHolding] = useState(false);
   const [stallFlash, setStallFlash] = useState(false);
 
+  // Refs, not the React state above, drive the rAF physics loop and the release check —
+  // iOS Safari can batch/delay the state updates from touch events by a frame or more,
+  // which previously let the rAF loop read a stale `isHolding` and made the RPM needle
+  // teleport. Refs are updated synchronously in the event handler itself, so the very next
+  // animation frame always sees the true pressed/released state.
   const rpmRef = useRef(0);
   const calibrationProgressRef = useRef(0);
   const isHoldingRef = useRef(false);
   const hasResolvedRef = useRef(false);
   const rafRef = useRef<number | null>(null);
   const lastFrameTimeRef = useRef<number | null>(null);
-  const releaseListenerRef = useRef<(() => void) | null>(null);
+  const handleReleaseRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     const step = (timestamp: number) => {
       if (lastFrameTimeRef.current === null) lastFrameTimeRef.current = timestamp;
-      const deltaSeconds = (timestamp - lastFrameTimeRef.current) / 1000;
+      // Capped so a stalled rAF (iOS can briefly pause it while it decides whether a touch
+      // is a tap/scroll/gesture) can't feed one huge deltaSeconds into the physics and
+      // teleport the needle straight to 0 or 100 on the next frame.
+      const rawDeltaSeconds = (timestamp - lastFrameTimeRef.current) / 1000;
+      const deltaSeconds = Math.min(rawDeltaSeconds, ANTI_STALL.MAX_FRAME_DELTA_SECONDS);
       lastFrameTimeRef.current = timestamp;
 
       const rate = isHoldingRef.current
@@ -291,32 +373,21 @@ function AntiStallCalibrationPanel({ partLevel, perk, onComplete }: AntiStallCal
     rafRef.current = requestAnimationFrame(step);
     return () => {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
-      if (releaseListenerRef.current) {
-        window.removeEventListener('pointerup', releaseListenerRef.current);
-        window.removeEventListener('pointercancel', releaseListenerRef.current);
-      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Release detection is deliberately NOT based on pointer capture / pointerleave: both
-  // fire (or fail to fire) based on the pointer's physical position relative to the
-  // button's live bounds, which shift every frame because the button scales while held.
-  // A window-level listener sidesteps that entirely — "did the pointer go up anywhere on
-  // the page" is unambiguous and identical across desktop, Android, and iOS.
-  const handlePointerDown = () => {
-    if (hasResolvedRef.current) return;
-    isHoldingRef.current = true;
-    setIsHolding(true);
-    playRevSound();
-
-    const release = () => {
+  // The release handler is registered on `window` ONCE for the whole life of this
+  // component (not re-added per press), and is itself idempotent — real touchscreens fire
+  // both a `pointerup`/`pointercancel` AND a `touchend`/`touchcancel` for the same physical
+  // release, so both must be safe to call back-to-back without double-processing.
+  // `handleReleaseRef` always points at the latest closure so the listener never goes stale.
+  useEffect(() => {
+    handleReleaseRef.current = () => {
+      if (!isHoldingRef.current) return; // already processed this release
       isHoldingRef.current = false;
       setIsHolding(false);
       stopRevSound();
-      window.removeEventListener('pointerup', release);
-      window.removeEventListener('pointercancel', release);
-      releaseListenerRef.current = null;
 
       if (hasResolvedRef.current) return;
       const inZone =
@@ -324,17 +395,38 @@ function AntiStallCalibrationPanel({ partLevel, perk, onComplete }: AntiStallCal
         rpmRef.current <= ANTI_STALL.TARGET_ZONE_MAX;
       if (!inZone) {
         // Releasing outside the Green Zone stalls the engine instantly — this is the
-        // entire "catch" of Anti-Stall calibration, so it fires the instant the pointer
-        // lifts rather than waiting for the next animation frame.
+        // entire "catch" of Anti-Stall calibration.
         hasResolvedRef.current = true;
         playStallSound();
         setStallFlash(true);
         window.setTimeout(() => onComplete(false), 400);
       }
     };
-    releaseListenerRef.current = release;
+  });
+
+  useEffect(() => {
+    const release = () => handleReleaseRef.current();
     window.addEventListener('pointerup', release);
     window.addEventListener('pointercancel', release);
+    window.addEventListener('touchend', release);
+    window.addEventListener('touchcancel', release);
+    return () => {
+      window.removeEventListener('pointerup', release);
+      window.removeEventListener('pointercancel', release);
+      window.removeEventListener('touchend', release);
+      window.removeEventListener('touchcancel', release);
+    };
+  }, []);
+
+  // Shared by onPointerDown and onTouchStart — guarded by isHoldingRef so a real touch
+  // device firing both events for the same press doesn't double-trigger (e.g. double
+  // restarting the rev sound).
+  const handlePressStart = (event: React.SyntheticEvent) => {
+    event.preventDefault();
+    if (hasResolvedRef.current || isHoldingRef.current) return;
+    isHoldingRef.current = true;
+    setIsHolding(true);
+    playRevSound();
   };
 
   return (
@@ -392,7 +484,8 @@ function AntiStallCalibrationPanel({ partLevel, perk, onComplete }: AntiStallCal
       <div className="mt-4 flex items-center justify-center">
         <motion.button
           type="button"
-          onPointerDown={handlePointerDown}
+          onPointerDown={handlePressStart}
+          onTouchStart={handlePressStart}
           onContextMenu={(event) => event.preventDefault()}
           animate={isHolding ? { scale: 1.05 } : { scale: [1, 1.04, 1] }}
           transition={

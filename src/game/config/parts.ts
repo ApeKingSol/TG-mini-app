@@ -41,17 +41,27 @@ export function getPartTier(level: number): PartTier {
 }
 
 /** Assigned to a part once it reaches Max Level, and unlocked permanently when that part is
- * successfully calibrated on the car. */
-export type PartPerk = 'EMP Charge' | 'Nitro Core' | 'Quantum Armor';
+ * successfully calibrated on the car. There are exactly 3 — once all 3 are installed on a
+ * car (`installedUpgrades.length === 3`), that car is "MASTERED" and ready for trade-in. */
+export type PartPerk = 'Neuro-Optimizer' | 'Quantum Injector' | 'Syndicate Transponder';
 
-export const PART_PERKS: PartPerk[] = ['EMP Charge', 'Nitro Core', 'Quantum Armor'];
+export const PART_PERKS: PartPerk[] = [
+  'Neuro-Optimizer',
+  'Quantum Injector',
+  'Syndicate Transponder',
+];
 
 export const PERK_DESCRIPTIONS: Record<PartPerk, string> = {
-  'EMP Charge': '+5% permanent Tap Crit Chance',
-  'Nitro Core': '+5.0 permanent Scrap/sec',
-  'Quantum Armor': '+50 permanent Max Car HP',
+  'Neuro-Optimizer': '+5% permanent Tap Crit Chance',
+  'Quantum Injector': '+5.0 permanent Scrap/sec',
+  'Syndicate Transponder': '+50 permanent Max Car HP',
 };
 
-export function rollPartPerk(): PartPerk {
-  return PART_PERKS[Math.floor(Math.random() * PART_PERKS.length)];
+/** Rolls a perk, excluding any already installed or already sitting on another Lv.4 part —
+ * with only 3 possible perks and exactly 3 upgrade slots per car, a duplicate would either
+ * waste a calibration or make "MASTERED" unreachable. */
+export function rollPartPerk(excluding: PartPerk[] = []): PartPerk {
+  const available = PART_PERKS.filter((perk) => !excluding.includes(perk));
+  const pool = available.length > 0 ? available : PART_PERKS;
+  return pool[Math.floor(Math.random() * pool.length)];
 }
