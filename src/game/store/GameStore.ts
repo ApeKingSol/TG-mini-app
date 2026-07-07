@@ -116,6 +116,29 @@ function createStartingUpgrades(): Upgrade[] {
   }));
 }
 
+/** Re-syncs a persisted `upgrades` array against the current UPGRADE_BLUEPRINTS list, run on
+ * every rehydrate. Without this, a save made before an upgrade was added or retired keeps
+ * showing whatever it had at save time forever — `createStartingUpgrades` only ever runs for
+ * a brand-new store, never for an existing one. Retiring an id here only drops it from this
+ * list; any stat boost it already granted (scrapPerSecond, maxEnergy, ...) stays intact,
+ * since that lives directly on the player state, not derived from this array. */
+function reconcileUpgrades(upgrades: Upgrade[]): Upgrade[] {
+  const blueprintById = new Map(UPGRADE_BLUEPRINTS.map((blueprint) => [blueprint.id, blueprint]));
+  const kept = upgrades.filter((upgrade) => blueprintById.has(upgrade.id));
+  const keptIds = new Set(kept.map((upgrade) => upgrade.id));
+  const added = UPGRADE_BLUEPRINTS.filter((blueprint) => !keptIds.has(blueprint.id)).map(
+    (blueprint) => ({
+      id: blueprint.id,
+      name: blueprint.name,
+      cost: blueprint.baseCost,
+      effect: blueprint.effect,
+      boost: blueprint.boost,
+      owned: 0,
+    }),
+  );
+  return [...kept, ...added];
+}
+
 /** Applies however many whole ENERGY_REGEN_INTERVAL_SECONDS chunks have elapsed since the
  * last regen tick, advancing the regen clock by exactly that much (not to `now`) so the
  * countdown stays phase-aligned instead of drifting. Left untouched while already at
@@ -421,6 +444,7 @@ export const useGameStore = create<GameStore>()(
             ...(correctName !== state.car.name && { car: { ...state.car, name: correctName } }),
             energy: regen.energy,
             lastEnergyRegenAt: regen.lastEnergyRegenAt,
+            upgrades: reconcileUpgrades(state.upgrades),
           };
         });
 

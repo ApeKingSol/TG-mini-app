@@ -636,9 +636,14 @@ function AntiStallCalibrationPanel({ partLevel, perk, onComplete }: AntiStallCal
              repaints while a touch is actively held, which is almost certainly why this bar
              specifically stopped updating on iPhone even after the RPM/needle math (already
              on a transform-only path) was fixed. `transform-gpu` promotes this to its own
-             compositor layer so it keeps updating independently of main-thread paint. */}
+             compositor layer so it keeps updating independently of main-thread paint.
+             Deliberately no CSS transition here (matches the Tachometer's needle, which also
+             snaps instantly): `step()` already writes a fresh, time-correct value every rAF
+             frame, so layering a 100ms eased transition on top just makes the bar chase a
+             perpetually-stale target — worse the sparser rAF fires, which is exactly what
+             made it look laggy on iOS. */}
           <div
-            className="h-full w-full origin-left transform-gpu rounded-full bg-neon-cyan shadow-[0_0_8px_rgba(0,240,255,0.6)] transition-transform duration-100 ease-linear"
+            className="h-full w-full origin-left transform-gpu rounded-full bg-neon-cyan shadow-[0_0_8px_rgba(0,240,255,0.6)]"
             style={{ transform: `scaleX(${calibrationProgress / 100})` }}
           />
         </div>
