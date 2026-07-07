@@ -70,6 +70,8 @@ export const ECONOMY = {
  * straightforward, repeatable Scrap sink for incremental tap/passive gains.
  */
 export const UPGRADE_BLUEPRINTS = [
+  { id: 'rusty-clicker', name: 'Rusty Clicker', baseCost: 25, effect: 'scrapPerClick', boost: 1 },
+  { id: 'auto-scrapper', name: 'Auto-Scrapper', baseCost: 50, effect: 'scrapPerSecond', boost: 2 },
   { id: 'expanded-battery', name: 'Expanded Battery', baseCost: 200, effect: 'maxEnergy', boost: 200 },
 ] as const;
 
