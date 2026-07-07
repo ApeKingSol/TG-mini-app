@@ -631,9 +631,15 @@ function AntiStallCalibrationPanel({ partLevel, perk, onComplete }: AntiStallCal
           <span className="tabular-nums">{Math.round(calibrationProgress)}%</span>
         </div>
         <div className="h-2 w-full overflow-hidden rounded-full bg-neutral-800">
+          {/* Scaled via `transform`, not animated via `width` — width changes trigger
+             layout, and iOS Safari can deprioritize (visually "freeze") layout-affecting
+             repaints while a touch is actively held, which is almost certainly why this bar
+             specifically stopped updating on iPhone even after the RPM/needle math (already
+             on a transform-only path) was fixed. `transform-gpu` promotes this to its own
+             compositor layer so it keeps updating independently of main-thread paint. */}
           <div
-            className="h-full rounded-full bg-neon-cyan shadow-[0_0_8px_rgba(0,240,255,0.6)] transition-[width] duration-100 ease-linear"
-            style={{ width: `${calibrationProgress}%` }}
+            className="h-full w-full origin-left transform-gpu rounded-full bg-neon-cyan shadow-[0_0_8px_rgba(0,240,255,0.6)] transition-transform duration-100 ease-linear"
+            style={{ transform: `scaleX(${calibrationProgress / 100})` }}
           />
         </div>
         <p className="mt-1 text-center text-xs text-red-400/80">
