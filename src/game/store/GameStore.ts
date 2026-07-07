@@ -123,7 +123,9 @@ function createStartingUpgrades(): Upgrade[] {
  * list; any stat boost it already granted (scrapPerSecond, maxEnergy, ...) stays intact,
  * since that lives directly on the player state, not derived from this array. */
 function reconcileUpgrades(upgrades: Upgrade[]): Upgrade[] {
-  const blueprintById = new Map(UPGRADE_BLUEPRINTS.map((blueprint) => [blueprint.id, blueprint]));
+  const blueprintById = new Map<string, (typeof UPGRADE_BLUEPRINTS)[number]>(
+    UPGRADE_BLUEPRINTS.map((blueprint) => [blueprint.id, blueprint]),
+  );
   const kept = upgrades.filter((upgrade) => blueprintById.has(upgrade.id));
   const keptIds = new Set(kept.map((upgrade) => upgrade.id));
   const added = UPGRADE_BLUEPRINTS.filter((blueprint) => !keptIds.has(blueprint.id)).map(
