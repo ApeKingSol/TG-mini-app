@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 import { ECONOMY, UPGRADE_BLUEPRINTS, getPartBuyCost } from '../config/economy';
 import { getPartTier, rollPartPerk, type PartPerk } from '../config/parts';
 import { getCarTier, getUpgradeRequirement } from '../config/carTiers';
-import type { CarHpStatus, CarState, Part, PlayerState, Upgrade } from '../types';
+import type { CarState, Part, PlayerState, Upgrade } from '../types';
 
 const LEGACY_STORAGE_KEY = 'cyber-garage-save';
 
@@ -51,9 +51,6 @@ interface GameActions {
   spendScrap: (amount: number) => boolean;
   addNeon: (amount: number) => void;
   spendNeon: (amount: number) => boolean;
-  damageCar: (amount: number) => void;
-  repairCar: (amount: number) => void;
-  getCarHpStatus: () => CarHpStatus;
   /** Buys a new Lv.1 part into the first empty inventory slot, at the current exponential price. Returns false without charging if there's no empty slot or the player can't afford it. */
   buyPart: () => boolean;
   /** Moves (or swaps, if the target is occupied) a part between two inventory slots. */
@@ -81,16 +78,7 @@ function createStartingCar(): CarState {
   return {
     id: 'starter-rustbucket',
     name: getCarTier(1).name,
-    hp: ECONOMY.STARTING_CAR_MAX_HP,
-    maxHp: ECONOMY.STARTING_CAR_MAX_HP,
   };
-}
-
-function hpToStatus(hp: number, maxHp: number): CarHpStatus {
-  const ratio = maxHp === 0 ? 0 : hp / maxHp;
-  if (ratio > 0.66) return 'green';
-  if (ratio > 0.33) return 'yellow';
-  return 'red';
 }
 
 function createPart(level: number, excludePerks: PartPerk[] = []): Part {
@@ -218,24 +206,6 @@ export const useGameStore = create<GameStore>()(
         return true;
       },
 
-      damageCar: (amount) =>
-        set((state) => ({
-          car: { ...state.car, hp: Math.max(0, state.car.hp - amount) },
-        })),
-
-      repairCar: (amount) =>
-        set((state) => ({
-          car: {
-            ...state.car,
-            hp: Math.min(state.car.maxHp, state.car.hp + amount),
-          },
-        })),
-
-      getCarHpStatus: () => {
-        const { hp, maxHp } = get().car;
-        return hpToStatus(hp, maxHp);
-      },
-
       buyPart: () => {
         const { inventory, scrap, carTier, partsPurchased } = get();
         const emptyIndex = inventory.findIndex((slot) => slot === null);
@@ -358,18 +328,9 @@ export const useGameStore = create<GameStore>()(
                 critChance: state.critChance + ECONOMY.NEURO_OPTIMIZER_CRIT_CHANCE_BOOST,
               };
             }
-            if (perk === 'Syndicate Transponder') {
-              const boost = ECONOMY.SYNDICATE_TRANSPONDER_MAX_HP_BOOST;
-              return {
-                pendingCalibrationPart: null,
-                installedUpgrades,
-                car: {
-                  ...state.car,
-                  maxHp: state.car.maxHp + boost,
-                  hp: state.car.hp + boost,
-                },
-              };
-            }
+            // Syndicate Transponder has no direct stat mutation of its own — its Durability/
+            // Handling race-stat boost is derived on demand from installedUpgrades by
+            // getCarStats(), so recording the perk above is already the whole effect.
             return { pendingCalibrationPart: null, installedUpgrades };
           });
           return;

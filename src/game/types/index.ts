@@ -1,13 +1,18 @@
 import type { PartPerk } from '../config/parts';
 
-/** Car durability expressed as a 0–100 HP value, bucketed into a traffic-light status for UI. */
-export type CarHpStatus = 'green' | 'yellow' | 'red';
-
 export interface CarState {
   id: string;
   name: string;
-  hp: number; // 0–100
-  maxHp: number;
+}
+
+/** The 4-Core race-performance stats, derived from carTier + which of the 3 unique Garage
+ * perks are installed — see getCarStats() in economy.ts. Not persisted; recomputed on demand
+ * from state that already is. */
+export interface CarStats {
+  topSpeed: number;
+  acceleration: number;
+  durability: number;
+  handling: number;
 }
 
 export interface Part {

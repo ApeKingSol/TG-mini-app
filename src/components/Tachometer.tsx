@@ -27,9 +27,14 @@ interface TachometerProps {
   rpm: number;
   zoneMin: number;
   zoneMax: number;
+  /** Stroke color for both the target arc and the in-zone needle — defaults to the Anti-
+   * Stall mini-game's green "Stable Zone" so existing callers don't need to change. Syndicate
+   * Drag passes a blue tone for its "Blue Zone" so the two timing mini-games read as
+   * visually distinct at a glance. */
+  zoneColor?: string;
 }
 
-export function Tachometer({ rpm, zoneMin, zoneMax }: TachometerProps) {
+export function Tachometer({ rpm, zoneMin, zoneMax, zoneColor = '#4ade80' }: TachometerProps) {
   const clampedRpm = Math.min(100, Math.max(0, rpm));
   const inZone = clampedRpm >= zoneMin && clampedRpm <= zoneMax;
   const needleDeg = (clampedRpm / 100) * 180;
@@ -53,7 +58,7 @@ export function Tachometer({ rpm, zoneMin, zoneMax }: TachometerProps) {
       <path
         d={describeArc(zoneMin, zoneMax, RADIUS)}
         fill="none"
-        stroke="#4ade80"
+        stroke={zoneColor}
         strokeWidth={STROKE_WIDTH}
         strokeLinecap="round"
       />
@@ -79,7 +84,7 @@ export function Tachometer({ rpm, zoneMin, zoneMax }: TachometerProps) {
             y1={CENTER}
             x2={CENTER - RADIUS + 8}
             y2={CENTER}
-            stroke={inZone ? '#4ade80' : '#f87171'}
+            stroke={inZone ? zoneColor : '#f87171'}
             strokeWidth={4}
             strokeLinecap="round"
           />

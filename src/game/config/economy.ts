@@ -1,3 +1,6 @@
+import type { PartPerk } from './parts';
+import type { CarStats } from '../types';
+
 /** Central tuning knobs for the idle economy. Balance changes should happen here, not in the store logic. */
 export const ECONOMY = {
   /** Starting scrapPerSecond, before any upgrades are purchased. */
@@ -7,11 +10,9 @@ export const ECONOMY = {
   /** Minimum ms between passive-generation ticks, to avoid re-rendering on every animation frame. */
   TICK_INTERVAL_MS: 1000,
   STARTING_SCRAP: 100,
-  STARTING_NEON: 0,
-  STARTING_CAR_MAX_HP: 100,
-
-  /** Scrap cost to repair one point of car HP in the Garage. */
-  REPAIR_COST_PER_HP: 2,
+  /** Enough for 5 Syndicate Drag bets right out of the gate, so the Race Hub's premium-
+   * currency mode isn't dead on arrival for a brand-new save. */
+  STARTING_NEON: 50,
 
   /** How many of the 8 inventory slots start filled with a Level 1 part, so there's something to merge right away. */
   STARTING_PARTS_COUNT: 4,
@@ -47,8 +48,6 @@ export const ECONOMY = {
   QUANTUM_INJECTOR_SCRAP_PER_SECOND: 5.0,
   /** Neuro-Optimizer perk: permanent boost to tap critChance on a successful install. */
   NEURO_OPTIMIZER_CRIT_CHANCE_BOOST: 0.05,
-  /** Syndicate Transponder perk: permanent boost to the car's max HP (and an equal heal) on install. */
-  SYNDICATE_TRANSPONDER_MAX_HP_BOOST: 50,
 
   /** Chance (0-1) that a tap lands as a critical hit. */
   STARTING_CRIT_CHANCE: 0.1,
@@ -116,18 +115,58 @@ export const ANTI_STALL = {
   RPM_DECREASE_PER_SECOND: 25,
 } as const;
 
-/** Tuning for the Toll Roads race loop. */
-export const RACE = {
-  ENTRY_FEE_SCRAP: 20,
-  DURATION_MS: 3000,
-  REWARD_SCRAP: 60,
-  DAMAGE_ON_LOSS: 25,
-  /** Win chance before the car HP modifier is applied. */
-  BASE_WIN_CHANCE: 0.5,
-  /** Added to/subtracted from the base win chance depending on car HP status. */
-  WIN_CHANCE_MODIFIER: {
-    green: 0.3,
-    yellow: 0,
-    red: -0.25,
-  },
+/** Tuning for the Race Hub's 4-Core car performance stats. */
+export const CAR_STATS = {
+  BASE_STAT: 100,
+  /** Every stat's base rises by this much per car tier, so trading in for a new car pays
+   * off on the track too, not just in the Junkyard/Garage economies. */
+  STAT_PER_TIER: 10,
+  /** Flat boost each of the 3 unique Garage perks grants to its mapped stat(s) — see
+   * getCarStats() below for the perk-to-stat mapping. */
+  PERK_STAT_BOOST: 50,
+} as const;
+
+/** Derives the 4-Core race stats from the car's tier and which of the 3 unique Garage perks
+ * are installed. Perks are de-duplicated via Set before mapping — a car whose upgrade
+ * requirement exceeds 3 (see getUpgradeRequirement) installs *repeats* of the same 3 perks,
+ * and those repeats already pay off in the Junkyard/Garage economies (extra scrapPerSecond,
+ * critChance, ...); letting them *also* stack race stats would let one perk type dominate
+ * every stat instead of the intended one-perk-one-stat spread. */
+export function getCarStats(carTier: number, installedUpgrades: PartPerk[]): CarStats {
+  const perks = new Set(installedUpgrades);
+  const base = CAR_STATS.BASE_STAT + (carTier - 1) * CAR_STATS.STAT_PER_TIER;
+  const boost = CAR_STATS.PERK_STAT_BOOST;
+  return {
+    topSpeed: base + (perks.has('Neuro-Optimizer') ? boost : 0),
+    acceleration: base + (perks.has('Quantum Injector') ? boost : 0),
+    durability: base + (perks.has('Syndicate Transponder') ? boost : 0),
+    handling: base + (perks.has('Syndicate Transponder') ? boost : 0),
+  };
+}
+
+/** Tuning for the Race Hub's "Syndicate Drag" mode: a timed-shift drag race against an AI
+ * opponent, gated behind a $NEON bet the Syndicate takes a cut of. */
+export const SYNDICATE_DRAG = {
+  BET_NEON: 10,
+  /** Gross payout on a win is 20 NEON (a straight double-up); the Syndicate's 10% commission
+   * on that pot brings it down to 18 — a net +8 NEON profit over the bet already paid. */
+  WIN_PAYOUT_NEON: 18,
+  /** Engine damage for tapping SHIFT while the needle is outside the Blue Zone. */
+  MISSED_SHIFT_DAMAGE: 35,
+  /** Full 0->100->0 needle sweep duration — fast enough that landing a shift feels like a
+   * real timing skill, not a slow-motion gimme. */
+  NEEDLE_SWEEP_SECONDS: 1.6,
+  /** Blue Zone width (needle percentage points) at the 100-baseline Acceleration stat. */
+  BASE_ZONE_WIDTH: 14,
+  /** Extra Blue Zone width per Acceleration point above the 100 baseline. */
+  ZONE_WIDTH_PER_ACCELERATION: 0.3,
+  /** The Blue Zone is always centered here; only its width scales with Acceleration. */
+  ZONE_CENTER: 72,
+  /** Race progress (0-100) gained per successfully-timed shift at the 100-baseline TopSpeed. */
+  BASE_PROGRESS_PER_SHIFT: 14,
+  /** Extra progress per shift, per TopSpeed point above the 100 baseline. */
+  PROGRESS_PER_SHIFT_PER_TOP_SPEED: 0.12,
+  /** The AI opponent's constant progress-per-second fill rate — tuned to be beatable by
+   * consistently-landed shifts, not a guaranteed win either way. */
+  AI_PROGRESS_PER_SECOND: 9,
 } as const;

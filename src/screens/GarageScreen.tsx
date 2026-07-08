@@ -14,9 +14,16 @@ import { useGameStore } from '../game/store/GameStore';
 import { PartSlot } from '../components/PartSlot';
 import { Tachometer } from '../components/Tachometer';
 import { useEngineAudio } from '../hooks/useEngineAudio';
-import { ECONOMY, ANTI_STALL, getPartBuyCost, getSecondsUntilNextEnergyRegen } from '../game/config/economy';
+import {
+  ECONOMY,
+  ANTI_STALL,
+  getPartBuyCost,
+  getSecondsUntilNextEnergyRegen,
+  getCarStats,
+} from '../game/config/economy';
 import { getPartTier, PERK_DESCRIPTIONS, type PartPerk } from '../game/config/parts';
 import { getCarTier, getUpgradeRequirement, getCarSkins } from '../game/config/carTiers';
+import type { CarStats } from '../game/types';
 
 const CAR_INSTALLATION_ZONE_ID = 'car-installation-zone';
 
@@ -159,6 +166,7 @@ export function GarageScreen() {
           carTier={carTier}
           upgradesInstalled={installedUpgrades.length}
           upgradesRequired={upgradeRequirement}
+          carStats={getCarStats(carTier, installedUpgrades)}
         />
 
         {isMastered ? (
@@ -328,6 +336,7 @@ interface CarInstallationZoneProps {
   carTier: number;
   upgradesInstalled: number;
   upgradesRequired: number;
+  carStats: CarStats;
 }
 
 function CarInstallationZone({
@@ -335,6 +344,7 @@ function CarInstallationZone({
   carTier,
   upgradesInstalled,
   upgradesRequired,
+  carStats,
 }: CarInstallationZoneProps) {
   const { setNodeRef, isOver } = useDroppable({ id: CAR_INSTALLATION_ZONE_ID });
   const upgradesRemaining = Math.max(0, upgradesRequired - upgradesInstalled);
@@ -357,9 +367,12 @@ function CarInstallationZone({
       <p className="text-center text-sm font-semibold text-neon-cyan">
         Upgrades Installed: {upgradesInstalled} / {upgradesRequired}
       </p>
-      <p className="mb-1 text-center text-xs text-neutral-500">
+      <p className="mb-3 text-center text-xs text-neutral-500">
         {upgradesRemaining} parts left until Next Tier
       </p>
+
+      <StatsPanel stats={carStats} />
+
       {/* Keyed on carTier so a trade-in re-triggers this AnimatePresence: the outgoing car
          drives off to the right while the new one drops in from the top. The outer element
          owns that one-shot enter/exit transform; the inner motion.img owns the perpetual
@@ -381,6 +394,43 @@ function CarInstallationZone({
           />
         </motion.div>
       </AnimatePresence>
+    </div>
+  );
+}
+
+/** Stat bars are normalized against this reference ceiling purely for visual fill —
+ * stats keep climbing with car tier forever, so a fixed 100 max would pin every bar at full
+ * within a few tiers. This just keeps the bars meaningful at a glance for longer. */
+const STATS_PANEL_DISPLAY_MAX = 300;
+
+const STAT_DISPLAY_ORDER: { key: keyof CarStats; label: string; colorClass: string }[] = [
+  { key: 'topSpeed', label: 'Speed', colorClass: 'bg-neon-cyan' },
+  { key: 'acceleration', label: 'Accel', colorClass: 'bg-neon-magenta' },
+  { key: 'durability', label: 'HP', colorClass: 'bg-green-400' },
+  { key: 'handling', label: 'Handling', colorClass: 'bg-amber-400' },
+];
+
+function StatsPanel({ stats }: { stats: CarStats }) {
+  return (
+    <div className="mb-3 grid grid-cols-2 gap-x-4 gap-y-2">
+      {STAT_DISPLAY_ORDER.map(({ key, label, colorClass }) => {
+        const value = stats[key];
+        const fillPercent = Math.min(100, (value / STATS_PANEL_DISPLAY_MAX) * 100);
+        return (
+          <div key={key}>
+            <div className="mb-0.5 flex items-center justify-between text-[10px] uppercase tracking-wide text-neutral-500">
+              <span>{label}</span>
+              <span className="tabular-nums text-neutral-400">{value}</span>
+            </div>
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-neutral-800">
+              <div
+                className={`h-full origin-left rounded-full ${colorClass}`}
+                style={{ transform: `scaleX(${fillPercent / 100})` }}
+              />
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
