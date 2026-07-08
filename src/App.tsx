@@ -3,6 +3,7 @@ import { AnimatePresence } from 'framer-motion';
 import { UserCircle } from 'lucide-react';
 import { useGameLoop } from './hooks/useGameLoop';
 import { useTelegram } from './hooks/useTelegram';
+import { useCloudSync } from './hooks/useCloudSync';
 import { CurrencyBar } from './components/CurrencyBar';
 import { OfflineEarningsToast } from './components/OfflineEarningsToast';
 import { BottomNav, type ScreenId } from './components/BottomNav';
@@ -14,6 +15,8 @@ import { ProfileScreen } from './screens/ProfileScreen';
 function App() {
   // Drives passive Scrap generation in the background; store stays a pure state container.
   useGameLoop();
+  // Cross-device sync (Netlify Function + Blobs) — a no-op outside an actual Telegram client.
+  useCloudSync();
   const { isTelegram, userFirstName } = useTelegram();
   const [activeScreen, setActiveScreen] = useState<ScreenId>('garage');
   // The Profile screen lives outside the tab system (reached via the header button, not the

@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Netlify CLI site-linkage state (created by `netlify link`/`netlify dev`)
+.netlify
+
 # Local Claude Code settings can accumulate secrets in the permission-rule history
 # (e.g. API tokens embedded in previously-allowed Bash commands) — never share these.
 .claude/settings.local.json

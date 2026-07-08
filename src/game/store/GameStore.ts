@@ -82,6 +82,11 @@ interface GameActions {
   /** Fast-forwards Scrap/Energy for time elapsed since lastSaved, run once after the persisted save is rehydrated. */
   applyOfflineProgress: () => void;
   dismissOfflineEarnings: () => void;
+  /** Overwrites state with a snapshot pulled from the cross-device sync backend (see
+   * useCloudSync), then re-runs the same offline-progress catch-up applied on local
+   * rehydration — the remote snapshot's own `lastSaved` may be stale by however long it's
+   * been since that other device last pushed it. */
+  hydrateFromRemote: (remoteState: PlayerState) => void;
 }
 
 type GameStore = PlayerState & GameActions;
@@ -477,18 +482,30 @@ export const useGameStore = create<GameStore>()(
       },
 
       dismissOfflineEarnings: () => set({ offlineEarnings: null }),
+
+      hydrateFromRemote: (remoteState) => {
+        set(remoteState);
+        get().applyOfflineProgress();
+      },
     }),
     {
       name: STORAGE_KEY,
       // offlineEarnings is a one-shot UI toast, recomputed fresh each load — persisting
       // it would just make a stale "Welcome back" reappear on the next reload.
-      partialize: (state) => {
-        const { offlineEarnings: _offlineEarnings, ...persisted } = state;
-        return persisted;
-      },
+      partialize: getSyncableState,
       onRehydrateStorage: () => (state) => {
         state?.applyOfflineProgress();
       },
     },
   ),
 );
+
+/** Strips the non-persistable parts of a GameStore snapshot (store actions aren't JSON-
+ * serializable and get dropped on their own, but `offlineEarnings` needs an explicit
+ * exclusion) down to just the plain PlayerState fields — shared by both the localStorage
+ * `partialize` above and useCloudSync's push-to-backend payload, so the two storage layers
+ * can never drift into syncing different shapes. */
+export function getSyncableState(state: GameStore): PlayerState {
+  const { offlineEarnings: _offlineEarnings, ...persisted } = state;
+  return { ...persisted, offlineEarnings: null };
+}
