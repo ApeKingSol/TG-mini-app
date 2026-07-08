@@ -4,10 +4,12 @@ import { WebApp, isRunningInTelegram } from '../lib/telegram';
 import type { PlayerState } from '../game/types';
 
 const SYNC_ENDPOINT = '/api/sync';
-/** How often local state gets pushed to the backend while the app is open — frequent enough
- * that a second device picks up progress within half a minute, infrequent enough not to spam
- * the sync function on every single scrap tick. */
-const PUSH_INTERVAL_MS = 30_000;
+/** How often local state gets pushed to the backend while the app is open. */
+const PUSH_INTERVAL_MS = 10_000;
+/** How often an already-open device re-checks the backend for a newer save pushed by
+ * another device — without this, a device that was opened once and left sitting would
+ * never notice progress made elsewhere until it was closed and reopened. */
+const PULL_INTERVAL_MS = 15_000;
 
 async function fetchRemoteState(initData: string): Promise<PlayerState | null> {
   const res = await fetch(SYNC_ENDPOINT, { headers: { 'x-telegram-init-data': initData } });
@@ -30,17 +32,34 @@ async function fetchRemoteState(initData: string): Promise<PlayerState | null> {
 function pushState(initData: string, state: PlayerState): Promise<void> {
   return fetch(SYNC_ENDPOINT, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-telegram-init-data': initData },
-    body: JSON.stringify(state),
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ initData, state }),
   }).then(() => undefined);
 }
 
+/** Best-effort push that survives the page being backgrounded/closed right as it fires. A
+ * plain fetch() started inside a visibilitychange/pagehide handler can get cut off before it
+ * completes once the browser suspends the page — this was silently losing every save-on-
+ * close push on iOS (which backgrounds tabs almost immediately) while happening to still
+ * work on desktop, where suspension is much less aggressive. sendBeacon is what browsers
+ * provide specifically to keep running past that point; the tradeoff is no custom headers,
+ * which is why initData now travels in the JSON body instead of a header. */
+function pushStateReliably(initData: string, state: PlayerState) {
+  const payload = JSON.stringify({ initData, state });
+  if (navigator.sendBeacon) {
+    const blob = new Blob([payload], { type: 'application/json' });
+    if (navigator.sendBeacon(SYNC_ENDPOINT, blob)) return;
+  }
+  pushState(initData, state).catch(() => {});
+}
+
 /** Keeps this device's save in sync with the cross-device backend (Netlify Function +
- * Blobs, keyed by the Telegram user id proven via initData): pulls the remote save once on
- * mount and adopts it if it's newer than what's already local (last-write-wins by
- * `lastSaved`), then periodically pushes local state so other devices can pick it up. A
- * no-op everywhere outside an actual Telegram client, since there's no initData to
- * authenticate a sync call with there. */
+ * Blobs, keyed by the Telegram user id proven via initData): pulls the remote save on
+ * mount, on an interval, and whenever the app returns to the foreground, adopting it
+ * whenever it's newer than what's already local (last-write-wins by `lastSaved`); pushes
+ * local state on an interval and — reliably, via sendBeacon — whenever the app is
+ * backgrounded. A no-op everywhere outside an actual Telegram client, since there's no
+ * initData to authenticate a sync call with there. */
 export function useCloudSync() {
   const lastPushedAtRef = useRef(0);
 
@@ -49,37 +68,59 @@ export function useCloudSync() {
     const initData = WebApp.initData;
     let cancelled = false;
 
-    fetchRemoteState(initData)
-      .then((remote) => {
-        if (cancelled || !remote) return;
-        // Compared against the frozen load-time snapshot, not the live store's `lastSaved`
-        // — that gets re-stamped to "now" by applyOfflineProgress() on every app open, which
-        // would make the local device win this comparison almost unconditionally.
-        if (remote.lastSaved > localLastSavedAtLoad) {
-          useGameStore.getState().hydrateFromRemote(remote);
-        }
-      })
-      .catch(() => {
-        // Offline, or the backend is unreachable — local play continues unaffected.
-      });
+    const pullRemote = () => {
+      fetchRemoteState(initData)
+        .then((remote) => {
+          if (cancelled || !remote) return;
+          // Never adopt something older than what this device already knows about —
+          // either from its own load-time snapshot or from its own more recent push.
+          // Comparing only against the load-time snapshot (as the very first version of
+          // this hook did) meant a later periodic re-pull could wrongly downgrade local
+          // progress made *after* that snapshot if it happened to see a slightly stale
+          // remote read.
+          const localBaseline = Math.max(localLastSavedAtLoad, lastPushedAtRef.current);
+          if (remote.lastSaved > localBaseline) {
+            useGameStore.getState().hydrateFromRemote(remote);
+          }
+        })
+        .catch(() => {
+          // Offline, or the backend is unreachable — local play continues unaffected.
+        });
+    };
 
-    const pushIfChanged = () => {
+    const pushIfChanged = (reliable: boolean) => {
       const state = getSyncableState(useGameStore.getState());
       if (state.lastSaved === lastPushedAtRef.current) return;
       lastPushedAtRef.current = state.lastSaved;
-      pushState(initData, state).catch(() => {});
+      if (reliable) {
+        pushStateReliably(initData, state);
+      } else {
+        pushState(initData, state).catch(() => {});
+      }
     };
 
-    const intervalId = window.setInterval(pushIfChanged, PUSH_INTERVAL_MS);
+    pullRemote();
+
+    const pushIntervalId = window.setInterval(() => pushIfChanged(false), PUSH_INTERVAL_MS);
+    const pullIntervalId = window.setInterval(pullRemote, PULL_INTERVAL_MS);
+
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') pushIfChanged();
+      if (document.visibilityState === 'hidden') {
+        pushIfChanged(true);
+      } else {
+        pullRemote();
+      }
     };
+    const handlePageHide = () => pushIfChanged(true);
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', handlePageHide);
 
     return () => {
       cancelled = true;
-      window.clearInterval(intervalId);
+      window.clearInterval(pushIntervalId);
+      window.clearInterval(pullIntervalId);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', handlePageHide);
     };
   }, []);
 }
