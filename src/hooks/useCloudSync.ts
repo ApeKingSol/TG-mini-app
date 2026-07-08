@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { useGameStore, getSyncableState } from '../game/store/GameStore';
+import { useGameStore, getSyncableState, localLastSavedAtLoad } from '../game/store/GameStore';
 import { WebApp, isRunningInTelegram } from '../lib/telegram';
 import type { PlayerState } from '../game/types';
 
@@ -52,7 +52,10 @@ export function useCloudSync() {
     fetchRemoteState(initData)
       .then((remote) => {
         if (cancelled || !remote) return;
-        if (remote.lastSaved > useGameStore.getState().lastSaved) {
+        // Compared against the frozen load-time snapshot, not the live store's `lastSaved`
+        // — that gets re-stamped to "now" by applyOfflineProgress() on every app open, which
+        // would make the local device win this comparison almost unconditionally.
+        if (remote.lastSaved > localLastSavedAtLoad) {
           useGameStore.getState().hydrateFromRemote(remote);
         }
       })

@@ -43,6 +43,15 @@ function migrateLegacySave(storageKey: string) {
 const STORAGE_KEY = getStorageKey();
 migrateLegacySave(STORAGE_KEY);
 
+/** This device's persisted `lastSaved`, captured the moment it's rehydrated — *before*
+ * applyOfflineProgress() re-stamps `lastSaved` to "now" on every single app open. useCloudSync
+ * compares this frozen value (not the live store's `lastSaved`, which is now effectively
+ * "right now" by the time the comparison happens) against the remote save's timestamp: since
+ * local `lastSaved` gets touched on every load regardless of whether anything meaningful
+ * happened, comparing it directly would make the local device win nearly every time and the
+ * remote pull silently never apply. */
+export let localLastSavedAtLoad = Date.now();
+
 // One-time admin $NEON grant. There's no backend here — saves live entirely in each player's
 // own browser/Telegram client — so the only way to credit a specific Telegram account is to
 // have that account's own client apply the grant to itself the next time it loads. Guarded by
@@ -494,6 +503,7 @@ export const useGameStore = create<GameStore>()(
       // it would just make a stale "Welcome back" reappear on the next reload.
       partialize: getSyncableState,
       onRehydrateStorage: () => (state) => {
+        if (state) localLastSavedAtLoad = state.lastSaved;
         state?.applyOfflineProgress();
       },
     },
