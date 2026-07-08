@@ -163,7 +163,7 @@ function SyndicateDragRace({ onExit }: SyndicateDragRaceProps) {
   const canAffordBet = neon >= SYNDICATE_DRAG.BET_NEON;
 
   const startRace = () => {
-    if (!canAffordBet || !spendNeon(SYNDICATE_DRAG.BET_NEON)) return;
+    if (!canAffordBet || !spendNeon(SYNDICATE_DRAG.BET_NEON, 'Syndicate Drag — Bet')) return;
     playerProgressRef.current = 0;
     playerHpRef.current = stats.durability;
     setPlayerProgress(0);
@@ -212,7 +212,7 @@ function SyndicateDragRace({ onExit }: SyndicateDragRaceProps) {
       if (nextProgress >= 100) {
         raceStateRef.current = 'won';
         setRaceState('won');
-        addNeon(SYNDICATE_DRAG.WIN_PAYOUT_NEON);
+        addNeon(SYNDICATE_DRAG.WIN_PAYOUT_NEON, 'Syndicate Drag — Win');
       }
       return;
     }

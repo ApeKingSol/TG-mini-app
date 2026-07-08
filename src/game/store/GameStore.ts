@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 import { ECONOMY, UPGRADE_BLUEPRINTS, getPartBuyCost } from '../config/economy';
 import { getPartTier, rollPartPerk, type PartPerk } from '../config/parts';
 import { getCarTier, getUpgradeRequirement } from '../config/carTiers';
-import type { CarState, Part, PlayerState, Upgrade } from '../types';
+import type { CarState, NeonTransaction, Part, PlayerState, Upgrade } from '../types';
 
 const LEGACY_STORAGE_KEY = 'cyber-garage-save';
 
@@ -49,8 +49,11 @@ interface GameActions {
   addScrap: (amount: number) => void;
   /** Returns false without charging if the player can't afford it. */
   spendScrap: (amount: number) => boolean;
-  addNeon: (amount: number) => void;
-  spendNeon: (amount: number) => boolean;
+  /** label is recorded to neonHistory for the Profile screen's History tab. */
+  addNeon: (amount: number, label?: string) => void;
+  /** Returns false without charging if the player can't afford it. label is recorded to
+   * neonHistory for the Profile screen's History tab. */
+  spendNeon: (amount: number, label?: string) => boolean;
   /** Buys a new Lv.1 part into the first empty inventory slot, at the current exponential price. Returns false without charging if there's no empty slot or the player can't afford it. */
   buyPart: () => boolean;
   /** Moves (or swaps, if the target is occupied) a part between two inventory slots. */
@@ -129,6 +132,18 @@ function reconcileUpgrades(upgrades: Upgrade[]): Upgrade[] {
   return [...kept, ...added];
 }
 
+/** Prepends a new $NEON transaction record and caps the log at NEON_HISTORY_MAX_ENTRIES, so
+ * the Profile screen's History tab always has something to read without the save growing
+ * unbounded. */
+function withNeonTransaction(
+  history: NeonTransaction[],
+  label: string,
+  amount: number,
+): NeonTransaction[] {
+  const entry: NeonTransaction = { id: crypto.randomUUID(), label, amount, timestamp: Date.now() };
+  return [entry, ...history].slice(0, ECONOMY.NEON_HISTORY_MAX_ENTRIES);
+}
+
 /** Applies however many whole ENERGY_REGEN_INTERVAL_SECONDS chunks have elapsed since the
  * last regen tick, advancing the regen clock by exactly that much (not to `now`) so the
  * countdown stays phase-aligned instead of drifting. Left untouched while already at
@@ -165,6 +180,7 @@ export const useGameStore = create<GameStore>()(
       pendingCalibrationPart: null,
       installedUpgrades: [],
       upgrades: createStartingUpgrades(),
+      neonHistory: [],
       scrapPerClick: ECONOMY.STARTING_SCRAP_PER_CLICK,
       scrapPerSecond: ECONOMY.STARTING_SCRAP_PER_SECOND,
       critChance: ECONOMY.STARTING_CRIT_CHANCE,
@@ -198,11 +214,18 @@ export const useGameStore = create<GameStore>()(
         return true;
       },
 
-      addNeon: (amount) => set((state) => ({ neon: state.neon + amount })),
+      addNeon: (amount, label = 'Neon Earned') =>
+        set((state) => ({
+          neon: state.neon + amount,
+          neonHistory: withNeonTransaction(state.neonHistory, label, amount),
+        })),
 
-      spendNeon: (amount) => {
+      spendNeon: (amount, label = 'Neon Spent') => {
         if (get().neon < amount) return false;
-        set((state) => ({ neon: state.neon - amount }));
+        set((state) => ({
+          neon: state.neon - amount,
+          neonHistory: withNeonTransaction(state.neonHistory, label, -amount),
+        }));
         return true;
       },
 
@@ -312,26 +335,29 @@ export const useGameStore = create<GameStore>()(
             const installedUpgrades = perk
               ? [...state.installedUpgrades, perk]
               : state.installedUpgrades;
+            // Every successful install grants this flat scrapPerSecond bump regardless of
+            // which perk was rolled, on top of that perk's own specific effect below.
+            const scrapPerSecond = state.scrapPerSecond + ECONOMY.CALIBRATION_SCRAP_PER_SECOND_BOOST;
 
             if (perk === 'Quantum Injector') {
               return {
                 pendingCalibrationPart: null,
                 installedUpgrades,
-                scrapPerSecond:
-                  state.scrapPerSecond + ECONOMY.QUANTUM_INJECTOR_SCRAP_PER_SECOND,
+                scrapPerSecond: scrapPerSecond + ECONOMY.QUANTUM_INJECTOR_SCRAP_PER_SECOND,
               };
             }
             if (perk === 'Neuro-Optimizer') {
               return {
                 pendingCalibrationPart: null,
                 installedUpgrades,
+                scrapPerSecond,
                 critChance: state.critChance + ECONOMY.NEURO_OPTIMIZER_CRIT_CHANCE_BOOST,
               };
             }
-            // Syndicate Transponder has no direct stat mutation of its own — its Durability/
-            // Handling race-stat boost is derived on demand from installedUpgrades by
-            // getCarStats(), so recording the perk above is already the whole effect.
-            return { pendingCalibrationPart: null, installedUpgrades };
+            // Syndicate Transponder has no direct stat mutation of its own beyond the flat
+            // boost above — its Durability/Handling race-stat boost is derived on demand
+            // from installedUpgrades by getCarStats().
+            return { pendingCalibrationPart: null, installedUpgrades, scrapPerSecond };
           });
           return;
         }
@@ -390,6 +416,7 @@ export const useGameStore = create<GameStore>()(
           partsPurchased: 0,
           carTier: state.carTier + 1,
           car: { ...state.car, name: getCarTier(carTier + 1).name },
+          scrapPerSecond: state.scrapPerSecond + ECONOMY.TRADE_IN_SCRAP_PER_SECOND_BOOST,
         }));
       },
 

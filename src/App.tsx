@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
+import { UserCircle } from 'lucide-react';
 import { useGameLoop } from './hooks/useGameLoop';
 import { useTelegram } from './hooks/useTelegram';
 import { CurrencyBar } from './components/CurrencyBar';
@@ -8,12 +9,17 @@ import { BottomNav, type ScreenId } from './components/BottomNav';
 import { JunkyardScreen } from './screens/JunkyardScreen';
 import { GarageScreen } from './screens/GarageScreen';
 import { RaceScreen } from './screens/RaceScreen';
+import { ProfileScreen } from './screens/ProfileScreen';
 
 function App() {
   // Drives passive Scrap generation in the background; store stays a pure state container.
   useGameLoop();
   const { isTelegram, userFirstName } = useTelegram();
   const [activeScreen, setActiveScreen] = useState<ScreenId>('garage');
+  // The Profile screen lives outside the tab system (reached via the header button, not the
+  // bottom nav) — tracking it separately means returning from it lands back on whatever tab
+  // was active, instead of needing its own ScreenId in the nav.
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
 
   return (
     <div className="flex min-h-screen flex-col bg-cyber-grid">
@@ -26,7 +32,15 @@ function App() {
           </div>
         )}
 
-        <header className="mb-6 text-center">
+        <header className="relative mb-6 text-center">
+          <button
+            type="button"
+            onClick={() => setIsProfileOpen(true)}
+            aria-label="Player Profile"
+            className="absolute right-0 top-0 flex items-center justify-center rounded-full border border-neon-cyan/40 bg-neon-cyan/10 p-2 text-neon-cyan"
+          >
+            <UserCircle className="h-5 w-5" strokeWidth={1.75} />
+          </button>
           <h1 className="font-display text-2xl font-bold tracking-wide text-neon-cyan drop-shadow-[0_0_10px_rgba(0,240,255,0.65)]">
             Cyber-Garage: Syndicate Mechanics
           </h1>
@@ -41,14 +55,20 @@ function App() {
 
         <main className="mt-6">
           <AnimatePresence mode="wait">
-            {activeScreen === 'junkyard' && <JunkyardScreen key="junkyard" />}
-            {activeScreen === 'garage' && <GarageScreen key="garage" />}
-            {activeScreen === 'race' && <RaceScreen key="race" />}
+            {isProfileOpen ? (
+              <ProfileScreen key="profile" onBack={() => setIsProfileOpen(false)} />
+            ) : (
+              <>
+                {activeScreen === 'junkyard' && <JunkyardScreen key="junkyard" />}
+                {activeScreen === 'garage' && <GarageScreen key="garage" />}
+                {activeScreen === 'race' && <RaceScreen key="race" />}
+              </>
+            )}
           </AnimatePresence>
         </main>
       </div>
 
-      <BottomNav active={activeScreen} onChange={setActiveScreen} />
+      {!isProfileOpen && <BottomNav active={activeScreen} onChange={setActiveScreen} />}
     </div>
   );
 }

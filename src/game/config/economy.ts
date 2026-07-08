@@ -48,6 +48,12 @@ export const ECONOMY = {
   QUANTUM_INJECTOR_SCRAP_PER_SECOND: 5.0,
   /** Neuro-Optimizer perk: permanent boost to tap critChance on a successful install. */
   NEURO_OPTIMIZER_CRIT_CHANCE_BOOST: 0.05,
+  /** Every successful Anti-Stall calibration grants this much scrapPerSecond regardless of
+   * which perk was rolled — on top of that perk's own specific effect (if any). */
+  CALIBRATION_SCRAP_PER_SECOND_BOOST: 5,
+  /** A successful trade-in grants this much scrapPerSecond, on top of whatever the car's 3
+   * installed perks already contributed — the economy-wide payoff for reaching MASTERED. */
+  TRADE_IN_SCRAP_PER_SECOND_BOOST: 15,
 
   /** Chance (0-1) that a tap lands as a critical hit. */
   STARTING_CRIT_CHANCE: 0.1,
@@ -61,6 +67,9 @@ export const ECONOMY = {
 
   /** Each Junkyard upgrade purchase multiplies that upgrade's own next cost by this factor. */
   UPGRADE_COST_MULTIPLIER: 1.15,
+  /** The Profile screen's History tab only ever shows this many of the most recent $NEON
+   * transactions — old entries just fall off the end rather than growing the save forever. */
+  NEON_HISTORY_MAX_ENTRIES: 50,
 } as const;
 
 /**

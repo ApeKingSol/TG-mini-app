@@ -455,6 +455,9 @@ function TradeInPanel({ installedUpgrades, onTradeIn }: TradeInPanelProps) {
           <span key={`${perk}-${index}`}>✓ {perk}</span>
         ))}
       </div>
+      <p className="text-xs text-neon-cyan/80">
+        Trade-in bonus: +{ECONOMY.TRADE_IN_SCRAP_PER_SECOND_BOOST} permanent Scrap/sec
+      </p>
       <motion.button
         type="button"
         onClick={onTradeIn}
@@ -663,11 +666,14 @@ function AntiStallCalibrationPanel({ partLevel, perk, onComplete }: AntiStallCal
         <Icon className={`h-4 w-4 ${tier.glow}`} strokeWidth={2} />
         Calibrating {tier.name} (Lv.{partLevel})
       </div>
-      {perk && (
-        <p className="mt-0.5 text-center text-xs text-neon-cyan/80">
-          Unlocks: {perk} — {PERK_DESCRIPTIONS[perk]}
-        </p>
-      )}
+      <div className="mt-0.5 space-y-0.5 text-center text-xs text-neon-cyan/80">
+        {perk && (
+          <p>
+            + {perk}: {PERK_DESCRIPTIONS[perk]}
+          </p>
+        )}
+        <p>+ {ECONOMY.CALIBRATION_SCRAP_PER_SECOND_BOOST} permanent Scrap/sec (every successful install)</p>
+      </div>
 
       <Tachometer rpm={rpm} zoneMin={ANTI_STALL.TARGET_ZONE_MIN} zoneMax={ANTI_STALL.TARGET_ZONE_MAX} />
 

@@ -38,6 +38,16 @@ export interface Upgrade {
   owned: number;
 }
 
+/** One $NEON balance change, newest first — the Profile screen's History tab reads straight
+ * off this log rather than trying to reconstruct it from anywhere else. */
+export interface NeonTransaction {
+  id: string;
+  label: string;
+  /** Signed: positive for a credit (win, deposit), negative for a debit (bet, withdrawal). */
+  amount: number;
+  timestamp: number;
+}
+
 export interface PlayerState {
   scrap: number;
   neon: number;
@@ -70,6 +80,9 @@ export interface PlayerState {
   /** The Junkyard's always-visible upgrade list — a straightforward, repeatable Scrap sink
    * for incremental tap/passive gains, separate from the Garage's perk system. */
   upgrades: Upgrade[];
+  /** Newest-first log of $NEON balance changes, capped at NEON_HISTORY_MAX_ENTRIES — backs
+   * the Profile screen's History tab. */
+  neonHistory: NeonTransaction[];
   scrapPerClick: number;
   scrapPerSecond: number;
   /** Chance (0–1) that a tap is a critical hit, awarding scrapPerClick * critMultiplier instead. */
