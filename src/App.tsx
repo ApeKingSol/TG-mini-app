@@ -33,16 +33,23 @@ function App() {
         )}
 
         <header className="relative mb-6 text-center">
+          {/* Explicit z-index, not just DOM order: the h1 below has a `drop-shadow` filter,
+             and per the CSS filter-effects spec any element with a filter is treated as if
+             `position: relative` for stacking purposes — that silently promoted it into the
+             same "positioned, z-index:auto" paint layer as this absolutely-positioned button,
+             and being later in the DOM it painted on top, swallowing every tap even though
+             the button itself was never broken. A real (non-auto) z-index wins regardless of
+             DOM order or sibling filters. */}
           <button
             type="button"
             onClick={() => setIsProfileOpen(true)}
             aria-label="Player Profile"
-            className="absolute right-0 top-0 flex items-center justify-center rounded-full border border-neon-cyan/40 bg-neon-cyan/10 p-2 text-neon-cyan"
+            className="absolute right-0 top-0 z-10 flex items-center justify-center rounded-full border border-neon-cyan/40 bg-neon-cyan/10 p-2 text-neon-cyan"
           >
             <UserCircle className="h-5 w-5" strokeWidth={1.75} />
           </button>
           <h1 className="font-display text-2xl font-bold tracking-wide text-neon-cyan drop-shadow-[0_0_10px_rgba(0,240,255,0.65)]">
-            Cyber-Garage: Syndicate Mechanics
+            Cyber-Garage
           </h1>
           {userFirstName && (
             <p className="mt-1 text-sm text-neutral-400">

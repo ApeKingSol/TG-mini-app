@@ -43,6 +43,15 @@ function migrateLegacySave(storageKey: string) {
 const STORAGE_KEY = getStorageKey();
 migrateLegacySave(STORAGE_KEY);
 
+// One-time admin $NEON grant. There's no backend here — saves live entirely in each player's
+// own browser/Telegram client — so the only way to credit a specific Telegram account is to
+// have that account's own client apply the grant to itself the next time it loads. Guarded by
+// checking neonHistory for the grant label already being present, so re-opening the app
+// doesn't re-grant it.
+const ADMIN_TELEGRAM_ID = '8280101176';
+const ADMIN_GRANT_AMOUNT = 10000;
+const ADMIN_GRANT_LABEL = 'Admin Bonus';
+
 interface GameActions {
   /** Advances passive Scrap generation and Energy regen based on real elapsed time since the last save. */
   tick: () => void;
@@ -430,11 +439,18 @@ export const useGameStore = create<GameStore>()(
         set((state) => {
           const correctName = getCarTier(state.carTier).name;
           const regen = applyEnergyRegen(state.energy, state.maxEnergy, state.lastEnergyRegenAt, now);
+          const isDueAdminGrant =
+            getTelegramUserId() === ADMIN_TELEGRAM_ID &&
+            !state.neonHistory.some((entry) => entry.label === ADMIN_GRANT_LABEL);
           return {
             ...(correctName !== state.car.name && { car: { ...state.car, name: correctName } }),
             energy: regen.energy,
             lastEnergyRegenAt: regen.lastEnergyRegenAt,
             upgrades: reconcileUpgrades(state.upgrades),
+            ...(isDueAdminGrant && {
+              neon: state.neon + ADMIN_GRANT_AMOUNT,
+              neonHistory: withNeonTransaction(state.neonHistory, ADMIN_GRANT_LABEL, ADMIN_GRANT_AMOUNT),
+            }),
           };
         });
 
