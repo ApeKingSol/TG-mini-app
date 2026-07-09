@@ -16,7 +16,7 @@ function App() {
   // Drives passive Scrap generation in the background; store stays a pure state container.
   useGameLoop();
   // Cross-device sync (Netlify Function + Blobs) — a no-op outside an actual Telegram client.
-  useCloudSync();
+  const cloudSync = useCloudSync();
   const { isTelegram, userFirstName } = useTelegram();
   const [activeScreen, setActiveScreen] = useState<ScreenId>('garage');
   // The Profile screen lives outside the tab system (reached via the header button, not the
@@ -66,7 +66,12 @@ function App() {
         <main className="mt-6">
           <AnimatePresence mode="wait">
             {isProfileOpen ? (
-              <ProfileScreen key="profile" onBack={() => setIsProfileOpen(false)} />
+              <ProfileScreen
+                key="profile"
+                onBack={() => setIsProfileOpen(false)}
+                syncStatus={cloudSync.status}
+                onSyncNow={cloudSync.syncNow}
+              />
             ) : (
               <>
                 {activeScreen === 'junkyard' && <JunkyardScreen key="junkyard" />}
