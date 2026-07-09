@@ -4,12 +4,40 @@ import { WebApp, isRunningInTelegram } from '../lib/telegram';
 import type { PlayerState } from '../game/types';
 
 const SYNC_ENDPOINT = '/api/sync';
-/** How often local state gets pushed to the backend while the app is open. */
-const PUSH_INTERVAL_MS = 10_000;
+/** How often local state gets pushed to the backend while the app is open. Kept short
+ * because Telegram's Mini App WebView appears to suspend JS execution the moment the user
+ * navigates away *within Telegram* (back to the chat list, say) — not just on a real tab
+ * switch or app close — so there's no reliable "about to close" signal to hook into, only a
+ * narrowing window of opportunity to have already pushed recently. */
+const PUSH_INTERVAL_MS = 5_000;
 /** How often an already-open device re-checks the backend for a newer save pushed by
  * another device — without this, a device that was opened once and left sitting would
  * never notice progress made elsewhere until it was closed and reopened. */
-const PULL_INTERVAL_MS = 15_000;
+const PULL_INTERVAL_MS = 8_000;
+
+/** Fields whose change means something actually *happened* (a purchase, a merge, a trade-
+ * in, a race result, ...) as opposed to just idle ticking (`scrap`/`energy` drifting up
+ * every second). Reference-inequality is enough to detect a change here since every reducer
+ * in GameStore.ts creates a fresh array/object for a field whenever it actually changes,
+ * never mutating in place. Used to push immediately after something worth not losing,
+ * rather than waiting for the next scheduled interval tick that a suspended WebView might
+ * not live to see. */
+const SIGNIFICANT_KEYS = [
+  'neon',
+  'carTier',
+  'partsPurchased',
+  'inventory',
+  'installedUpgrades',
+  'upgrades',
+  'pendingCalibrationPart',
+  'car',
+  'maxEnergy',
+  'neonHistory',
+  'critChance',
+  'critMultiplier',
+  'scrapPerClick',
+  'scrapPerSecond',
+] as const satisfies readonly (keyof PlayerState)[];
 
 /** Surfaced to the Profile screen so sync problems are actually observable instead of a
  * silent background process nobody (including us, debugging remotely) can see into. */
@@ -167,6 +195,20 @@ export function useCloudSync(): { status: CloudSyncStatus; syncNow: () => void }
     const pushIntervalId = window.setInterval(() => pushIfChanged(false), PUSH_INTERVAL_MS);
     const pullIntervalId = window.setInterval(pullRemote, PULL_INTERVAL_MS);
 
+    // Reacts to real actions (a purchase, a merge, a trade-in, a race result, ...) the
+    // instant they happen, via the reliable (sendBeacon) push — rather than only ever
+    // finding out up to PUSH_INTERVAL_MS later, by which point a suspended WebView may
+    // never have gotten the chance to run that scheduled push at all.
+    let previousSnapshot = useGameStore.getState();
+    const unsubscribe = useGameStore.subscribe((state) => {
+      const changed = SIGNIFICANT_KEYS.some((key) => state[key] !== previousSnapshot[key]);
+      previousSnapshot = state;
+      if (changed) pushIfChanged(true);
+    });
+
+    // All three of these exist because different browsers/WebViews fire different subsets
+    // of them for "the user is leaving" — layering all three maximizes the chance at least
+    // one fires before Telegram's WebView actually suspends this page's JS.
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
         pushIfChanged(true);
@@ -175,15 +217,19 @@ export function useCloudSync(): { status: CloudSyncStatus; syncNow: () => void }
       }
     };
     const handlePageHide = () => pushIfChanged(true);
+    const handleBeforeUnload = () => pushIfChanged(true);
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('pagehide', handlePageHide);
+    window.addEventListener('beforeunload', handleBeforeUnload);
 
     return () => {
       cancelled = true;
       window.clearInterval(pushIntervalId);
       window.clearInterval(pullIntervalId);
+      unsubscribe();
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('pagehide', handlePageHide);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, []);
 
