@@ -4,16 +4,18 @@ import { WebApp, isRunningInTelegram } from '../lib/telegram';
 import type { PlayerState } from '../game/types';
 
 const SYNC_ENDPOINT = '/api/sync';
-/** How often local state gets pushed to the backend while the app is open. Kept short
+/** How often local state gets pushed to the backend while the app is open. Kept short both
  * because Telegram's Mini App WebView appears to suspend JS execution the moment the user
  * navigates away *within Telegram* (back to the chat list, say) — not just on a real tab
- * switch or app close — so there's no reliable "about to close" signal to hook into, only a
- * narrowing window of opportunity to have already pushed recently. */
-const PUSH_INTERVAL_MS = 5_000;
+ * switch or app close, leaving no reliable "about to close" signal to hook into — and because
+ * this is what bounds how far "Local Scrap" can drift from "Server saw" between polls, which
+ * is otherwise inherent to a polling architecture (no backend push to the *other* device
+ * exists here, only each device periodically asking "anything new?"). */
+const PUSH_INTERVAL_MS = 2_000;
 /** How often an already-open device re-checks the backend for a newer save pushed by
  * another device — without this, a device that was opened once and left sitting would
  * never notice progress made elsewhere until it was closed and reopened. */
-const PULL_INTERVAL_MS = 8_000;
+const PULL_INTERVAL_MS = 2_000;
 
 /** Fields whose change means something actually *happened* (a purchase, a merge, a trade-
  * in, a race result, ...) as opposed to just idle ticking (`scrap`/`energy` drifting up
