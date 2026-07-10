@@ -3,12 +3,19 @@
 @theme {
   --color-neon-cyan: #00f0ff;
   --color-neon-magenta: #ff2ee6;
+  /* Industrial warning-orange accent — used sparingly (thin borders, small decorative bits)
+     to break up the cyan/magenta duotone and read as "hazard tape on a junkyard rig" rather
+     than another clean neon. */
+  --color-amber: #ff9500;
   --color-scrap: #b8b3a3;
-  --color-bg-deep: #0a0a0f;
-  --color-bg-panel: #14141c;
+  --color-bg-deep: #08080a;
+  --color-bg-panel: #16161a;
 
   --font-sans: 'Rajdhani', system-ui, 'Segoe UI', Roboto, sans-serif;
   --font-display: 'Orbitron', system-ui, sans-serif;
+  /* Small labels, stat readouts, and corner greebles — a monospaced terminal face so those
+     bits read as "diagnostic readout" instead of body copy. */
+  --font-mono: 'Share Tech Mono', 'Courier New', monospace;
 }
 
 html,
@@ -23,21 +30,85 @@ body,
   -webkit-font-smoothing: antialiased;
 }
 
-/* Deep-space radial glow fading to black, with a faint technical grid overlay. */
+/* Deep-space radial glow fading to black, with a faint technical grid, a layer of fixed
+   static grain, and a constant fine scanline texture on top — "military HUD bolted onto a
+   junkyard terminal" rather than a clean SaaS-dashboard glow. The grain/scanline pseudo-
+   elements are `position: fixed` (matching the grid's own fixed attachment) so they stay
+   anchored to the viewport instead of scrolling with page content; `.bg-cyber-grid > *` below
+   lifts real content back above them since fixed elements don't otherwise respect DOM order. */
 .bg-cyber-grid {
+  position: relative;
   background-color: var(--color-bg-deep);
   background-image:
     radial-gradient(
       ellipse 70% 50% at 50% 0%,
-      rgba(107, 33, 168, 0.35),
+      rgba(107, 33, 168, 0.28),
       transparent 60%
     ),
-    linear-gradient(rgba(148, 163, 255, 0.06) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(148, 163, 255, 0.06) 1px, transparent 1px);
+    linear-gradient(rgba(148, 163, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 255, 0.05) 1px, transparent 1px);
   background-size:
     100% 100%,
     36px 36px,
     36px 36px;
   background-position: center;
   background-attachment: fixed;
+}
+
+.bg-cyber-grid::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.05;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.bg-cyber-grid::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.035) 0px,
+    rgba(255, 255, 255, 0.035) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  mix-blend-mode: overlay;
+}
+
+.bg-cyber-grid > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Angled, chamfered corners in place of border-radius — the two-corner-cut "HUD panel" shape
+   used for every major card. clip-path clips the border along with the box, so a plain
+   `border` still reads as a clean mitred edge on the cut corners in every engine this app
+   ships to (confirmed in WebKit, which is what Telegram's iOS/macOS clients embed). Two sizes
+   for the app's two panel scales; use whichever roughly matches the panel's padding. */
+.panel-cut {
+  clip-path: polygon(
+    14px 0%,
+    100% 0%,
+    100% calc(100% - 14px),
+    calc(100% - 14px) 100%,
+    0% 100%,
+    0% 14px
+  );
+}
+.panel-cut-sm {
+  clip-path: polygon(
+    8px 0%,
+    100% 0%,
+    100% calc(100% - 8px),
+    calc(100% - 8px) 100%,
+    0% 100%,
+    0% 8px
+  );
 }

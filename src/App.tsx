@@ -29,9 +29,8 @@ function App() {
       <OfflineEarningsToast />
       <div className="flex-1 px-4 pb-24 pt-6">
         {!isTelegram && (
-          <div className="mb-4 rounded-lg border border-yellow-500/40 bg-yellow-500/10 px-3 py-2 text-xs text-yellow-300">
-            Running outside Telegram — open via a Telegram bot link to test
-            the full experience.
+          <div className="panel-cut-sm mb-4 border border-amber/40 bg-amber/[0.06] px-3 py-2 font-mono text-[11px] uppercase tracking-wide text-amber">
+            [!] Running outside Telegram — open via a bot link for the full uplink
           </div>
         )}
 
@@ -47,16 +46,19 @@ function App() {
             type="button"
             onClick={() => setIsProfileOpen(true)}
             aria-label="Player Profile"
-            className="absolute right-0 top-0 z-10 flex items-center justify-center rounded-full border border-neon-cyan/40 bg-neon-cyan/10 p-2 text-neon-cyan"
+            className="panel-cut-sm absolute right-0 top-0 z-10 flex items-center justify-center border border-neon-cyan/50 bg-neon-cyan/10 p-2 text-neon-cyan"
           >
             <UserCircle className="h-5 w-5" strokeWidth={1.75} />
           </button>
-          <h1 className="font-display text-2xl font-bold tracking-wide text-neon-cyan drop-shadow-[0_0_10px_rgba(0,240,255,0.65)]">
+          <p className="px-11 font-mono text-[9px] uppercase tracking-[0.2em] text-amber/70">
+            Sys.Online // Uplink: Stable
+          </p>
+          <h1 className="font-display text-2xl font-bold tracking-wide text-neon-cyan drop-shadow-[0_0_4px_rgba(0,240,255,0.85)]">
             Cyber-Garage
           </h1>
           {userFirstName && (
-            <p className="mt-1 text-sm text-neutral-400">
-              Welcome, {userFirstName}
+            <p className="mt-1 font-mono text-xs text-neutral-500">
+              &gt; Welcome, {userFirstName}_
             </p>
           )}
         </header>

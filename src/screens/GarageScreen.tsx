@@ -148,13 +148,15 @@ export function GarageScreen() {
       className="flex flex-col gap-4 pt-4"
     >
       <div className="flex w-full items-center justify-between">
-        <p className="text-xs uppercase tracking-widest text-neutral-500">Garage</p>
+        <p className="font-mono text-xs uppercase tracking-widest text-neutral-500">
+          [ Garage ]
+        </p>
         <motion.button
           type="button"
           onClick={() => setIsShopOpen(true)}
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
-          className="flex items-center gap-1 rounded-md border border-neon-cyan/40 bg-neon-cyan/10 px-3 py-1.5 text-xs font-semibold text-neon-cyan"
+          className="panel-cut-sm flex items-center gap-1 border border-neon-cyan/50 bg-neon-cyan/10 px-3 py-1.5 font-mono text-xs font-semibold text-neon-cyan"
         >
           <Store className="h-3.5 w-3.5" strokeWidth={2} />
           SHOP
@@ -184,9 +186,12 @@ export function GarageScreen() {
               )}
             </AnimatePresence>
 
-            <div className="rounded-xl border border-neutral-800 bg-bg-panel p-4">
+            <div className="panel-cut relative border border-neutral-800 bg-bg-panel p-4">
+              <span className="pointer-events-none absolute right-2 top-1 select-none font-mono text-[8px] uppercase tracking-widest text-neutral-600">
+                RIG.03
+              </span>
               <div className="flex items-center justify-between">
-                <p className="text-xs uppercase tracking-widest text-neutral-500">
+                <p className="font-mono text-xs uppercase tracking-widest text-neutral-500">
                   Merge Grid
                 </p>
                 <motion.button
@@ -195,7 +200,7 @@ export function GarageScreen() {
                   disabled={!canBuyPart}
                   whileHover={canBuyPart ? { scale: 1.05 } : undefined}
                   whileTap={canBuyPart ? { scale: 0.95 } : undefined}
-                  className="rounded-md border border-neutral-700 px-2 py-1 text-xs text-neutral-300 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+                  className="panel-cut-sm whitespace-nowrap border border-neutral-700 px-2 py-1 text-xs text-neutral-300 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Buy Part (-{partCost})
                 </motion.button>
@@ -220,9 +225,9 @@ export function GarageScreen() {
                     )}
                   </span>
                 </div>
-                <div className="h-2 w-full overflow-hidden rounded-full bg-neutral-800">
+                <div className="h-2 w-full overflow-hidden border border-neutral-800 bg-neutral-900">
                   <motion.div
-                    className="h-full rounded-full bg-gradient-to-r from-neon-magenta to-neon-cyan"
+                    className="h-full bg-gradient-to-r from-neon-magenta to-neon-cyan"
                     animate={{ width: `${(energy / maxEnergy) * 100}%` }}
                     transition={{ duration: 0.3, ease: 'easeOut' }}
                   />
@@ -250,7 +255,7 @@ export function GarageScreen() {
             initial={{ opacity: 0, y: -12, scale: 0.9 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -12, scale: 0.9 }}
-            className={`fixed inset-x-4 top-4 z-50 rounded-xl border bg-bg-panel/95 px-4 py-3 text-center shadow-lg backdrop-blur ${
+            className={`panel-cut-sm fixed inset-x-4 top-4 z-50 border bg-bg-panel/95 px-4 py-3 text-center shadow-lg backdrop-blur ${
               toast.variant === 'success' ? 'border-green-400/50' : 'border-red-400/50'
             }`}
           >
@@ -296,7 +301,7 @@ function SkinShopModal({ carTier, onClose }: SkinShopModalProps) {
         exit={{ opacity: 0, y: -24, scale: 0.95 }}
         transition={{ duration: 0.25, ease: 'easeOut' }}
         onClick={(event) => event.stopPropagation()}
-        className="w-full max-w-xs rounded-xl border border-neon-cyan/40 bg-bg-panel p-4 text-left shadow-lg"
+        className="panel-cut w-full max-w-xs border border-neon-cyan/50 bg-bg-panel p-4 text-left shadow-lg"
       >
         <div className="mb-2 flex items-center justify-between">
           <p className="font-display text-sm font-bold uppercase tracking-widest text-neon-cyan">
@@ -305,7 +310,7 @@ function SkinShopModal({ carTier, onClose }: SkinShopModalProps) {
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md p-1 text-neutral-500 hover:text-neutral-300"
+            className="p-1 text-neutral-500 hover:text-neutral-300"
           >
             <X className="h-4 w-4" />
           </button>
@@ -318,10 +323,10 @@ function SkinShopModal({ carTier, onClose }: SkinShopModalProps) {
           {skins.map((skin) => (
             <div
               key={skin.id}
-              className="flex items-center justify-between rounded-lg border border-neutral-800 bg-black/30 px-3 py-2 opacity-60"
+              className="panel-cut-sm flex items-center justify-between border border-neutral-800 bg-black/30 px-3 py-2 opacity-60"
             >
               <p className="text-sm font-medium text-neutral-200">{skin.name}</p>
-              <span className="flex items-center gap-1 text-xs font-medium text-neutral-500">
+              <span className="flex items-center gap-1 font-mono text-xs font-medium text-neutral-500">
                 <Lock className="h-3.5 w-3.5" /> In Development
               </span>
             </div>
@@ -358,14 +363,17 @@ function CarInstallationZone({
     // drop-zone feedback without touching anything inside the car's silhouette.
     <div
       ref={setNodeRef}
-      className={`overflow-hidden rounded-xl border p-4 transition-colors ${
+      className={`panel-cut relative overflow-hidden border p-4 transition-colors ${
         isOver ? 'border-neon-cyan/70' : 'border-neutral-800'
       }`}
     >
-      <p className="text-center font-display text-lg font-bold uppercase tracking-wide text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.35)]">
+      <span className="pointer-events-none absolute right-2 top-1 select-none font-mono text-[8px] uppercase tracking-widest text-amber/50">
+        Chassis.{String(carTier).padStart(2, '0')}
+      </span>
+      <p className="text-center font-display text-lg font-bold uppercase tracking-wide text-white drop-shadow-[0_0_3px_rgba(255,255,255,0.6)]">
         {carName}
       </p>
-      <p className="text-center text-sm font-semibold text-neon-cyan">
+      <p className="text-center font-mono text-sm font-semibold text-neon-cyan">
         Upgrades Installed: {upgradesInstalled} / {upgradesRequired}
       </p>
       <p className="mb-3 text-center text-xs text-neutral-500">
@@ -419,13 +427,13 @@ function StatsPanel({ stats }: { stats: CarStats }) {
         const fillPercent = Math.min(100, (value / STATS_PANEL_DISPLAY_MAX) * 100);
         return (
           <div key={key}>
-            <div className="mb-0.5 flex items-center justify-between text-[10px] uppercase tracking-wide text-neutral-500">
+            <div className="mb-0.5 flex items-center justify-between font-mono text-[10px] uppercase tracking-wide text-neutral-500">
               <span>{label}</span>
               <span className="tabular-nums text-neutral-400">{value}</span>
             </div>
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-neutral-800">
+            <div className="h-1.5 w-full overflow-hidden border border-neutral-800/80 bg-neutral-900">
               <div
-                className={`h-full origin-left rounded-full ${colorClass}`}
+                className={`h-full origin-left ${colorClass}`}
                 style={{ transform: `scaleX(${fillPercent / 100})` }}
               />
             </div>
@@ -446,17 +454,20 @@ function TradeInPanel({ installedUpgrades, onTradeIn }: TradeInPanelProps) {
     <motion.div
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
-      className="flex flex-col items-center gap-4 rounded-xl border border-neon-cyan/40 bg-bg-panel p-6 text-center"
+      className="panel-cut relative flex flex-col items-center gap-4 border border-neon-cyan/50 bg-bg-panel p-6 text-center"
     >
-      <p className="font-display text-lg font-bold tracking-wide text-neon-cyan drop-shadow-[0_0_10px_rgba(0,240,255,0.7)]">
+      <span className="pointer-events-none absolute right-2 top-1 select-none font-mono text-[8px] uppercase tracking-widest text-neon-cyan/50">
+        Status.Ready
+      </span>
+      <p className="font-display text-lg font-bold tracking-wide text-neon-cyan drop-shadow-[0_0_4px_rgba(0,240,255,0.9)]">
         CAR MASTERED
       </p>
-      <div className="flex flex-col gap-1 text-sm text-neutral-400">
+      <div className="flex flex-col gap-1 font-mono text-sm text-neutral-400">
         {installedUpgrades.map((perk, index) => (
           <span key={`${perk}-${index}`}>✓ {perk}</span>
         ))}
       </div>
-      <p className="text-xs text-neon-cyan/80">
+      <p className="font-mono text-xs text-neon-cyan/80">
         Trade-in bonus: +{Math.round(ECONOMY.TRADE_IN_SCRAP_PER_SECOND_GROWTH * 100)}% Scrap/sec
       </p>
       <motion.button
@@ -464,14 +475,14 @@ function TradeInPanel({ installedUpgrades, onTradeIn }: TradeInPanelProps) {
         onClick={onTradeIn}
         animate={{
           boxShadow: [
-            '0 0 20px 4px rgba(0,240,255,0.4)',
-            '0 0 32px 8px rgba(0,240,255,0.7)',
-            '0 0 20px 4px rgba(0,240,255,0.4)',
+            '0 0 6px 1px rgba(0,240,255,0.5)',
+            '0 0 12px 2px rgba(0,240,255,0.8)',
+            '0 0 6px 1px rgba(0,240,255,0.5)',
           ],
         }}
         transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
         whileTap={{ scale: 0.96 }}
-        className="w-full rounded-full border-2 border-neon-cyan bg-neon-cyan/10 px-6 py-4 font-display text-base font-extrabold tracking-wide text-neon-cyan"
+        className="panel-cut w-full border-2 border-neon-cyan bg-neon-cyan/10 px-6 py-4 font-display text-base font-extrabold tracking-wide text-neon-cyan"
       >
         CONTACT SYNDICATE (TRADE-IN)
       </motion.button>
@@ -649,8 +660,11 @@ function AntiStallCalibrationPanel({ partLevel, perk, onComplete }: AntiStallCal
       initial={{ opacity: 0, scale: 0.95, height: 0 }}
       animate={{ opacity: 1, scale: 1, height: 'auto' }}
       exit={{ opacity: 0, scale: 0.95, height: 0 }}
-      className="relative overflow-hidden rounded-xl border border-neon-cyan/40 bg-bg-panel p-4"
+      className="panel-cut relative overflow-hidden border border-neon-cyan/50 bg-bg-panel p-4"
     >
+      <span className="pointer-events-none absolute right-2 top-1 select-none font-mono text-[8px] uppercase tracking-widest text-neon-cyan/50">
+        Diag.Active
+      </span>
       <AnimatePresence>
         {stallFlash && (
           <motion.div
@@ -663,11 +677,11 @@ function AntiStallCalibrationPanel({ partLevel, perk, onComplete }: AntiStallCal
         )}
       </AnimatePresence>
 
-      <div className="flex items-center justify-center gap-2 text-sm text-neutral-300">
+      <div className="flex items-center justify-center gap-2 font-mono text-sm text-neutral-300">
         <Icon className={`h-4 w-4 ${tier.glow}`} strokeWidth={2} />
         Calibrating {tier.name} (Lv.{partLevel})
       </div>
-      <div className="mt-0.5 space-y-0.5 text-center text-xs text-neon-cyan/80">
+      <div className="mt-0.5 space-y-0.5 text-center font-mono text-xs text-neon-cyan/80">
         {perk && (
           <p>
             + {perk}: {PERK_DESCRIPTIONS[perk]}
@@ -678,16 +692,16 @@ function AntiStallCalibrationPanel({ partLevel, perk, onComplete }: AntiStallCal
 
       <Tachometer rpm={rpm} zoneMin={ANTI_STALL.TARGET_ZONE_MIN} zoneMax={ANTI_STALL.TARGET_ZONE_MAX} />
 
-      <p className="-mt-2 text-center text-xs text-neutral-600">
+      <p className="-mt-2 text-center font-mono text-xs text-neutral-600">
         RPM {Math.round(rpm)} · Green Zone {ANTI_STALL.TARGET_ZONE_MIN}–{ANTI_STALL.TARGET_ZONE_MAX}
       </p>
 
       <div className="mt-3">
-        <div className="mb-1 flex items-center justify-between text-xs text-neutral-500">
+        <div className="mb-1 flex items-center justify-between font-mono text-xs text-neutral-500">
           <span>Calibration</span>
           <span className="tabular-nums">{Math.round(calibrationProgress)}%</span>
         </div>
-        <div className="h-2 w-full overflow-hidden rounded-full bg-neutral-800">
+        <div className="h-2 w-full overflow-hidden border border-neutral-800 bg-neutral-900">
           {/* Scaled via `transform`, not animated via `width` — width changes trigger
              layout, and iOS Safari can deprioritize (visually "freeze") layout-affecting
              repaints while a touch is actively held, which is almost certainly why this bar
@@ -700,7 +714,7 @@ function AntiStallCalibrationPanel({ partLevel, perk, onComplete }: AntiStallCal
              perpetually-stale target — worse the sparser rAF fires, which is exactly what
              made it look laggy on iOS. */}
           <div
-            className="h-full w-full origin-left transform-gpu rounded-full bg-neon-cyan shadow-[0_0_8px_rgba(0,240,255,0.6)]"
+            className="h-full w-full origin-left transform-gpu bg-neon-cyan shadow-[0_0_4px_rgba(0,240,255,0.8)]"
             style={{ transform: `scaleX(${calibrationProgress / 100})` }}
           />
         </div>
@@ -730,7 +744,7 @@ function AntiStallCalibrationPanel({ partLevel, perk, onComplete }: AntiStallCal
             WebkitTouchCallout: 'none',
             touchAction: 'none',
           }}
-          className="touch-none select-none outline-none [-webkit-tap-highlight-color:transparent] [-webkit-touch-callout:none] rounded-full border-2 border-neon-cyan bg-neon-cyan/10 px-10 py-4 font-display text-base font-bold tracking-wide text-neon-cyan shadow-[0_0_20px_rgba(0,240,255,0.5)] active:bg-neon-cyan/20"
+          className="touch-none select-none outline-none [-webkit-tap-highlight-color:transparent] [-webkit-touch-callout:none] rounded-full border-2 border-neon-cyan bg-neon-cyan/10 px-10 py-4 font-display text-base font-bold tracking-wide text-neon-cyan shadow-[0_0_8px_rgba(0,240,255,0.7)] active:bg-neon-cyan/20"
         >
           GAS PEDAL
         </motion.button>
