@@ -15,6 +15,18 @@ interface FloatingText {
 
 const FLOAT_DURATION_MS = 800;
 
+/** scrapPerSecond now grows multiplicatively (a few % per calibration/trade-in — see
+ * economy.ts), so early-game increments are genuinely small in absolute terms. A flat
+ * toFixed(1) rounds most single installs away to nothing visible (0.5 -> 0.515 both display
+ * as "0.5"), which is exactly what made a real, working income boost look like a no-op.
+ * More decimals for small values keeps every install visibly reflected; large late-game
+ * values fall back to whole numbers with thousands separators instead of noisy decimals. */
+function formatScrapRate(value: number): string {
+  if (value < 10) return value.toFixed(2);
+  if (value < 100) return value.toFixed(1);
+  return Math.round(value).toLocaleString();
+}
+
 function formatUpgradeBenefit(upgrade: Upgrade): string {
   switch (upgrade.effect) {
     case 'scrapPerSecond':
@@ -126,7 +138,7 @@ export function JunkyardScreen() {
       <div className="w-full max-w-xs rounded-xl border border-neutral-800 bg-bg-panel p-4">
         <p className="text-sm text-neutral-400">Tap the pile to salvage Scrap by hand.</p>
         <p className="mt-2 font-display text-lg text-neon-cyan">
-          +{scrapPerSecond.toFixed(1)}/sec
+          +{formatScrapRate(scrapPerSecond)}/sec
         </p>
       </div>
 
