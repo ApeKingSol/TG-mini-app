@@ -41,6 +41,7 @@ export function GarageScreen() {
   const partsPurchased = useGameStore((state) => state.partsPurchased);
   const energy = useGameStore((state) => state.energy);
   const maxEnergy = useGameStore((state) => state.maxEnergy);
+  const energyRegenAmount = useGameStore((state) => state.energyRegenAmount);
   const lastEnergyRegenAt = useGameStore((state) => state.lastEnergyRegenAt);
   const installedUpgrades = useGameStore((state) => state.installedUpgrades);
   const buyPart = useGameStore((state) => state.buyPart);
@@ -214,7 +215,7 @@ export function GarageScreen() {
                     {Math.floor(energy)} / {maxEnergy}
                     {secondsUntilEnergyRegen > 0 && (
                       <span className="ml-2 text-neutral-600">
-                        +{ECONOMY.ENERGY_REGEN_AMOUNT} in {formatCountdown(secondsUntilEnergyRegen)}
+                        +{energyRegenAmount} in {formatCountdown(secondsUntilEnergyRegen)}
                       </span>
                     )}
                   </span>

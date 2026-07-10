@@ -35,6 +35,8 @@ function formatUpgradeBenefit(upgrade: Upgrade): string {
       return `+${upgrade.boost} per tap`;
     case 'maxEnergy':
       return `+${upgrade.boost} Max Energy (Garage)`;
+    case 'energyRegenAmount':
+      return `+${upgrade.boost} Energy per regen (Garage)`;
   }
 }
 

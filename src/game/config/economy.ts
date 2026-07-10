@@ -30,7 +30,7 @@ export const ECONOMY = {
    * with this one for progression speed to stay predictable as more tiers are added later,
    * rather than compounding into a runaway wall. See the getUpgradeRequirement doc in
    * carTiers.ts for the other half of that balance (why its growth is capped). */
-  BUY_PART_COST_TIER_MULTIPLIER: 1.8,
+  BUY_PART_COST_TIER_MULTIPLIER: 2.0,
   /** Each part bought within the current car's lifetime multiplies the next one's cost by
    * this factor — the standard compound-growth idle-game curve. */
   PART_BUY_COST_MULTIPLIER: 1.15,
@@ -39,10 +39,13 @@ export const ECONOMY = {
    * by the Garage merge grid. The Junkyard's tap loop doesn't touch this at all; taps are
    * free. */
   STARTING_MAX_ENERGY: 1000,
-  /** Energy is granted in this lump sum... */
-  ENERGY_REGEN_AMOUNT: 25,
+  /** Energy granted per regen tick before any Energy Overclock upgrades — see
+   * PlayerState.energyRegenAmount, which this only seeds a fresh save with. */
+  STARTING_ENERGY_REGEN_AMOUNT: 25,
   /** ...once every this many seconds, rather than trickling in continuously — a discrete
-   * "refill" players can watch count down, like a mobile game's energy timer. */
+   * "refill" players can watch count down, like a mobile game's energy timer. Only the
+   * *amount* per tick is upgradeable (Energy Overclock); this interval is fixed, so the
+   * countdown readout stays predictable regardless of how many Overclocks are owned. */
   ENERGY_REGEN_INTERVAL_SECONDS: 5 * 60,
   /** Energy spent per merge attempt. */
   MERGE_ENERGY_COST: 50,
@@ -87,15 +90,31 @@ export const ECONOMY = {
  * Starting blueprint for the Junkyard's always-visible upgrade list; the store seeds its
  * `upgrades` array from this. Separate from the Garage's perk system — this is a
  * straightforward, repeatable Scrap sink for incremental tap/passive gains.
+ *
+ * Costs and boosts are sized against the *current* early-game numbers (starting
+ * scrapPerSecond 0.5, part prices in the tens of Scrap) rather than the old ones these
+ * replaced (flat boosts that were sensible early but fell hopelessly behind the Garage's
+ * compounding calibration/trade-in bonuses within a couple of tiers, per a real purchase-
+ * simulation — a rational player never bought any of them). Kept flat (not %-based like the
+ * Garage bonuses) deliberately: a %-based Junkyard bonus compounds against its own falling
+ * cost-to-income ratio and creates a runaway feedback loop that trivializes the whole climb
+ * in hours instead of months, also confirmed by simulation.
  */
 export const UPGRADE_BLUEPRINTS = [
   { id: 'rusty-clicker', name: 'Rusty Clicker', baseCost: 25, effect: 'scrapPerClick', boost: 1 },
-  { id: 'auto-scrapper', name: 'Auto-Scrapper', baseCost: 50, effect: 'scrapPerSecond', boost: 2 },
-  { id: 'expanded-battery', name: 'Expanded Battery', baseCost: 200, effect: 'maxEnergy', boost: 200 },
+  { id: 'auto-scrapper', name: 'Auto-Scrapper', baseCost: 30, effect: 'scrapPerSecond', boost: 0.3 },
+  { id: 'expanded-battery', name: 'Expanded Battery', baseCost: 80, effect: 'maxEnergy', boost: 150 },
+  {
+    id: 'energy-overclock',
+    name: 'Energy Overclock',
+    baseCost: 120,
+    effect: 'energyRegenAmount',
+    boost: 5,
+  },
 ] as const;
 
 /** The starting price for a Lv.1 part on a given car tier, before that car's own
- * per-purchase ramp — Tier 1 is the base 15 Scrap, Tier 2 is 27, Tier 3 is ~48.6, and so on,
+ * per-purchase ramp — Tier 1 is the base 15 Scrap, Tier 2 is 30, Tier 3 is 60, and so on,
  * ×BUY_PART_COST_TIER_MULTIPLIER per tier. */
 export function getPartBasePrice(carTier: number): number {
   return ECONOMY.BUY_PART_COST_SCRAP * ECONOMY.BUY_PART_COST_TIER_MULTIPLIER ** (carTier - 1);

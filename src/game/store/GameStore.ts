@@ -135,12 +135,30 @@ function createStartingUpgrades(): Upgrade[] {
  * showing whatever it had at save time forever — `createStartingUpgrades` only ever runs for
  * a brand-new store, never for an existing one. Retiring an id here only drops it from this
  * list; any stat boost it already granted (scrapPerSecond, maxEnergy, ...) stays intact,
- * since that lives directly on the player state, not derived from this array. */
+ * since that lives directly on the player state, not derived from this array.
+ *
+ * Also re-derives `cost`/`boost`/`name` for upgrades the save already has, from the *current*
+ * blueprint + the persisted `owned` count — a balance pass that changes an existing
+ * upgrade's numbers (not just adds a new one) would otherwise never reach a save that already
+ * has that upgrade recorded, since it'd keep whatever cost/boost was persisted at purchase
+ * time forever. `owned` itself, and whatever stat boost past purchases already granted,
+ * aren't touched — only the *next* purchase's price/value catches up. */
 function reconcileUpgrades(upgrades: Upgrade[]): Upgrade[] {
   const blueprintById = new Map<string, (typeof UPGRADE_BLUEPRINTS)[number]>(
     UPGRADE_BLUEPRINTS.map((blueprint) => [blueprint.id, blueprint]),
   );
-  const kept = upgrades.filter((upgrade) => blueprintById.has(upgrade.id));
+  const kept = upgrades
+    .filter((upgrade) => blueprintById.has(upgrade.id))
+    .map((upgrade) => {
+      const blueprint = blueprintById.get(upgrade.id)!;
+      return {
+        ...upgrade,
+        name: blueprint.name,
+        effect: blueprint.effect,
+        boost: blueprint.boost,
+        cost: Math.round(blueprint.baseCost * ECONOMY.UPGRADE_COST_MULTIPLIER ** upgrade.owned),
+      };
+    });
   const keptIds = new Set(kept.map((upgrade) => upgrade.id));
   const added = UPGRADE_BLUEPRINTS.filter((blueprint) => !keptIds.has(blueprint.id)).map(
     (blueprint) => ({
@@ -176,6 +194,7 @@ function applyEnergyRegen(
   maxEnergy: number,
   lastEnergyRegenAt: number,
   now: number,
+  energyRegenAmount: number,
 ): { energy: number; lastEnergyRegenAt: number } {
   if (energy >= maxEnergy) return { energy, lastEnergyRegenAt };
   const intervalMs = ECONOMY.ENERGY_REGEN_INTERVAL_SECONDS * 1000;
@@ -183,7 +202,7 @@ function applyEnergyRegen(
   const ticks = Math.floor(elapsedMs / intervalMs);
   if (ticks <= 0) return { energy, lastEnergyRegenAt };
   return {
-    energy: Math.min(maxEnergy, energy + ticks * ECONOMY.ENERGY_REGEN_AMOUNT),
+    energy: Math.min(maxEnergy, energy + ticks * energyRegenAmount),
     lastEnergyRegenAt: lastEnergyRegenAt + ticks * intervalMs,
   };
 }
@@ -199,6 +218,7 @@ export const useGameStore = create<GameStore>()(
       partsPurchased: 0,
       energy: ECONOMY.STARTING_MAX_ENERGY,
       maxEnergy: ECONOMY.STARTING_MAX_ENERGY,
+      energyRegenAmount: ECONOMY.STARTING_ENERGY_REGEN_AMOUNT,
       lastEnergyRegenAt: Date.now(),
       pendingCalibrationPart: null,
       installedUpgrades: [],
@@ -219,7 +239,13 @@ export const useGameStore = create<GameStore>()(
         const deltaSeconds = deltaTime / 1000;
 
         set((state) => {
-          const regen = applyEnergyRegen(state.energy, state.maxEnergy, state.lastEnergyRegenAt, now);
+          const regen = applyEnergyRegen(
+            state.energy,
+            state.maxEnergy,
+            state.lastEnergyRegenAt,
+            now,
+            state.energyRegenAmount,
+          );
           return {
             scrap: state.scrap + state.scrapPerSecond * deltaSeconds,
             energy: regen.energy,
@@ -420,6 +446,9 @@ export const useGameStore = create<GameStore>()(
           ...(upgrade.effect === 'maxEnergy' && {
             maxEnergy: state.maxEnergy + upgrade.boost,
           }),
+          ...(upgrade.effect === 'energyRegenAmount' && {
+            energyRegenAmount: state.energyRegenAmount + upgrade.boost,
+          }),
           upgrades: state.upgrades.map((u) =>
             u.id === id
               ? {
@@ -455,7 +484,13 @@ export const useGameStore = create<GameStore>()(
         // unconditionally, independent of the elapsedSeconds-gated Scrap payout below.
         set((state) => {
           const correctName = getCarTier(state.carTier).name;
-          const regen = applyEnergyRegen(state.energy, state.maxEnergy, state.lastEnergyRegenAt, now);
+          const regen = applyEnergyRegen(
+            state.energy,
+            state.maxEnergy,
+            state.lastEnergyRegenAt,
+            now,
+            state.energyRegenAmount,
+          );
           const isDueAdminGrant =
             getTelegramUserId() === ADMIN_TELEGRAM_ID &&
             !state.neonHistory.some((entry) => entry.label === ADMIN_GRANT_LABEL);
