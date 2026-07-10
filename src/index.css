@@ -82,7 +82,11 @@ body,
   mix-blend-mode: overlay;
 }
 
-.bg-cyber-grid > * {
+/* Excludes `nav`: BottomNav needs to stay `position: fixed` (via its own Tailwind class), and
+   this unlayered rule would otherwise unconditionally win over that utility class and silently
+   demote it to `relative`, breaking both its pinned placement and its stacking order — it would
+   render, but end up in normal flow and behind the page content instead of fixed on top. */
+.bg-cyber-grid > *:not(nav) {
   position: relative;
   z-index: 1;
 }
