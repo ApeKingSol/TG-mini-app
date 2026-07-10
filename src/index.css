@@ -112,3 +112,25 @@ body,
     0% 8px
   );
 }
+
+/* Bottom nav shape: only the top two corners are chamfered (the bottom edge sits off-screen
+   under the safe-area inset, so cutting it too would just be invisible), reading as a bolted-
+   on console panel rather than a flat app bar. */
+.nav-chamfer {
+  clip-path: polygon(0 14px, 14px 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%);
+}
+
+/* Brushed-metal panel: a vertical gradient plus a fine grid etched into it, distinct from
+   (and busier than) the page background's own grid so the nav reads as a physically separate
+   console bolted to the bottom of the screen. */
+.nav-metal {
+  background-color: var(--color-bg-panel);
+  background-image:
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.04), rgba(0, 0, 0, 0.35)),
+    linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size:
+    100% 100%,
+    14px 14px,
+    14px 14px;
+}
