@@ -7,28 +7,26 @@ export type ScreenId = 'junkyard' | 'garage' | 'race';
  * glyph, so the nav reads as custom HUD chrome rather than a stock trash/wrench/flag set. */
 type IconComponent = (props: SVGProps<SVGSVGElement>) => ReactElement;
 
-/** Scrapyard: a robotic grapple/claw — pivot, two hinged arms, a center prong. */
-const ClawIcon: IconComponent = (props) => (
-  <svg viewBox="0 0 24 24" fill="none" {...props}>
-    <path d="M12 2.5v3.3" strokeLinecap="round" />
-    <circle cx="12" cy="7" r="1.3" fill="currentColor" stroke="none" />
-    <path d="M12 7 6.3 11.8 8 14.2l4-3.4" strokeLinejoin="round" strokeLinecap="round" />
-    <path d="M12 7l5.7 4.8L16 14.2l-4-3.4" strokeLinejoin="round" strokeLinecap="round" />
-    <path d="M12 10.8v5.2" strokeLinecap="round" />
-    <path d="M9.4 20.5 12 17.6l2.6 2.9" strokeLinecap="round" strokeLinejoin="round" />
-  </svg>
-);
-
-/** Garage: a plasma-core wrench — an open-end head wrapped around a glowing charge. */
-const PlasmaWrenchIcon: IconComponent = (props) => (
+/** Scrapyard: a plain junk pile — jagged debris heap with a couple of scraps sticking out. */
+const JunkPileIcon: IconComponent = (props) => (
   <svg viewBox="0 0 24 24" fill="none" {...props}>
     <path
-      d="M9.7 4.3a4 4 0 0 0-.9 4.3L3.4 14l1.7 1.7 5.4-5.4a4 4 0 0 0 4.3-.9 4 4 0 0 0 1-3.9l-2.2 2.2a1.6 1.6 0 0 1-2.3-2.3l2.2-2.2a4 4 0 0 0-3.8 1.1z"
+      d="M2.5 19.5 4.8 9.2l2.4 3 2.6-6 3 5.8 2.7-6.2 3 6.4 2.7-2 1.3 9.3z"
       strokeLinejoin="round"
       strokeLinecap="round"
     />
-    <circle cx="5.6" cy="18.4" r="1.1" fill="currentColor" stroke="none" />
-    <path d="M12.5 8.5 4.8 16.2" strokeLinecap="round" opacity="0.5" />
+    <path d="M2.5 19.5h19" strokeLinecap="round" />
+    <path d="M8.5 19.5V16M13 19.5v-4.4M17 19.5v-3" strokeLinecap="round" opacity="0.6" />
+  </svg>
+);
+
+/** Garage: a plain garage building — peaked roof over a door with panel lines. */
+const GarageIcon: IconComponent = (props) => (
+  <svg viewBox="0 0 24 24" fill="none" {...props}>
+    <path d="M3 11 12 4l9 7" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M4.5 10.3V20h15v-9.7" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M7.5 20v-7.5h9V20" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M7.5 15.7h9M7.5 17.8h9" strokeLinecap="round" />
   </svg>
 );
 
@@ -49,7 +47,7 @@ interface NavItem {
 }
 
 const SIDE_ITEMS: NavItem[] = [
-  { id: 'junkyard', label: 'Scrapyard', Icon: ClawIcon },
+  { id: 'junkyard', label: 'Scrapyard', Icon: JunkPileIcon },
   { id: 'race', label: 'The Streets', Icon: SpeedometerIcon },
 ];
 
@@ -92,7 +90,7 @@ export function BottomNav({ active, onChange }: BottomNavProps) {
               }`}
             >
               <span className="absolute inset-[3px] rounded-full border border-black/40" />
-              <PlasmaWrenchIcon
+              <GarageIcon
                 className={`h-6 w-6 transition-opacity ${
                   isGarageActive
                     ? 'text-neon-cyan opacity-100 drop-shadow-[0_0_5px_rgba(0,240,255,0.95)]'

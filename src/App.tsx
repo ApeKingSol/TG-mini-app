@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import { UserCircle } from 'lucide-react';
+import { ProfileAvatarButton } from './components/ProfileAvatarButton';
 import { useGameLoop } from './hooks/useGameLoop';
 import { useTelegram } from './hooks/useTelegram';
 import { useCloudSync } from './hooks/useCloudSync';
@@ -17,7 +17,7 @@ function App() {
   useGameLoop();
   // Cross-device sync (Netlify Function + Blobs) — a no-op outside an actual Telegram client.
   const cloudSync = useCloudSync();
-  const { isTelegram, userFirstName } = useTelegram();
+  const { isTelegram, userFirstName, userPhotoUrl } = useTelegram();
   const [activeScreen, setActiveScreen] = useState<ScreenId>('garage');
   // The Profile screen lives outside the tab system (reached via the header button, not the
   // bottom nav) — tracking it separately means returning from it lands back on whatever tab
@@ -42,14 +42,7 @@ function App() {
              and being later in the DOM it painted on top, swallowing every tap even though
              the button itself was never broken. A real (non-auto) z-index wins regardless of
              DOM order or sibling filters. */}
-          <button
-            type="button"
-            onClick={() => setIsProfileOpen(true)}
-            aria-label="Player Profile"
-            className="panel-cut-sm absolute right-0 top-0 z-10 flex items-center justify-center border border-neon-cyan/50 bg-neon-cyan/10 p-2 text-neon-cyan"
-          >
-            <UserCircle className="h-5 w-5" strokeWidth={1.75} />
-          </button>
+          <ProfileAvatarButton photoUrl={userPhotoUrl} onClick={() => setIsProfileOpen(true)} />
           <p className="px-11 font-mono text-[9px] uppercase tracking-[0.2em] text-amber/70">
             Sys.Online // Uplink: Stable
           </p>

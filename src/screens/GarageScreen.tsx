@@ -363,7 +363,7 @@ function CarInstallationZone({
     // drop-zone feedback without touching anything inside the car's silhouette.
     <div
       ref={setNodeRef}
-      className={`panel-cut relative overflow-hidden border p-4 transition-colors ${
+      className={`relative overflow-hidden rounded-2xl border p-4 transition-colors ${
         isOver ? 'border-neon-cyan/70' : 'border-neutral-800'
       }`}
     >
