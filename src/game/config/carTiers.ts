@@ -26,14 +26,30 @@ export function getCarTier(tier: number): CarTierInfo {
   return CAR_TIERS[Math.max(0, index)];
 }
 
+/** Requirement growth flattens at this many installs — see getUpgradeRequirement below for
+ * why. */
+const UPGRADE_REQUIREMENT_CAP = 8;
+
 /**
  * How many perk installs the current car needs before it's "MASTERED" and ready to trade
- * in. Grows every two tiers (Tier 1-2 need 3, Tier 3-4 need 4, Tier 5-6 need 5, ...) so
- * later cars take meaningfully longer without the requirement exploding. Since there are
- * only 3 distinct perks, meeting a requirement above 3 means installing a repeat.
+ * in. Grows every two tiers (Tier 1-2 need 3, Tier 3-4 need 4, Tier 5-6 need 5, ...) up to
+ * UPGRADE_REQUIREMENT_CAP, then holds steady — every tier from there on needs the same
+ * number of installs. Since there are only 3 distinct perks, meeting a requirement above 3
+ * means installing a repeat.
+ *
+ * The cap matters more than it looks: each extra install needed is 8 more Lv.1 parts bought
+ * at BUY_PART_COST_MULTIPLIER's compound rate, so letting this requirement keep growing
+ * forever (as it used to) makes each additional tier's *total* cost grow by that compounding
+ * on top of BUY_PART_COST_TIER_MULTIPLIER's own per-tier growth — the combination compounds
+ * a second time on top of itself, tier over tier, and is what made Tier 10 take centuries
+ * under the old, uncapped numbers. Capping it means every tier past the cap costs the same
+ * multiple more than the last (BUY_PART_COST_TIER_MULTIPLIER, roughly matched by
+ * CALIBRATION_SCRAP_PER_SECOND_GROWTH/TRADE_IN_SCRAP_PER_SECOND_GROWTH in economy.ts), so
+ * progression speed stays predictable indefinitely as more car tiers get added later,
+ * instead of quietly re-introducing the runaway.
  */
 export function getUpgradeRequirement(carTier: number): number {
-  return 3 + Math.floor((carTier - 1) / 2);
+  return Math.min(3 + Math.floor((carTier - 1) / 2), UPGRADE_REQUIREMENT_CAP);
 }
 
 export interface CarSkin {

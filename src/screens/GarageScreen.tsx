@@ -456,7 +456,7 @@ function TradeInPanel({ installedUpgrades, onTradeIn }: TradeInPanelProps) {
         ))}
       </div>
       <p className="text-xs text-neon-cyan/80">
-        Trade-in bonus: +{ECONOMY.TRADE_IN_SCRAP_PER_SECOND_BOOST} permanent Scrap/sec
+        Trade-in bonus: +{Math.round(ECONOMY.TRADE_IN_SCRAP_PER_SECOND_GROWTH * 100)}% Scrap/sec
       </p>
       <motion.button
         type="button"
@@ -672,7 +672,7 @@ function AntiStallCalibrationPanel({ partLevel, perk, onComplete }: AntiStallCal
             + {perk}: {PERK_DESCRIPTIONS[perk]}
           </p>
         )}
-        <p>+ {ECONOMY.CALIBRATION_SCRAP_PER_SECOND_BOOST} permanent Scrap/sec (every successful install)</p>
+        <p>+ {Math.round(ECONOMY.CALIBRATION_SCRAP_PER_SECOND_GROWTH * 100)}% Scrap/sec (every successful install)</p>
       </div>
 
       <Tachometer rpm={rpm} zoneMin={ANTI_STALL.TARGET_ZONE_MIN} zoneMax={ANTI_STALL.TARGET_ZONE_MAX} />

@@ -358,9 +358,12 @@ export const useGameStore = create<GameStore>()(
             const installedUpgrades = perk
               ? [...state.installedUpgrades, perk]
               : state.installedUpgrades;
-            // Every successful install grants this flat scrapPerSecond bump regardless of
-            // which perk was rolled, on top of that perk's own specific effect below.
-            const scrapPerSecond = state.scrapPerSecond + ECONOMY.CALIBRATION_SCRAP_PER_SECOND_BOOST;
+            // Every successful install multiplies scrapPerSecond by this regardless of
+            // which perk was rolled, on top of that perk's own specific effect below —
+            // multiplicative so income keeps pace with the tier-over-tier part-price growth
+            // (see CALIBRATION_SCRAP_PER_SECOND_GROWTH's doc in economy.ts).
+            const scrapPerSecond =
+              state.scrapPerSecond * (1 + ECONOMY.CALIBRATION_SCRAP_PER_SECOND_GROWTH);
 
             if (perk === 'Quantum Injector') {
               return {
@@ -439,7 +442,7 @@ export const useGameStore = create<GameStore>()(
           partsPurchased: 0,
           carTier: state.carTier + 1,
           car: { ...state.car, name: getCarTier(carTier + 1).name },
-          scrapPerSecond: state.scrapPerSecond + ECONOMY.TRADE_IN_SCRAP_PER_SECOND_BOOST,
+          scrapPerSecond: state.scrapPerSecond * (1 + ECONOMY.TRADE_IN_SCRAP_PER_SECOND_GROWTH),
         }));
       },
 

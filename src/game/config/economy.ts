@@ -24,8 +24,13 @@ export const ECONOMY = {
   BUY_PART_COST_SCRAP: 15,
   /** Each car tier's base part price is this many times the previous tier's — the
    * standard idle-game move of scaling the whole economy up at every prestige step, not
-   * just letting a single car's price ramp run forever. */
-  BUY_PART_COST_TIER_MULTIPLIER: 10,
+   * just letting a single car's price ramp run forever. Deliberately modest (not, say, 10x)
+   * because it compounds against CALIBRATION_SCRAP_PER_SECOND_GROWTH /
+   * TRADE_IN_SCRAP_PER_SECOND_GROWTH below every tier — those two need to roughly keep pace
+   * with this one for progression speed to stay predictable as more tiers are added later,
+   * rather than compounding into a runaway wall. See the getUpgradeRequirement doc in
+   * carTiers.ts for the other half of that balance (why its growth is capped). */
+  BUY_PART_COST_TIER_MULTIPLIER: 1.8,
   /** Each part bought within the current car's lifetime multiplies the next one's cost by
    * this factor — the standard compound-growth idle-game curve. */
   PART_BUY_COST_MULTIPLIER: 1.15,
@@ -44,16 +49,22 @@ export const ECONOMY = {
   /** Chance (0-1) a merge crits, jumping the result an extra tier above normal. */
   MERGE_CRIT_CHANCE: 0.05,
 
-  /** Quantum Injector perk: permanent scrapPerSecond granted on a successful install. */
+  /** Quantum Injector perk: extra flat scrapPerSecond granted on a successful install, on
+   * top of CALIBRATION_SCRAP_PER_SECOND_GROWTH below — small enough not to be the economy's
+   * main income driver, just a differentiator between the 3 perks. */
   QUANTUM_INJECTOR_SCRAP_PER_SECOND: 5.0,
   /** Neuro-Optimizer perk: permanent boost to tap critChance on a successful install. */
   NEURO_OPTIMIZER_CRIT_CHANCE_BOOST: 0.05,
-  /** Every successful Anti-Stall calibration grants this much scrapPerSecond regardless of
-   * which perk was rolled — on top of that perk's own specific effect (if any). */
-  CALIBRATION_SCRAP_PER_SECOND_BOOST: 5,
-  /** A successful trade-in grants this much scrapPerSecond, on top of whatever the car's 3
-   * installed perks already contributed — the economy-wide payoff for reaching MASTERED. */
-  TRADE_IN_SCRAP_PER_SECOND_BOOST: 15,
+  /** Every successful Anti-Stall calibration multiplies scrapPerSecond by (1 + this),
+   * regardless of which perk was rolled. Multiplicative (not the flat +5/sec this used to
+   * be) so income keeps compounding at a rate comparable to BUY_PART_COST_TIER_MULTIPLIER as
+   * the player advances — a flat bonus falls further behind every tier and is exactly what
+   * made Tier 10 take centuries under the old numbers. */
+  CALIBRATION_SCRAP_PER_SECOND_GROWTH: 0.03,
+  /** A successful trade-in multiplies scrapPerSecond by (1 + this) — the bigger economy-wide
+   * payoff for reaching MASTERED, on top of each calibration's own smaller compounding above.
+   * Also multiplicative for the same reason. */
+  TRADE_IN_SCRAP_PER_SECOND_GROWTH: 0.15,
 
   /** Chance (0-1) that a tap lands as a critical hit. */
   STARTING_CRIT_CHANCE: 0.1,
@@ -84,8 +95,8 @@ export const UPGRADE_BLUEPRINTS = [
 ] as const;
 
 /** The starting price for a Lv.1 part on a given car tier, before that car's own
- * per-purchase ramp — Tier 1 is the base 15 Scrap, Tier 2 is 150, Tier 3 is 1,500, and so
- * on, ×10 per tier. */
+ * per-purchase ramp — Tier 1 is the base 15 Scrap, Tier 2 is 27, Tier 3 is ~48.6, and so on,
+ * ×BUY_PART_COST_TIER_MULTIPLIER per tier. */
 export function getPartBasePrice(carTier: number): number {
   return ECONOMY.BUY_PART_COST_SCRAP * ECONOMY.BUY_PART_COST_TIER_MULTIPLIER ** (carTier - 1);
 }
