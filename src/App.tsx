@@ -27,7 +27,7 @@ function App() {
   return (
     <div className="flex min-h-screen flex-col bg-cyber-grid">
       <OfflineEarningsToast />
-      <div className="flex-1 px-4 pb-24 pt-6">
+      <div className="flex-1 px-4 pb-[120px] pt-6">
         {!isTelegram && (
           <div className="panel-cut-sm mb-4 border border-amber/40 bg-amber/[0.06] px-3 py-2 font-mono text-[11px] uppercase tracking-wide text-amber">
             [!] Running outside Telegram — open via a bot link for the full uplink

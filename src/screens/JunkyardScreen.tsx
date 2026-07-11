@@ -87,15 +87,23 @@ export function JunkyardScreen() {
         <motion.button
           type="button"
           onClick={handleTapArea}
-          animate={{ rotate: [0, -4, 4, 0] }}
-          transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
+          animate={{ rotate: [0, -4, 4, 0], y: [0, -5, 0] }}
+          transition={{
+            rotate: { duration: 2.5, repeat: Infinity, ease: 'easeInOut' },
+            y: { duration: 2.5, repeat: Infinity, ease: 'easeInOut' },
+          }}
           whileTap={{ scale: 0.85 }}
           className="relative cursor-pointer"
         >
+          {/* No background/border-radius crop here on purpose — the source photo already has
+             a near-black backdrop baked in from the sprite sheet it was cut from, and a hard
+             `rounded-full` crop just turned that into an ugly flat disc against the app's new
+             photo background. `mix-blend-screen` makes true-black pixels vanish into whatever
+             is behind them instead, and `glow-mask` feathers what's left of the edge. */}
           <img
             src="/icon-scrap-tap.jpg"
             alt="Salvage the scrap pile"
-            className="h-28 w-28 rounded-full object-cover drop-shadow-[0_0_14px_rgba(0,240,255,0.55)]"
+            className="glow-mask h-28 w-28 object-cover mix-blend-screen drop-shadow-[0_0_14px_rgba(0,240,255,0.55)]"
           />
         </motion.button>
 

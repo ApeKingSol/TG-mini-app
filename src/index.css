@@ -120,6 +120,17 @@ body,
   );
 }
 
+/* Feathers a raster photo's edges into a soft circular fade, paired with Tailwind's
+   `mix-blend-screen` utility wherever a cropped JPEG icon has a near-black background baked
+   into the file itself (the nav icons and the Junkyard tap icon are crops of a larger sprite
+   sheet, not transparent PNGs) — screen blend makes true-black pixels vanish into whatever's
+   behind them, and this mask fades the last bit of residual edge/compression noise rather
+   than leaving a hard rectangular or circular crop line. */
+.glow-mask {
+  -webkit-mask-image: radial-gradient(circle, black 60%, transparent 100%);
+  mask-image: radial-gradient(circle, black 60%, transparent 100%);
+}
+
 /* Floating glassmorphism dock: a heavily-blurred translucent pill detached from the screen
    edges (positioned via left/right/bottom on the `nav` element itself, not here) rather than
    a bolted-on full-width bar. backdrop-filter blurs whatever's showing through from the

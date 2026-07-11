@@ -46,29 +46,29 @@ export function BottomNav({ active, onChange }: BottomNavProps) {
         </div>
       </div>
 
-      <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-center">
-        <div className="pointer-events-auto flex -translate-y-1/2 flex-col items-center gap-1">
+      {/* Only the icon itself pokes above the glass panel's top edge (a fixed -18px, not a
+         relative -50% of the whole label+underline stack) — enough to read as a floating
+         primary action without the label/underline drifting up over the screen content
+         behind the nav, and without the button overlapping content the way a full -50%
+         offset of this taller (icon+label+underline) stack used to. */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 flex -translate-y-[18px] justify-center">
+        <div className="pointer-events-auto flex flex-col items-center justify-center gap-1">
           <motion.button
             type="button"
             onClick={() => onChange('garage')}
             whileTap={{ scale: 0.9 }}
-            animate={
-              isGarageActive
-                ? { boxShadow: '0 0 10px 2px rgba(0,240,255,0.65), 0 0 22px 6px rgba(0,240,255,0.3)' }
-                : { boxShadow: '0 0 6px 1px rgba(0,240,255,0.15)' }
-            }
-            transition={{ duration: 0.2 }}
-            className={`relative flex h-[52px] w-[52px] items-center justify-center rounded-full border-[3px] bg-gradient-to-b from-neutral-600 via-neutral-800 to-black shadow-[inset_0_2px_3px_rgba(255,255,255,0.2),inset_0_-3px_6px_rgba(0,0,0,0.6)] ${
-              isGarageActive ? 'border-neon-cyan/80' : 'border-neutral-500/70'
-            }`}
+            className="flex items-center justify-center"
           >
-            <span className="absolute inset-[3px] rounded-full border border-black/40" />
+            {/* No button chrome (no metal circle, no border, no box-shadow) — same treatment
+               as the side nav icons: a transparent container, all the emphasis coming from
+               drop-shadow on the image itself, distinguished from the side icons only by
+               being visibly larger. */}
             <img
               src={GARAGE_ICON_SRC}
               alt=""
-              className={`h-9 w-9 object-contain transition-all ${
+              className={`glow-mask h-14 w-14 object-contain mix-blend-screen transition-all ${
                 isGarageActive
-                  ? 'opacity-100 drop-shadow-[0_0_5px_rgba(0,240,255,0.85)]'
+                  ? 'opacity-100 drop-shadow-[0_0_10px_rgba(0,240,255,0.9)]'
                   : 'opacity-50 grayscale'
               }`}
             />
@@ -110,7 +110,7 @@ function NavButton({ item, isActive, onClick }: NavButtonProps) {
       <img
         src={item.iconSrc}
         alt=""
-        className={`h-8 w-8 object-contain transition-all ${
+        className={`glow-mask h-8 w-8 object-contain mix-blend-screen transition-all ${
           isActive ? 'opacity-100 drop-shadow-[0_0_5px_rgba(0,240,255,0.85)]' : 'opacity-45 grayscale'
         }`}
       />
