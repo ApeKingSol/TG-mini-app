@@ -61,6 +61,10 @@ const ADMIN_TELEGRAM_ID = '8280101176';
 const ADMIN_GRANT_AMOUNT = 10000;
 const ADMIN_GRANT_LABEL = 'Admin Bonus';
 
+/** Bump to wipe every existing save back to a fresh start on next load — see the `migrate`
+ * option below for what "wipe" means for the admin account specifically. */
+const SAVE_VERSION = 1;
+
 interface GameActions {
   /** Advances passive Scrap generation and Energy regen based on real elapsed time since the last save. */
   tick: () => void;
@@ -130,6 +134,32 @@ function createStartingUpgrades(): Upgrade[] {
   }));
 }
 
+/** The plain-data half of a fresh save — shared by the store's own initial state and by
+ * migrate() below, so a brand-new player and a wiped-on-migrate one can never drift apart. */
+function createInitialPlayerState(): PlayerState {
+  return {
+    scrap: ECONOMY.STARTING_SCRAP,
+    neon: ECONOMY.STARTING_NEON,
+    car: createStartingCar(),
+    carTier: 1,
+    inventory: createStartingInventory(),
+    partsPurchased: 0,
+    energy: ECONOMY.STARTING_MAX_ENERGY,
+    maxEnergy: ECONOMY.STARTING_MAX_ENERGY,
+    lastEnergyRegenAt: Date.now(),
+    pendingCalibrationPart: null,
+    installedUpgrades: [],
+    upgrades: createStartingUpgrades(),
+    neonHistory: [],
+    scrapPerClick: ECONOMY.STARTING_SCRAP_PER_CLICK,
+    scrapPerSecond: ECONOMY.STARTING_SCRAP_PER_SECOND,
+    critChance: ECONOMY.STARTING_CRIT_CHANCE,
+    critMultiplier: ECONOMY.STARTING_CRIT_MULTIPLIER,
+    offlineEarnings: null,
+    lastSaved: Date.now(),
+  };
+}
+
 /** Re-syncs a persisted `upgrades` array against the current UPGRADE_BLUEPRINTS list, run on
  * every rehydrate. Without this, a save made before an upgrade was added or retired keeps
  * showing whatever it had at save time forever — `createStartingUpgrades` only ever runs for
@@ -194,7 +224,6 @@ function applyEnergyRegen(
   maxEnergy: number,
   lastEnergyRegenAt: number,
   now: number,
-  energyRegenAmount: number,
 ): { energy: number; lastEnergyRegenAt: number } {
   if (energy >= maxEnergy) return { energy, lastEnergyRegenAt };
   const intervalMs = ECONOMY.ENERGY_REGEN_INTERVAL_SECONDS * 1000;
@@ -202,7 +231,7 @@ function applyEnergyRegen(
   const ticks = Math.floor(elapsedMs / intervalMs);
   if (ticks <= 0) return { energy, lastEnergyRegenAt };
   return {
-    energy: Math.min(maxEnergy, energy + ticks * energyRegenAmount),
+    energy: Math.min(maxEnergy, energy + ticks * ECONOMY.ENERGY_REGEN_AMOUNT),
     lastEnergyRegenAt: lastEnergyRegenAt + ticks * intervalMs,
   };
 }
@@ -210,26 +239,7 @@ function applyEnergyRegen(
 export const useGameStore = create<GameStore>()(
   persist(
     (set, get) => ({
-      scrap: ECONOMY.STARTING_SCRAP,
-      neon: ECONOMY.STARTING_NEON,
-      car: createStartingCar(),
-      carTier: 1,
-      inventory: createStartingInventory(),
-      partsPurchased: 0,
-      energy: ECONOMY.STARTING_MAX_ENERGY,
-      maxEnergy: ECONOMY.STARTING_MAX_ENERGY,
-      energyRegenAmount: ECONOMY.STARTING_ENERGY_REGEN_AMOUNT,
-      lastEnergyRegenAt: Date.now(),
-      pendingCalibrationPart: null,
-      installedUpgrades: [],
-      upgrades: createStartingUpgrades(),
-      neonHistory: [],
-      scrapPerClick: ECONOMY.STARTING_SCRAP_PER_CLICK,
-      scrapPerSecond: ECONOMY.STARTING_SCRAP_PER_SECOND,
-      critChance: ECONOMY.STARTING_CRIT_CHANCE,
-      critMultiplier: ECONOMY.STARTING_CRIT_MULTIPLIER,
-      offlineEarnings: null,
-      lastSaved: Date.now(),
+      ...createInitialPlayerState(),
 
       tick: () => {
         const now = Date.now();
@@ -239,13 +249,7 @@ export const useGameStore = create<GameStore>()(
         const deltaSeconds = deltaTime / 1000;
 
         set((state) => {
-          const regen = applyEnergyRegen(
-            state.energy,
-            state.maxEnergy,
-            state.lastEnergyRegenAt,
-            now,
-            state.energyRegenAmount,
-          );
+          const regen = applyEnergyRegen(state.energy, state.maxEnergy, state.lastEnergyRegenAt, now);
           return {
             scrap: state.scrap + state.scrapPerSecond * deltaSeconds,
             energy: regen.energy,
@@ -446,9 +450,6 @@ export const useGameStore = create<GameStore>()(
           ...(upgrade.effect === 'maxEnergy' && {
             maxEnergy: state.maxEnergy + upgrade.boost,
           }),
-          ...(upgrade.effect === 'energyRegenAmount' && {
-            energyRegenAmount: state.energyRegenAmount + upgrade.boost,
-          }),
           upgrades: state.upgrades.map((u) =>
             u.id === id
               ? {
@@ -484,13 +485,7 @@ export const useGameStore = create<GameStore>()(
         // unconditionally, independent of the elapsedSeconds-gated Scrap payout below.
         set((state) => {
           const correctName = getCarTier(state.carTier).name;
-          const regen = applyEnergyRegen(
-            state.energy,
-            state.maxEnergy,
-            state.lastEnergyRegenAt,
-            now,
-            state.energyRegenAmount,
-          );
+          const regen = applyEnergyRegen(state.energy, state.maxEnergy, state.lastEnergyRegenAt, now);
           const isDueAdminGrant =
             getTelegramUserId() === ADMIN_TELEGRAM_ID &&
             !state.neonHistory.some((entry) => entry.label === ADMIN_GRANT_LABEL);
@@ -540,6 +535,25 @@ export const useGameStore = create<GameStore>()(
       // offlineEarnings is a one-shot UI toast, recomputed fresh each load — persisting
       // it would just make a stale "Welcome back" reappear on the next reload.
       partialize: getSyncableState,
+      version: SAVE_VERSION,
+      // Every save below the current SAVE_VERSION gets wiped back to a fresh start — bump
+      // SAVE_VERSION whenever an economy rebalance is big enough that letting existing saves
+      // keep their old-economy progress would be unfair to everyone who starts after it (this
+      // one exists because a purchasable Energy Overclock upgrade let a real player reach
+      // Tier 7/10 in under 12 hours; see economy.ts). The admin account is the one exception —
+      // it keeps its $NEON balance/history (so the one-time admin grant below doesn't re-fire)
+      // but loses car/scrap progress same as everyone else. A fresh `lastSaved: Date.now()`
+      // here is also what stops the cross-device sync backend from pulling a stale pre-wipe
+      // cloud save back down over this: useCloudSync only ever adopts a remote save that's
+      // *newer* than local, and nothing pre-wipe can be newer than "now".
+      migrate: (persistedState) => {
+        const fresh = createInitialPlayerState();
+        const old = persistedState as Partial<PlayerState> | undefined;
+        if (old && getTelegramUserId() === ADMIN_TELEGRAM_ID) {
+          return { ...fresh, neon: old.neon ?? fresh.neon, neonHistory: old.neonHistory ?? fresh.neonHistory };
+        }
+        return fresh;
+      },
       onRehydrateStorage: () => (state) => {
         if (state) localLastSavedAtLoad = state.lastSaved;
         state?.applyOfflineProgress();

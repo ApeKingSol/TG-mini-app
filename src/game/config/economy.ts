@@ -24,28 +24,37 @@ export const ECONOMY = {
   BUY_PART_COST_SCRAP: 15,
   /** Each car tier's base part price is this many times the previous tier's — the
    * standard idle-game move of scaling the whole economy up at every prestige step, not
-   * just letting a single car's price ramp run forever. Deliberately modest (not, say, 10x)
-   * because it compounds against CALIBRATION_SCRAP_PER_SECOND_GROWTH /
-   * TRADE_IN_SCRAP_PER_SECOND_GROWTH below every tier — those two need to roughly keep pace
-   * with this one for progression speed to stay predictable as more tiers are added later,
-   * rather than compounding into a runaway wall. See the getUpgradeRequirement doc in
-   * carTiers.ts for the other half of that balance (why its growth is capped). */
-  BUY_PART_COST_TIER_MULTIPLIER: 2.0,
+   * just letting a single car's price ramp run forever. It compounds against
+   * CALIBRATION_SCRAP_PER_SECOND_GROWTH / TRADE_IN_SCRAP_PER_SECOND_GROWTH below every tier
+   * — those two need to roughly keep pace with this one for progression speed to stay
+   * predictable as more tiers are added later, rather than compounding into a runaway wall.
+   * See the getUpgradeRequirement doc in carTiers.ts for the other half of that balance (why
+   * its growth is capped).
+   *
+   * Raised from 2.0 to 3.5 (alongside PART_BUY_COST_MULTIPLIER below) after a real player
+   * reached Tier 7 of 10 in under 12 hours of casual play — a purchasable Energy Overclock
+   * upgrade (since removed, see UPGRADE_BLUEPRINTS below) had let energy regen scale
+   * essentially without limit, which fed straight into this multiplier's own compounding and
+   * blew the whole curve open. With that upgrade gone and this multiplier raised, a
+   * simulated always-available player reaches Tier 7 in ~3 days and Tier 10 in ~3 months —
+   * early tiers (2-5) still clear in a single sitting, so the climb still opens easy and
+   * ramps up, it just no longer collapses to a day. */
+  BUY_PART_COST_TIER_MULTIPLIER: 3.5,
   /** Each part bought within the current car's lifetime multiplies the next one's cost by
-   * this factor — the standard compound-growth idle-game curve. */
-  PART_BUY_COST_MULTIPLIER: 1.15,
+   * this factor — the standard compound-growth idle-game curve. Raised from 1.15 to 1.18
+   * alongside BUY_PART_COST_TIER_MULTIPLIER above, for the same reason. */
+  PART_BUY_COST_MULTIPLIER: 1.18,
 
   /** Starting max value of Energy, before any Expanded Battery upgrades — used exclusively
    * by the Garage merge grid. The Junkyard's tap loop doesn't touch this at all; taps are
    * free. */
   STARTING_MAX_ENERGY: 1000,
-  /** Energy granted per regen tick before any Energy Overclock upgrades — see
-   * PlayerState.energyRegenAmount, which this only seeds a fresh save with. */
-  STARTING_ENERGY_REGEN_AMOUNT: 25,
+  /** Energy granted per regen tick. Fixed — there used to be a Junkyard upgrade
+   * (Energy Overclock) that let players buy this up without limit, which was exactly the
+   * exploit that broke the Tier curve above; it's gone, and this is a plain constant again. */
+  ENERGY_REGEN_AMOUNT: 25,
   /** ...once every this many seconds, rather than trickling in continuously — a discrete
-   * "refill" players can watch count down, like a mobile game's energy timer. Only the
-   * *amount* per tick is upgradeable (Energy Overclock); this interval is fixed, so the
-   * countdown readout stays predictable regardless of how many Overclocks are owned. */
+   * "refill" players can watch count down, like a mobile game's energy timer. */
   ENERGY_REGEN_INTERVAL_SECONDS: 5 * 60,
   /** Energy spent per merge attempt. */
   MERGE_ENERGY_COST: 50,
@@ -104,13 +113,6 @@ export const UPGRADE_BLUEPRINTS = [
   { id: 'rusty-clicker', name: 'Rusty Clicker', baseCost: 25, effect: 'scrapPerClick', boost: 1 },
   { id: 'auto-scrapper', name: 'Auto-Scrapper', baseCost: 30, effect: 'scrapPerSecond', boost: 0.3 },
   { id: 'expanded-battery', name: 'Expanded Battery', baseCost: 80, effect: 'maxEnergy', boost: 150 },
-  {
-    id: 'energy-overclock',
-    name: 'Energy Overclock',
-    baseCost: 120,
-    effect: 'energyRegenAmount',
-    boost: 5,
-  },
 ] as const;
 
 /** The starting price for a Lv.1 part on a given car tier, before that car's own

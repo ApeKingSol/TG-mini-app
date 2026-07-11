@@ -2,7 +2,6 @@ import { useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGameStore } from '../game/store/GameStore';
 import { AnimatedNumber } from '../components/AnimatedNumber';
-import { ScrapPileIcon } from '../components/ScrapPileIcon';
 import type { Upgrade } from '../game/types';
 
 interface FloatingText {
@@ -35,8 +34,6 @@ function formatUpgradeBenefit(upgrade: Upgrade): string {
       return `+${upgrade.boost} per tap`;
     case 'maxEnergy':
       return `+${upgrade.boost} Max Energy (Garage)`;
-    case 'energyRegenAmount':
-      return `+${upgrade.boost} Energy per regen (Garage)`;
   }
 }
 
@@ -95,7 +92,11 @@ export function JunkyardScreen() {
           whileTap={{ scale: 0.85 }}
           className="relative cursor-pointer"
         >
-          <ScrapPileIcon className="h-20 w-20 drop-shadow-[0_0_14px_rgba(0,240,255,0.55)]" />
+          <img
+            src="/icon-scrap-tap.jpg"
+            alt="Salvage the scrap pile"
+            className="h-28 w-28 rounded-full object-cover drop-shadow-[0_0_14px_rgba(0,240,255,0.55)]"
+          />
         </motion.button>
 
         <AnimatePresence>

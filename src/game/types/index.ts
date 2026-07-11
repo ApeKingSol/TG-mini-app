@@ -25,7 +25,7 @@ export interface Part {
 }
 
 /** Which player stat a Junkyard upgrade increases. */
-export type UpgradeEffect = 'scrapPerClick' | 'scrapPerSecond' | 'maxEnergy' | 'energyRegenAmount';
+export type UpgradeEffect = 'scrapPerClick' | 'scrapPerSecond' | 'maxEnergy';
 
 export interface Upgrade {
   id: string;
@@ -65,10 +65,6 @@ export interface PlayerState {
   energy: number;
   /** Cap for `energy`, raised permanently by the Junkyard's Expanded Battery upgrade. */
   maxEnergy: number;
-  /** Energy granted per regen tick, raised permanently by the Junkyard's Energy Overclock
-   * upgrade — a second, independent lever from Expanded Battery: this speeds up sustained
-   * merge throughput, Battery just raises how much can be banked before it's wasted. */
-  energyRegenAmount: number;
   /** Unix ms timestamp of the last discrete energy-regen tick (or store creation, if none
    * have fired yet) — used to compute both the next regen and the countdown shown next to
    * the Energy bar. Distinct from `lastSaved`, which updates every tick(), not just once
