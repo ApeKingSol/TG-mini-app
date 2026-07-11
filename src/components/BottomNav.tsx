@@ -24,13 +24,18 @@ export function BottomNav({ active, onChange }: BottomNavProps) {
   const isGarageActive = active === 'garage';
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-10" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
-      {/* The chamfered bar is a separate inner element, not the clip-path'd shape itself:
-         clip-path clips descendant content to its own box, including anything a transform
-         pushes outside it — the FAB below deliberately floats above this bar's top edge, so if
-         it lived inside this div it would get silently sliced off along that top edge. */}
-      <div className="nav-chamfer nav-metal relative border-t-2 border-neon-cyan/70 shadow-[0_-1px_0_rgba(255,255,255,0.08)_inset,0_-8px_24px_-8px_rgba(0,240,255,0.15)] backdrop-blur">
-        <div className="relative mx-auto flex max-w-md items-stretch">
+    <nav
+      className="fixed left-4 right-4 z-10"
+      style={{ bottom: 'max(24px, env(safe-area-inset-bottom))' }}
+    >
+      {/* The glass panel is a separate inner element, not the positioned `nav` itself:
+         backdrop-filter only blurs what's inside its own box, and the FAB below deliberately
+         floats above this panel's top edge — keeping it a DOM sibling instead of a child means
+         it renders as a crisp, unblurred badge breaking out of the glass, rather than getting
+         blurred (or clipped, had this used overflow/clip-path instead) along with everything
+         else in here. */}
+      <div className="nav-glass relative">
+        <div className="relative mx-auto flex max-w-md items-stretch px-2">
           <NavButton item={SIDE_ITEMS[0]} isActive={active === SIDE_ITEMS[0].id} onClick={onChange} />
 
           {/* Reserves the center column so the two side buttons stay symmetric; the actual

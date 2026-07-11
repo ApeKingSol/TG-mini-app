@@ -30,28 +30,31 @@ body,
   -webkit-font-smoothing: antialiased;
 }
 
-/* Deep-space radial glow fading to black, with a faint technical grid, a layer of fixed
-   static grain, and a constant fine scanline texture on top — "military HUD bolted onto a
-   junkyard terminal" rather than a clean SaaS-dashboard glow. The grain/scanline pseudo-
-   elements are `position: fixed` (matching the grid's own fixed attachment) so they stay
-   anchored to the viewport instead of scrolling with page content; `.bg-cyber-grid > *` below
-   lifts real content back above them since fixed elements don't otherwise respect DOM order. */
+/* Atmospheric garage photo, darkened top-to-bottom by a gradient overlay baked directly into
+   the same background-image stack (so it can never drift out of sync with the photo beneath
+   it) — light enough at the top to show the art, nearly opaque by the bottom where the
+   floating nav sits, for UI readability. `background-attachment: fixed` keeps it pinned to
+   the viewport instead of scrolling with page content; a layer of fixed static grain and a
+   constant fine scanline texture on top (the ::before/::after below) read as "military HUD"
+   rather than a flat photo backdrop. `.bg-cyber-grid > *` further down lifts real content
+   back above those fixed pseudo-elements, since fixed elements don't otherwise respect DOM
+   order. `background-color` is a plain-black fallback for the (unlikely) case the image
+   fails to load. */
 .bg-cyber-grid {
   position: relative;
   background-color: var(--color-bg-deep);
   background-image:
-    radial-gradient(
-      ellipse 70% 50% at 50% 0%,
-      rgba(107, 33, 168, 0.28),
-      transparent 60%
-    ),
-    linear-gradient(rgba(148, 163, 255, 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(148, 163, 255, 0.05) 1px, transparent 1px);
+    linear-gradient(to bottom, rgba(10, 10, 15, 0.6) 0%, rgba(5, 5, 10, 0.95) 100%),
+    url('/background_main.webp');
   background-size:
     100% 100%,
-    36px 36px,
-    36px 36px;
-  background-position: center;
+    cover;
+  background-position:
+    center,
+    center;
+  background-repeat:
+    no-repeat,
+    no-repeat;
   background-attachment: fixed;
 }
 
@@ -117,24 +120,18 @@ body,
   );
 }
 
-/* Bottom nav shape: only the top two corners are chamfered (the bottom edge sits off-screen
-   under the safe-area inset, so cutting it too would just be invisible), reading as a bolted-
-   on console panel rather than a flat app bar. */
-.nav-chamfer {
-  clip-path: polygon(0 14px, 14px 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%);
-}
-
-/* Brushed-metal panel: a vertical gradient plus a fine grid etched into it, distinct from
-   (and busier than) the page background's own grid so the nav reads as a physically separate
-   console bolted to the bottom of the screen. */
-.nav-metal {
-  background-color: var(--color-bg-panel);
-  background-image:
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.04), rgba(0, 0, 0, 0.35)),
-    linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
-  background-size:
-    100% 100%,
-    14px 14px,
-    14px 14px;
+/* Floating glassmorphism dock: a heavily-blurred translucent pill detached from the screen
+   edges (positioned via left/right/bottom on the `nav` element itself, not here) rather than
+   a bolted-on full-width bar. backdrop-filter blurs whatever's showing through from the
+   atmospheric background behind it; the faint cyan border + soft drop shadow read as "high-
+   tech glass," not just a frosted rectangle. Doesn't clip the Garage FAB above it — that
+   button lives as a DOM sibling of this element, not a child, specifically so it can float
+   above this panel's rounded top edge unclipped (see BottomNav.tsx). */
+.nav-glass {
+  border-radius: 24px;
+  background: rgba(20, 20, 30, 0.45);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(0, 243, 255, 0.15);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
 }
