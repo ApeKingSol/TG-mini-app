@@ -9,11 +9,11 @@ interface NavItem {
 }
 
 const SIDE_ITEMS: NavItem[] = [
-  { id: 'junkyard', label: 'Scrapyard', iconSrc: '/icon-nav-scrapyard.jpg' },
-  { id: 'race', label: 'The Streets', iconSrc: '/icon-nav-streets.jpg' },
+  { id: 'junkyard', label: 'Scrapyard', iconSrc: '/icon-nav-scrapyard.png' },
+  { id: 'race', label: 'The Streets', iconSrc: '/icon-nav-streets.png' },
 ];
 
-const GARAGE_ICON_SRC = '/icon-nav-garage.jpg';
+const GARAGE_ICON_SRC = '/icon-nav-garage.png';
 
 interface BottomNavProps {
   active: ScreenId;
@@ -62,11 +62,12 @@ export function BottomNav({ active, onChange }: BottomNavProps) {
             {/* No button chrome (no metal circle, no border, no box-shadow) — same treatment
                as the side nav icons: a transparent container, all the emphasis coming from
                drop-shadow on the image itself, distinguished from the side icons only by
-               being visibly larger. */}
+               being visibly larger. icon-nav-garage.png has a real keyed-out alpha channel,
+               so no blend-mode/mask is needed to hide its old sprite-sheet background. */}
             <img
               src={GARAGE_ICON_SRC}
               alt=""
-              className={`glow-mask h-14 w-14 object-contain mix-blend-screen transition-all ${
+              className={`h-14 w-14 object-contain transition-all ${
                 isGarageActive
                   ? 'opacity-100 drop-shadow-[0_0_10px_rgba(0,240,255,0.9)]'
                   : 'opacity-50 grayscale'
@@ -110,7 +111,7 @@ function NavButton({ item, isActive, onClick }: NavButtonProps) {
       <img
         src={item.iconSrc}
         alt=""
-        className={`glow-mask h-8 w-8 object-contain mix-blend-screen transition-all ${
+        className={`h-8 w-8 object-contain transition-all ${
           isActive ? 'opacity-100 drop-shadow-[0_0_5px_rgba(0,240,255,0.85)]' : 'opacity-45 grayscale'
         }`}
       />

@@ -95,15 +95,18 @@ export function JunkyardScreen() {
           whileTap={{ scale: 0.85 }}
           className="relative cursor-pointer"
         >
-          {/* No background/border-radius crop here on purpose — the source photo already has
-             a near-black backdrop baked in from the sprite sheet it was cut from, and a hard
-             `rounded-full` crop just turned that into an ugly flat disc against the app's new
-             photo background. `mix-blend-screen` makes true-black pixels vanish into whatever
-             is behind them instead, and `glow-mask` feathers what's left of the edge. */}
+          {/* icon-scrap-tap.png has a real alpha channel (keyed out in the editor from the
+             source sprite sheet's near-black backdrop, not a CSS trick) — no background,
+             border-radius, or blend-mode needed to make it sit cleanly on the app's photo
+             background. No drop-shadow either: the pile's alpha channel has lots of small
+             holes (gaps between wires/parts got keyed out along with the background), and a
+             blurred drop-shadow fills every one of those with a hazy cyan cloud instead of a
+             clean rim glow — the pulsing circle behind the button above already supplies the
+             ambient glow without that problem. */}
           <img
-            src="/icon-scrap-tap.jpg"
+            src="/icon-scrap-tap.png"
             alt="Salvage the scrap pile"
-            className="glow-mask h-28 w-28 object-cover mix-blend-screen drop-shadow-[0_0_14px_rgba(0,240,255,0.55)]"
+            className="h-28 w-28 object-contain"
           />
         </motion.button>
 
