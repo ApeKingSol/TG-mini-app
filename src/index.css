@@ -30,35 +30,46 @@ body,
   -webkit-font-smoothing: antialiased;
 }
 
-/* Atmospheric photo background, darkened top-to-bottom by a gradient overlay baked directly
-   into the same background-image stack (so it can never drift out of sync with the photo
-   beneath it) — light enough at the top to show the art, nearly opaque by the bottom where
-   the floating nav sits, for UI readability. Which photo shows is per-screen: App.tsx sets
-   the `--screen-bg` custom property to match the active tab (Garage/Scrapyard/Streets each
-   have their own shot), falling back to the Garage photo if it's ever unset.
-   `background-attachment: fixed` keeps it pinned to the viewport instead of scrolling with
-   page content; a layer of fixed static grain and a constant fine scanline texture on top
-   (the ::before/::after below) read as "military HUD" rather than a flat photo backdrop.
-   `.bg-cyber-grid > *` further down lifts real content back above those fixed pseudo-elements,
-   since fixed elements don't otherwise respect DOM order. `background-color` is a plain-black
-   fallback for the (unlikely) case the image fails to load. */
+/* Base page shell: a plain-black fallback so nothing flashes white behind the photo layers
+   below while they're loading. The photo itself, the darkening gradient, and the grain/
+   scanline texture all used to live on this single element's own `background-image` stack,
+   but a plain CSS background can't cross-fade between two different `url()`s when the active
+   screen changes — it just cuts instantly. They're now separate real elements (ScreenBackground
+   in App.tsx) stacked in DOM order behind everything else, so the photo layer specifically can
+   run a Framer Motion opacity transition while the gradient/grain/scanline stay put on top of
+   it, unaffected. */
 .bg-cyber-grid {
-  --screen-bg: url('/background_main.webp');
   position: relative;
   background-color: var(--color-bg-deep);
-  background-image:
-    linear-gradient(to bottom, rgba(10, 10, 15, 0.74) 0%, rgba(5, 5, 10, 0.97) 100%),
-    var(--screen-bg);
-  background-size:
-    100% 100%,
-    cover;
-  background-position:
-    center,
-    center;
-  background-repeat:
-    no-repeat,
-    no-repeat;
-  background-attachment: fixed;
+}
+
+/* Fixed, viewport-pinned container for the two stacked layers below — sits behind every real
+   `bg-cyber-grid > *` (they get lifted to z-index 1+ below) but must NOT be caught by that
+   same lifting rule itself, or its z-index:0 here would get overridden back up to 1 and land
+   on top of the noise/scanline layer instead of under it. */
+.bg-screen-layers {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+}
+
+/* One per screen, cross-faded by Framer Motion (see ScreenBackground) — plain absolute fill,
+   no transition of its own here since the animation is handled in JS via motion props. */
+.bg-photo-layer {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+/* Darkens the photo top-to-bottom for UI readability — light enough at the top to show the
+   art, nearly opaque by the bottom where the floating nav sits. A static layer on top of the
+   photo stack (not baked into it) so it never needs to participate in the cross-fade itself. */
+.bg-gradient-overlay {
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(to bottom, rgba(10, 10, 15, 0.74) 0%, rgba(5, 5, 10, 0.97) 100%);
 }
 
 .bg-cyber-grid::before {
@@ -88,11 +99,11 @@ body,
   mix-blend-mode: overlay;
 }
 
-/* Excludes `nav`: BottomNav needs to stay `position: fixed` (via its own Tailwind class), and
-   this unlayered rule would otherwise unconditionally win over that utility class and silently
-   demote it to `relative`, breaking both its pinned placement and its stacking order — it would
-   render, but end up in normal flow and behind the page content instead of fixed on top. */
-.bg-cyber-grid > *:not(nav) {
+/* Excludes `nav` (needs to stay `position: fixed`, or this unlayered rule would win over that
+   utility class and silently demote it to `relative`) and `.bg-screen-layers` (needs to stay
+   pinned at z-index 0, underneath the noise/scanline pseudo-elements above, rather than lifted
+   above them). */
+.bg-cyber-grid > *:not(nav):not(.bg-screen-layers) {
   position: relative;
   z-index: 1;
 }

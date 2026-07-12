@@ -1,6 +1,7 @@
-import { useState, type CSSProperties } from 'react';
+import { useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { ProfileAvatarButton } from './components/ProfileAvatarButton';
+import { ScreenBackground } from './components/ScreenBackground';
 import { useGameLoop } from './hooks/useGameLoop';
 import { useTelegram } from './hooks/useTelegram';
 import { useCloudSync } from './hooks/useCloudSync';
@@ -11,15 +12,6 @@ import { JunkyardScreen } from './screens/JunkyardScreen';
 import { GarageScreen } from './screens/GarageScreen';
 import { RaceScreen } from './screens/RaceScreen';
 import { ProfileScreen } from './screens/ProfileScreen';
-
-/** Each tab has its own atmospheric backdrop, applied via the `--screen-bg` custom property
- * that `.bg-cyber-grid` (index.css) reads — Garage is the fallback the CSS itself defaults to
- * if this ever came back empty. */
-const SCREEN_BACKGROUNDS: Record<ScreenId, string> = {
-  garage: "url('/background_main.webp')",
-  junkyard: "url('/background-scrapyard.jpg')",
-  race: "url('/background-streets.jpg')",
-};
 
 function App() {
   // Drives passive Scrap generation in the background; store stays a pure state container.
@@ -34,10 +26,8 @@ function App() {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
 
   return (
-    <div
-      className="flex min-h-screen flex-col bg-cyber-grid"
-      style={{ '--screen-bg': SCREEN_BACKGROUNDS[activeScreen] } as CSSProperties}
-    >
+    <div className="flex min-h-screen flex-col bg-cyber-grid">
+      <ScreenBackground activeScreen={activeScreen} />
       <OfflineEarningsToast />
       <div className="flex-1 px-4 pb-[120px] pt-6">
         {!isTelegram && (

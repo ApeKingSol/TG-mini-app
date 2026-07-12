@@ -102,17 +102,20 @@ function GarageNavButton({ isActive, onClick }: GarageNavButtonProps) {
       whileTap={{ scale: 0.9 }}
       className="flex min-h-[52px] flex-1 flex-col items-center justify-center gap-1 py-2"
     >
+      {/* Sits on the same baseline as the two side icons now (no upward translate) — it
+         stands out purely by being noticeably bigger and persistently glowing, not by
+         floating above the row. */}
       <GarageIcon
-        className={`h-6 w-6 -translate-y-1.5 transition-all ${
+        className={`h-9 w-9 transition-all ${
           isActive
             ? 'text-neon-cyan opacity-100 drop-shadow-[0_0_9px_rgba(0,240,255,0.9)]'
             : 'text-neon-cyan/80 opacity-90 drop-shadow-[0_0_4px_rgba(0,240,255,0.55)]'
         }`}
         stroke="currentColor"
-        strokeWidth={1.5}
+        strokeWidth={1.4}
       />
       <span
-        className={`font-mono text-[9px] font-bold uppercase tracking-widest transition-all ${
+        className={`font-mono text-[10px] font-bold uppercase tracking-widest transition-all ${
           isActive
             ? 'text-neon-cyan opacity-100 [text-shadow:0_0_6px_rgba(0,240,255,0.85)]'
             : 'text-neutral-500 opacity-45'
@@ -121,7 +124,7 @@ function GarageNavButton({ isActive, onClick }: GarageNavButtonProps) {
         Garage
       </span>
       <span
-        className={`h-[2px] w-5 rounded-full bg-neon-cyan transition-opacity duration-200 ${
+        className={`h-[2px] w-7 rounded-full bg-neon-cyan transition-opacity duration-200 ${
           isActive ? 'opacity-90 shadow-[0_0_6px_rgba(0,240,255,0.9)]' : 'opacity-0'
         }`}
       />
