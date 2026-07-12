@@ -12,7 +12,38 @@ interface FloatingText {
   amount: number;
 }
 
+interface Spark {
+  id: string;
+  x: number;
+  y: number;
+  dx: number;
+  dy: number;
+  size: number;
+  color: string;
+}
+
 const FLOAT_DURATION_MS = 800;
+const SPARK_DURATION_MS = 500;
+const SPARK_COUNT = 7;
+const SPARK_COLORS = ['#ffcf5c', '#ff9f3f', '#fff2b0'];
+
+/** A small shower of particles flung outward from the tap point at random angles/distances —
+ * "grinding metal" flavor for a scrap pile, not a generic confetti burst. */
+function createSparkBurst(x: number, y: number): Spark[] {
+  return Array.from({ length: SPARK_COUNT }, () => {
+    const angle = Math.random() * Math.PI * 2;
+    const distance = 26 + Math.random() * 34;
+    return {
+      id: crypto.randomUUID(),
+      x,
+      y,
+      dx: Math.cos(angle) * distance,
+      dy: Math.sin(angle) * distance - 10, // slight upward bias, like real sparks under gravity-ish drift
+      size: 3 + Math.random() * 3,
+      color: SPARK_COLORS[Math.floor(Math.random() * SPARK_COLORS.length)],
+    };
+  });
+}
 
 /** scrapPerSecond now grows multiplicatively (a few % per calibration/trade-in — see
  * economy.ts), so early-game increments are genuinely small in absolute terms. A flat
@@ -45,6 +76,7 @@ export function JunkyardScreen() {
   const buyUpgrade = useGameStore((state) => state.buyUpgrade);
 
   const [floatingTexts, setFloatingTexts] = useState<FloatingText[]>([]);
+  const [sparks, setSparks] = useState<Spark[]>([]);
   const tapAreaRef = useRef<HTMLDivElement>(null);
 
   const handleTapArea = (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -52,20 +84,24 @@ export function JunkyardScreen() {
 
     const rect = tapAreaRef.current?.getBoundingClientRect();
     if (!rect) return;
+    const tapX = event.clientX - rect.left;
+    const tapY = event.clientY - rect.top;
+
     const id = crypto.randomUUID();
     setFloatingTexts((texts) => [
       ...texts,
-      {
-        id,
-        x: event.clientX - rect.left,
-        y: event.clientY - rect.top,
-        isCrit: result.isCrit,
-        amount: result.amount,
-      },
+      { id, x: tapX, y: tapY, isCrit: result.isCrit, amount: result.amount },
     ]);
     window.setTimeout(() => {
       setFloatingTexts((texts) => texts.filter((t) => t.id !== id));
     }, FLOAT_DURATION_MS);
+
+    const burst = createSparkBurst(tapX, tapY);
+    setSparks((current) => [...current, ...burst]);
+    window.setTimeout(() => {
+      const burstIds = new Set(burst.map((spark) => spark.id));
+      setSparks((current) => current.filter((spark) => !burstIds.has(spark.id)));
+    }, SPARK_DURATION_MS);
   };
 
   return (
@@ -81,8 +117,9 @@ export function JunkyardScreen() {
       </p>
 
       <div ref={tapAreaRef} className="relative flex items-center justify-center">
-        {/* Pulsating glow behind the pile, hinting this junk is worth something */}
-        <div className="pointer-events-none absolute h-28 w-28 animate-pulse rounded-full bg-cyan-500/20 blur-2xl" />
+        {/* Pulsating glow behind the pile, hinting this junk is worth something — sized and
+           intensified to match the bigger, brighter pile image above it. */}
+        <div className="pointer-events-none absolute h-44 w-44 animate-pulse rounded-full bg-cyan-500/30 blur-3xl" />
 
         <motion.button
           type="button"
@@ -98,17 +135,40 @@ export function JunkyardScreen() {
           {/* icon-scrap-tap.png has a real alpha channel (keyed out in the editor from the
              source sprite sheet's near-black backdrop, not a CSS trick) — no background,
              border-radius, or blend-mode needed to make it sit cleanly on the app's photo
-             background. No drop-shadow either: the pile's alpha channel has lots of small
-             holes (gaps between wires/parts got keyed out along with the background), and a
-             blurred drop-shadow fills every one of those with a hazy cyan cloud instead of a
-             clean rim glow — the pulsing circle behind the button above already supplies the
-             ambient glow without that problem. */}
+             background. `brightness`/`saturate` (not drop-shadow) is what lifts it: the pile's
+             alpha channel has lots of small holes (gaps between wires/parts got keyed out
+             along with the background), and a blurred drop-shadow fills every one of those
+             with a hazy cyan cloud instead of a clean rim glow — brightness/saturate boost the
+             pixels that are already there instead, so the holes stay clean. */}
           <img
             src="/icon-scrap-tap.png"
             alt="Salvage the scrap pile"
-            className="h-28 w-28 object-contain"
+            className="h-40 w-40 object-contain brightness-125 saturate-125"
           />
         </motion.button>
+
+        <AnimatePresence>
+          {sparks.map((spark) => (
+            <motion.span
+              key={spark.id}
+              initial={{ opacity: 1, x: 0, y: 0, scale: 1 }}
+              animate={{ opacity: 0, x: spark.dx, y: spark.dy, scale: 0.3 }}
+              transition={{ duration: SPARK_DURATION_MS / 1000, ease: 'easeOut' }}
+              style={{
+                position: 'absolute',
+                left: spark.x,
+                top: spark.y,
+                translateX: '-50%',
+                translateY: '-50%',
+                width: spark.size,
+                height: spark.size,
+                backgroundColor: spark.color,
+                boxShadow: `0 0 6px 1px ${spark.color}`,
+              }}
+              className="pointer-events-none select-none rounded-full"
+            />
+          ))}
+        </AnimatePresence>
 
         <AnimatePresence>
           {floatingTexts.map((text) =>
