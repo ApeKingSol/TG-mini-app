@@ -69,66 +69,63 @@ export function BottomNav({ active, onChange }: BottomNavProps) {
       style={{ bottom: 'max(24px, env(safe-area-inset-bottom))' }}
     >
       {/* The glass panel is a separate inner element, not the positioned `nav` itself:
-         backdrop-filter only blurs what's inside its own box, and the FAB below deliberately
-         floats above this panel's top edge — keeping it a DOM sibling instead of a child means
-         it renders as a crisp, unblurred badge breaking out of the glass, rather than getting
-         blurred (or clipped, had this used overflow/clip-path instead) along with everything
-         else in here. */}
+         backdrop-filter only blurs what's inside its own box. Garage now sits inline with the
+         other two items in this same flex row (it used to be an absolutely-positioned FAB
+         breaking well above the panel — that read as disconnected from the bar rather than
+         part of it), just a couple pixels taller so it still reads as the primary/central
+         action without floating off on its own. */}
       <div className="nav-glass relative">
         <div className="relative mx-auto flex max-w-md items-stretch px-2">
           <NavButton item={SIDE_ITEMS[0]} isActive={active === SIDE_ITEMS[0].id} onClick={onChange} />
-
-          {/* Reserves the center column so the two side buttons stay symmetric; the actual
-             Garage button is the absolutely-positioned FAB below, breaking out above the bar. */}
-          <div className="flex-1" />
-
+          <GarageNavButton isActive={isGarageActive} onClick={() => onChange('garage')} />
           <NavButton item={SIDE_ITEMS[1]} isActive={active === SIDE_ITEMS[1].id} onClick={onChange} />
         </div>
       </div>
-
-      {/* Only the icon itself pokes above the glass panel's top edge (a fixed -18px, not a
-         relative -50% of the whole label+underline stack) — enough to read as a floating
-         primary action without the label/underline drifting up over the screen content
-         behind the nav, and without the button overlapping content the way a full -50%
-         offset of this taller (icon+label+underline) stack used to. */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 flex -translate-y-[18px] justify-center">
-        <div className="pointer-events-auto flex flex-col items-center justify-center gap-1">
-          <motion.button
-            type="button"
-            onClick={() => onChange('garage')}
-            whileTap={{ scale: 0.9 }}
-            className="flex items-center justify-center"
-          >
-            {/* No button chrome (no metal circle, no border, no box-shadow) — a transparent
-               container, all the emphasis coming from drop-shadow on the icon itself,
-               distinguished from the side icons only by being visibly larger. */}
-            <GarageIcon
-              className={`h-9 w-9 transition-all ${
-                isGarageActive
-                  ? 'text-neon-cyan opacity-100 drop-shadow-[0_0_10px_rgba(0,240,255,0.9)]'
-                  : 'text-neutral-400 opacity-50'
-              }`}
-              stroke="currentColor"
-              strokeWidth={1.5}
-            />
-          </motion.button>
-          <span
-            className={`font-mono text-[10px] font-bold uppercase tracking-widest transition-all ${
-              isGarageActive
-                ? 'text-neon-cyan opacity-100 [text-shadow:0_0_6px_rgba(0,240,255,0.85)]'
-                : 'text-neutral-500 opacity-50'
-            }`}
-          >
-            Garage
-          </span>
-          <span
-            className={`h-[2px] w-6 rounded-full bg-neon-cyan transition-opacity duration-200 ${
-              isGarageActive ? 'opacity-90 shadow-[0_0_6px_rgba(0,240,255,0.9)]' : 'opacity-0'
-            }`}
-          />
-        </div>
-      </div>
     </nav>
+  );
+}
+
+interface GarageNavButtonProps {
+  isActive: boolean;
+  onClick: () => void;
+}
+
+/** The nav's primary/central item — same inline flex slot as the two side buttons (not an
+ * absolutely-positioned FAB anymore), just visibly distinguished: a slightly bigger icon,
+ * nudged up a few px so it barely crests the panel's top edge, and a persistent (not just
+ * on-active) cyan glow so it still reads as "the main button" even on the other two tabs. */
+function GarageNavButton({ isActive, onClick }: GarageNavButtonProps) {
+  return (
+    <motion.button
+      type="button"
+      onClick={onClick}
+      whileTap={{ scale: 0.9 }}
+      className="flex min-h-[52px] flex-1 flex-col items-center justify-center gap-1 py-2"
+    >
+      <GarageIcon
+        className={`h-6 w-6 -translate-y-1.5 transition-all ${
+          isActive
+            ? 'text-neon-cyan opacity-100 drop-shadow-[0_0_9px_rgba(0,240,255,0.9)]'
+            : 'text-neon-cyan/80 opacity-90 drop-shadow-[0_0_4px_rgba(0,240,255,0.55)]'
+        }`}
+        stroke="currentColor"
+        strokeWidth={1.5}
+      />
+      <span
+        className={`font-mono text-[9px] font-bold uppercase tracking-widest transition-all ${
+          isActive
+            ? 'text-neon-cyan opacity-100 [text-shadow:0_0_6px_rgba(0,240,255,0.85)]'
+            : 'text-neutral-500 opacity-45'
+        }`}
+      >
+        Garage
+      </span>
+      <span
+        className={`h-[2px] w-5 rounded-full bg-neon-cyan transition-opacity duration-200 ${
+          isActive ? 'opacity-90 shadow-[0_0_6px_rgba(0,240,255,0.9)]' : 'opacity-0'
+        }`}
+      />
+    </motion.button>
   );
 }
 
