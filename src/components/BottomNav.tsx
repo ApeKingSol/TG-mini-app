@@ -1,19 +1,59 @@
 import { motion } from 'framer-motion';
+import type { ReactElement, SVGProps } from 'react';
 
 export type ScreenId = 'junkyard' | 'garage' | 'race';
+
+/** Hand-drawn, stroke-based "neon schematic" icons — deliberately not a generic icon-set
+ * glyph, so the nav reads as custom HUD chrome rather than a stock trash/wrench/flag set.
+ * Went back to these plain vector icons after two rounds of trying to clean up cropped
+ * AI-generated sprite-sheet art (blend-mode hacks, then luminance/radial keying, then a
+ * flood fill that leaked through the source art's own decoration) never fully got rid of a
+ * visible background fragment — a vector icon has no background to begin with. */
+type IconComponent = (props: SVGProps<SVGSVGElement>) => ReactElement;
+
+/** Scrapyard: a plain junk pile — jagged debris heap with a couple of scraps sticking out. */
+const JunkPileIcon: IconComponent = (props) => (
+  <svg viewBox="0 0 24 24" fill="none" {...props}>
+    <path
+      d="M2.5 19.5 4.8 9.2l2.4 3 2.6-6 3 5.8 2.7-6.2 3 6.4 2.7-2 1.3 9.3z"
+      strokeLinejoin="round"
+      strokeLinecap="round"
+    />
+    <path d="M2.5 19.5h19" strokeLinecap="round" />
+    <path d="M8.5 19.5V16M13 19.5v-4.4M17 19.5v-3" strokeLinecap="round" opacity="0.6" />
+  </svg>
+);
+
+/** Garage: a plain garage building — peaked roof over a door with panel lines. */
+const GarageIcon: IconComponent = (props) => (
+  <svg viewBox="0 0 24 24" fill="none" {...props}>
+    <path d="M3 11 12 4l9 7" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M4.5 10.3V20h15v-9.7" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M7.5 20v-7.5h9V20" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M7.5 15.7h9M7.5 17.8h9" strokeLinecap="round" />
+  </svg>
+);
+
+/** The Streets: a digital speedometer — swept arc, tick marks, and a needle pinned hot. */
+const SpeedometerIcon: IconComponent = (props) => (
+  <svg viewBox="0 0 24 24" fill="none" {...props}>
+    <path d="M4 16.5a8 8 0 1 1 16 0" strokeLinecap="round" />
+    <path d="M6.5 16.5h.01M17.5 16.5h.01M9 10.3h.01M15 10.3h.01M12 8.5h.01" strokeLinecap="round" strokeWidth={2} />
+    <path d="M12 16.5 16 11" strokeLinecap="round" strokeWidth={2} />
+    <circle cx="12" cy="16.5" r="1.3" fill="currentColor" stroke="none" />
+  </svg>
+);
 
 interface NavItem {
   id: ScreenId;
   label: string;
-  iconSrc: string;
+  Icon: IconComponent;
 }
 
 const SIDE_ITEMS: NavItem[] = [
-  { id: 'junkyard', label: 'Scrapyard', iconSrc: '/icon-nav-scrapyard.png' },
-  { id: 'race', label: 'The Streets', iconSrc: '/icon-nav-streets.png' },
+  { id: 'junkyard', label: 'Scrapyard', Icon: JunkPileIcon },
+  { id: 'race', label: 'The Streets', Icon: SpeedometerIcon },
 ];
-
-const GARAGE_ICON_SRC = '/icon-nav-garage.png';
 
 interface BottomNavProps {
   active: ScreenId;
@@ -59,19 +99,17 @@ export function BottomNav({ active, onChange }: BottomNavProps) {
             whileTap={{ scale: 0.9 }}
             className="flex items-center justify-center"
           >
-            {/* No button chrome (no metal circle, no border, no box-shadow) — same treatment
-               as the side nav icons: a transparent container, all the emphasis coming from
-               drop-shadow on the image itself, distinguished from the side icons only by
-               being visibly larger. icon-nav-garage.png has a real keyed-out alpha channel,
-               so no blend-mode/mask is needed to hide its old sprite-sheet background. */}
-            <img
-              src={GARAGE_ICON_SRC}
-              alt=""
-              className={`h-14 w-14 object-contain transition-all ${
+            {/* No button chrome (no metal circle, no border, no box-shadow) — a transparent
+               container, all the emphasis coming from drop-shadow on the icon itself,
+               distinguished from the side icons only by being visibly larger. */}
+            <GarageIcon
+              className={`h-9 w-9 transition-all ${
                 isGarageActive
-                  ? 'opacity-100 drop-shadow-[0_0_10px_rgba(0,240,255,0.9)]'
-                  : 'opacity-50 grayscale'
+                  ? 'text-neon-cyan opacity-100 drop-shadow-[0_0_10px_rgba(0,240,255,0.9)]'
+                  : 'text-neutral-400 opacity-50'
               }`}
+              stroke="currentColor"
+              strokeWidth={1.5}
             />
           </motion.button>
           <span
@@ -101,6 +139,7 @@ interface NavButtonProps {
 }
 
 function NavButton({ item, isActive, onClick }: NavButtonProps) {
+  const { Icon } = item;
   return (
     <motion.button
       type="button"
@@ -108,12 +147,14 @@ function NavButton({ item, isActive, onClick }: NavButtonProps) {
       whileTap={{ scale: 0.88 }}
       className="flex min-h-[52px] flex-1 flex-col items-center justify-center gap-1 py-2"
     >
-      <img
-        src={item.iconSrc}
-        alt=""
-        className={`h-8 w-8 object-contain transition-all ${
-          isActive ? 'opacity-100 drop-shadow-[0_0_5px_rgba(0,240,255,0.85)]' : 'opacity-45 grayscale'
+      <Icon
+        className={`h-5 w-5 transition-all ${
+          isActive
+            ? 'text-neon-cyan opacity-100 drop-shadow-[0_0_5px_rgba(0,240,255,0.9)]'
+            : 'text-neutral-500 opacity-45'
         }`}
+        stroke="currentColor"
+        strokeWidth={1.6}
       />
       <span
         className={`font-mono text-[9px] font-bold uppercase tracking-widest transition-all ${
