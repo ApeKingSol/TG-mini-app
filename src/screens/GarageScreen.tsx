@@ -50,6 +50,8 @@ export function GarageScreen() {
   const startCalibration = useGameStore((state) => state.startCalibration);
   const completeCalibration = useGameStore((state) => state.completeCalibration);
   const tradeInCar = useGameStore((state) => state.tradeInCar);
+  // TEMP DEBUG — see debugPreviewNextCar's own doc comment in GameStore.ts.
+  const debugPreviewNextCar = useGameStore((state) => state.debugPreviewNextCar);
 
   const [justMergedId, setJustMergedId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; variant: 'error' | 'success' } | null>(
@@ -169,6 +171,7 @@ export function GarageScreen() {
           upgradesInstalled={installedUpgrades.length}
           upgradesRequired={upgradeRequirement}
           carStats={getCarStats(carTier, installedUpgrades)}
+          onDebugNextCar={debugPreviewNextCar}
         />
 
         {isMastered ? (
@@ -342,6 +345,8 @@ interface CarInstallationZoneProps {
   upgradesInstalled: number;
   upgradesRequired: number;
   carStats: CarStats;
+  /** TEMP DEBUG — see debugPreviewNextCar's doc comment in GameStore.ts. */
+  onDebugNextCar: () => void;
 }
 
 function CarInstallationZone({
@@ -350,6 +355,7 @@ function CarInstallationZone({
   upgradesInstalled,
   upgradesRequired,
   carStats,
+  onDebugNextCar,
 }: CarInstallationZoneProps) {
   const { setNodeRef, isOver } = useDroppable({ id: CAR_INSTALLATION_ZONE_ID });
   const upgradesRemaining = Math.max(0, upgradesRequired - upgradesInstalled);
@@ -369,6 +375,16 @@ function CarInstallationZone({
       <span className="pointer-events-none absolute right-2 top-1 select-none font-mono text-[8px] uppercase tracking-widest text-amber/50">
         Chassis.{String(carTier).padStart(2, '0')}
       </span>
+      {/* TEMP DEBUG — free preview of the next car model, no cost/requirement check. Remove
+         this button (and debugPreviewNextCar in GameStore.ts) once the 20-car roster's been
+         reviewed. */}
+      <button
+        type="button"
+        onClick={onDebugNextCar}
+        className="absolute left-2 top-1 rounded border border-neon-magenta/40 bg-neon-magenta/10 px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-widest text-neon-magenta/80"
+      >
+        Debug: Next ▶
+      </button>
       <p className="text-center font-display text-lg font-bold uppercase tracking-wide text-white drop-shadow-[0_0_3px_rgba(255,255,255,0.6)]">
         {carName}
       </p>

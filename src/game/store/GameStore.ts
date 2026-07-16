@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { ECONOMY, UPGRADE_BLUEPRINTS, getPartBuyCost } from '../config/economy';
 import { getPartTier, rollPartPerk, type PartPerk } from '../config/parts';
-import { getCarTier, getUpgradeRequirement } from '../config/carTiers';
+import { CAR_TIERS, getCarTier, getUpgradeRequirement } from '../config/carTiers';
 import type { CarState, NeonTransaction, Part, PlayerState, Upgrade } from '../types';
 
 const LEGACY_STORAGE_KEY = 'cyber-garage-save';
@@ -61,6 +61,11 @@ const ADMIN_TELEGRAM_ID = '8280101176';
 const ADMIN_GRANT_AMOUNT = 10000;
 const ADMIN_GRANT_LABEL = 'Admin Bonus';
 
+/** One-time admin Scrap grant, same rationale as the $NEON one above but guarded by its own
+ * `hasReceivedAdminScrapGrant` flag instead of a neonHistory label — Scrap has no equivalent
+ * transaction log to dedupe against. */
+const ADMIN_SCRAP_GRANT_AMOUNT = 5_000_000;
+
 /** Bump to wipe every existing save back to a fresh start on next load — see the `migrate`
  * option below for what "wipe" means for the admin account specifically.
  *
@@ -99,6 +104,12 @@ interface GameActions {
   buyUpgrade: (id: string) => boolean;
   /** Once installedUpgrades reaches getUpgradeRequirement(carTier), resets installedUpgrades/partsPurchased and advances to the next car tier. No-op otherwise. */
   tradeInCar: () => void;
+  /** TEMP DEBUG — jumps straight to the next car tier's art/name for a free look at the new
+   * 20-car roster, bypassing installedUpgrades/cost entirely (doesn't touch scrapPerSecond,
+   * partsPurchased, or installedUpgrades, so it can't be used to cheese the real economy).
+   * Remove this action, its button in GarageScreen, and this comment once the roster's been
+   * reviewed. */
+  debugPreviewNextCar: () => void;
   /** Fast-forwards Scrap/Energy for time elapsed since lastSaved, run once after the persisted save is rehydrated. */
   applyOfflineProgress: () => void;
   dismissOfflineEarnings: () => void;
@@ -158,6 +169,7 @@ function createInitialPlayerState(): PlayerState {
     installedUpgrades: [],
     upgrades: createStartingUpgrades(),
     neonHistory: [],
+    hasReceivedAdminScrapGrant: false,
     scrapPerClick: ECONOMY.STARTING_SCRAP_PER_CLICK,
     scrapPerSecond: ECONOMY.STARTING_SCRAP_PER_SECOND,
     critChance: ECONOMY.STARTING_CRIT_CHANCE,
@@ -483,6 +495,13 @@ export const useGameStore = create<GameStore>()(
         }));
       },
 
+      debugPreviewNextCar: () => {
+        set((state) => {
+          const nextTier = Math.min(state.carTier + 1, CAR_TIERS.length);
+          return { carTier: nextTier, car: { ...state.car, name: getCarTier(nextTier).name } };
+        });
+      },
+
       applyOfflineProgress: () => {
         const now = Date.now();
 
@@ -493,9 +512,10 @@ export const useGameStore = create<GameStore>()(
         set((state) => {
           const correctName = getCarTier(state.carTier).name;
           const regen = applyEnergyRegen(state.energy, state.maxEnergy, state.lastEnergyRegenAt, now);
+          const isAdmin = getTelegramUserId() === ADMIN_TELEGRAM_ID;
           const isDueAdminGrant =
-            getTelegramUserId() === ADMIN_TELEGRAM_ID &&
-            !state.neonHistory.some((entry) => entry.label === ADMIN_GRANT_LABEL);
+            isAdmin && !state.neonHistory.some((entry) => entry.label === ADMIN_GRANT_LABEL);
+          const isDueAdminScrapGrant = isAdmin && !state.hasReceivedAdminScrapGrant;
           return {
             ...(correctName !== state.car.name && { car: { ...state.car, name: correctName } }),
             energy: regen.energy,
@@ -504,6 +524,10 @@ export const useGameStore = create<GameStore>()(
             ...(isDueAdminGrant && {
               neon: state.neon + ADMIN_GRANT_AMOUNT,
               neonHistory: withNeonTransaction(state.neonHistory, ADMIN_GRANT_LABEL, ADMIN_GRANT_AMOUNT),
+            }),
+            ...(isDueAdminScrapGrant && {
+              scrap: state.scrap + ADMIN_SCRAP_GRANT_AMOUNT,
+              hasReceivedAdminScrapGrant: true,
             }),
           };
         });

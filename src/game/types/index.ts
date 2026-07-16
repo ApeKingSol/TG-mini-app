@@ -83,6 +83,12 @@ export interface PlayerState {
   /** Newest-first log of $NEON balance changes, capped at NEON_HISTORY_MAX_ENTRIES — backs
    * the Profile screen's History tab. */
   neonHistory: NeonTransaction[];
+  /** Guards the admin account's one-time Scrap grant (see ADMIN_SCRAP_GRANT_AMOUNT in
+   * GameStore.ts) so it can only ever apply once. A dedicated flag rather than reusing
+   * `neonHistory` as the dedup ledger (like the admin $NEON grant does) — that log only ever
+   * represents real $NEON changes, and a Scrap grant logged there would render as "+N NEON"
+   * on the Profile screen's History tab, which would be wrong. */
+  hasReceivedAdminScrapGrant: boolean;
   scrapPerClick: number;
   scrapPerSecond: number;
   /** Chance (0–1) that a tap is a critical hit, awarding scrapPerClick * critMultiplier instead. */
