@@ -62,8 +62,15 @@ const ADMIN_GRANT_AMOUNT = 10000;
 const ADMIN_GRANT_LABEL = 'Admin Bonus';
 
 /** Bump to wipe every existing save back to a fresh start on next load — see the `migrate`
- * option below for what "wipe" means for the admin account specifically. */
-const SAVE_VERSION = 1;
+ * option below for what "wipe" means for the admin account specifically.
+ *
+ * v2: the car roster grew from 10 tiers to 20, and several tiers in the middle got a newly
+ * inserted car — that shifts what car tier N even means (a saved carTier is just a number,
+ * so an existing save's Tier 2 would silently become a different car than the one it was
+ * actually trading in for). The Tier cost curve was also re-tuned for the new 20-tier length
+ * (see BUY_PART_COST_TIER_MULTIPLIER in economy.ts), which existing accumulated-scrap saves
+ * would otherwise blow straight through. */
+const SAVE_VERSION = 2;
 
 interface GameActions {
   /** Advances passive Scrap generation and Energy regen based on real elapsed time since the last save. */

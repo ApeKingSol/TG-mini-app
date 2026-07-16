@@ -3,22 +3,28 @@ export interface CarTierInfo {
   image: string;
 }
 
-/**
- * One entry per trade-in tier. Tiers 9-10 don't have their own art yet (only 8 car images
- * exist in public/) so they fall back to Tier 8's image via `getCarTier` until real assets
- * arrive — the name still advances correctly either way.
- */
+/** One entry per trade-in tier. */
 export const CAR_TIERS: CarTierInfo[] = [
-  { name: 'Rustbucket Mk I', image: '/car-base.webp' },
-  { name: 'Cyber-Lada', image: '/car-tier-2.webp' },
-  { name: 'Street Hatch', image: '/car-tier-3.webp' },
-  { name: 'Rusty Muscle', image: '/car-tier-4.webp' },
-  { name: 'Tokyo Ghost', image: '/car-tier-5.webp' },
-  { name: 'Retro Wedge', image: '/car-tier-6.webp' },
-  { name: 'Neon Beetle', image: '/car-tier-7.webp' },
-  { name: 'Red Baron', image: '/car-tier-8.webp' },
-  { name: 'Angular Demon', image: '/car-tier-8.webp' },
-  { name: 'Absolute Apex', image: '/car-tier-8.webp' },
+  { name: 'Rustbucket Mk I', image: '/tier_1.webp' },
+  { name: 'Rust Wagon', image: '/tier_2.jpeg' },
+  { name: 'Cyber-Lada', image: '/tier_3.webp' },
+  { name: 'Neon Hatch', image: '/tier_4.webp' },
+  { name: 'Signal Hauler', image: '/tier_5.jpeg' },
+  { name: 'Ghost Civic', image: '/tier_6.jpeg' },
+  { name: 'Retro Wedge', image: '/tier_7.jpeg' },
+  { name: 'Midnight Skyline', image: '/tier_8.webp' },
+  { name: 'Cyber-Drift', image: '/tier_9.jpeg' },
+  { name: 'Restomod Phantom', image: '/tier_10.webp' },
+  { name: 'Angular Demon', image: '/tier_11.jpeg' },
+  { name: 'Golden Continental', image: '/tier_12.jpeg' },
+  { name: 'Hex Nexus', image: '/tier_13.jpeg' },
+  { name: 'Red Circuit AMG', image: '/tier_14.jpeg' },
+  { name: 'Toxic Aventador', image: '/tier_15.jpeg' },
+  { name: 'Vortex MC20', image: '/tier_16.jpeg' },
+  { name: 'Cyber P1', image: '/tier_17.jpeg' },
+  { name: 'Midnight Chiron', image: '/tier_18.jpeg' },
+  { name: 'Phantom Hologram', image: '/tier_19.jpeg' },
+  { name: 'Absolute Apex', image: '/tier_20.jpeg' },
 ];
 
 export function getCarTier(tier: number): CarTierInfo {

@@ -31,19 +31,19 @@ export const ECONOMY = {
    * See the getUpgradeRequirement doc in carTiers.ts for the other half of that balance (why
    * its growth is capped).
    *
-   * Raised from 2.0 to 3.5 (alongside PART_BUY_COST_MULTIPLIER below) after a real player
-   * reached Tier 7 of 10 in under 12 hours of casual play — a purchasable Energy Overclock
-   * upgrade (since removed, see UPGRADE_BLUEPRINTS below) had let energy regen scale
-   * essentially without limit, which fed straight into this multiplier's own compounding and
-   * blew the whole curve open. With that upgrade gone and this multiplier raised, a
-   * simulated always-available player reaches Tier 7 in ~3 days and Tier 10 in ~3 months —
-   * early tiers (2-5) still clear in a single sitting, so the climb still opens easy and
-   * ramps up, it just no longer collapses to a day. */
-  BUY_PART_COST_TIER_MULTIPLIER: 3.5,
+   * Lowered from 3.5 to 1.8 (alongside PART_BUY_COST_MULTIPLIER below) when the roster grew
+   * from 10 car tiers to 20 — the old 3.5x/tier rate was tuned for a 10-tier climb (Tier 10
+   * in ~3 months for an always-available/"perfect" player); left unchanged across 20 tiers it
+   * compounds twice as many times, pushing Tier 20 out to centuries. Re-tuned so that same
+   * kind of player, simulated against the real store mechanics (buyPart/mergeParts/tradeInCar
+   * math, fixed energy regen, capped install requirement), still can't clear Tier 20 in under
+   * ~3 months (lands around ~105 days) — early tiers (1-8) still clear within a day each, so
+   * the climb still opens easy and ramps up, it just no longer collapses to hours. */
+  BUY_PART_COST_TIER_MULTIPLIER: 1.8,
   /** Each part bought within the current car's lifetime multiplies the next one's cost by
-   * this factor — the standard compound-growth idle-game curve. Raised from 1.15 to 1.18
+   * this factor — the standard compound-growth idle-game curve. Lowered from 1.18 to 1.13
    * alongside BUY_PART_COST_TIER_MULTIPLIER above, for the same reason. */
-  PART_BUY_COST_MULTIPLIER: 1.18,
+  PART_BUY_COST_MULTIPLIER: 1.13,
 
   /** Starting max value of Energy, before any Expanded Battery upgrades — used exclusively
    * by the Garage merge grid. The Junkyard's tap loop doesn't touch this at all; taps are
