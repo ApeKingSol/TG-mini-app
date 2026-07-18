@@ -52,6 +52,7 @@ export function GarageScreen() {
   const tradeInCar = useGameStore((state) => state.tradeInCar);
   // TEMP DEBUG — see debugPreviewNextCar's own doc comment in GameStore.ts.
   const debugPreviewNextCar = useGameStore((state) => state.debugPreviewNextCar);
+  const debugPreviewPrevCar = useGameStore((state) => state.debugPreviewPrevCar);
 
   const [justMergedId, setJustMergedId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; variant: 'error' | 'success' } | null>(
@@ -172,6 +173,7 @@ export function GarageScreen() {
           upgradesRequired={upgradeRequirement}
           carStats={getCarStats(carTier, installedUpgrades)}
           onDebugNextCar={debugPreviewNextCar}
+          onDebugPrevCar={debugPreviewPrevCar}
         />
 
         {isMastered ? (
@@ -347,6 +349,7 @@ interface CarInstallationZoneProps {
   carStats: CarStats;
   /** TEMP DEBUG — see debugPreviewNextCar's doc comment in GameStore.ts. */
   onDebugNextCar: () => void;
+  onDebugPrevCar: () => void;
 }
 
 function CarInstallationZone({
@@ -356,6 +359,7 @@ function CarInstallationZone({
   upgradesRequired,
   carStats,
   onDebugNextCar,
+  onDebugPrevCar,
 }: CarInstallationZoneProps) {
   const { setNodeRef, isOver } = useDroppable({ id: CAR_INSTALLATION_ZONE_ID });
   const upgradesRemaining = Math.max(0, upgradesRequired - upgradesInstalled);
@@ -375,16 +379,25 @@ function CarInstallationZone({
       <span className="pointer-events-none absolute right-2 top-1 select-none font-mono text-[8px] uppercase tracking-widest text-amber/50">
         Chassis.{String(carTier).padStart(2, '0')}
       </span>
-      {/* TEMP DEBUG — free preview of the next car model, no cost/requirement check. Remove
-         this button (and debugPreviewNextCar in GameStore.ts) once the 20-car roster's been
-         reviewed. */}
-      <button
-        type="button"
-        onClick={onDebugNextCar}
-        className="absolute left-2 top-1 rounded border border-neon-magenta/40 bg-neon-magenta/10 px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-widest text-neon-magenta/80"
-      >
-        Debug: Next ▶
-      </button>
+      {/* TEMP DEBUG — free preview of the next/previous car model, no cost/requirement check.
+         Remove this pair of buttons (and debugPreviewNextCar/debugPreviewPrevCar in
+         GameStore.ts) once the 20-car roster's been reviewed. */}
+      <div className="absolute left-2 top-1 flex gap-1">
+        <button
+          type="button"
+          onClick={onDebugPrevCar}
+          className="rounded border border-neon-magenta/40 bg-neon-magenta/10 px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-widest text-neon-magenta/80"
+        >
+          ◀ Prev
+        </button>
+        <button
+          type="button"
+          onClick={onDebugNextCar}
+          className="rounded border border-neon-magenta/40 bg-neon-magenta/10 px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-widest text-neon-magenta/80"
+        >
+          Next ▶
+        </button>
+      </div>
       <p className="text-center font-display text-lg font-bold uppercase tracking-wide text-white drop-shadow-[0_0_3px_rgba(255,255,255,0.6)]">
         {carName}
       </p>

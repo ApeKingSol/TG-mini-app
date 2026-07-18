@@ -104,12 +104,13 @@ interface GameActions {
   buyUpgrade: (id: string) => boolean;
   /** Once installedUpgrades reaches getUpgradeRequirement(carTier), resets installedUpgrades/partsPurchased and advances to the next car tier. No-op otherwise. */
   tradeInCar: () => void;
-  /** TEMP DEBUG — jumps straight to the next car tier's art/name for a free look at the new
-   * 20-car roster, bypassing installedUpgrades/cost entirely (doesn't touch scrapPerSecond,
-   * partsPurchased, or installedUpgrades, so it can't be used to cheese the real economy).
-   * Remove this action, its button in GarageScreen, and this comment once the roster's been
-   * reviewed. */
+  /** TEMP DEBUG — jumps straight to the next/previous car tier's art/name for a free look at
+   * the new 20-car roster, bypassing installedUpgrades/cost entirely (doesn't touch
+   * scrapPerSecond, partsPurchased, or installedUpgrades, so it can't be used to cheese the
+   * real economy). Remove these two actions, their buttons in GarageScreen, and this comment
+   * once the roster's been reviewed. */
   debugPreviewNextCar: () => void;
+  debugPreviewPrevCar: () => void;
   /** Fast-forwards Scrap/Energy for time elapsed since lastSaved, run once after the persisted save is rehydrated. */
   applyOfflineProgress: () => void;
   dismissOfflineEarnings: () => void;
@@ -499,6 +500,13 @@ export const useGameStore = create<GameStore>()(
         set((state) => {
           const nextTier = Math.min(state.carTier + 1, CAR_TIERS.length);
           return { carTier: nextTier, car: { ...state.car, name: getCarTier(nextTier).name } };
+        });
+      },
+
+      debugPreviewPrevCar: () => {
+        set((state) => {
+          const prevTier = Math.max(state.carTier - 1, 1);
+          return { carTier: prevTier, car: { ...state.car, name: getCarTier(prevTier).name } };
         });
       },
 
