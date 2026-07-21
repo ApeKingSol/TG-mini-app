@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Zap, Store, X, Lock } from 'lucide-react';
 import {
@@ -26,6 +26,16 @@ import { getCarTier, getUpgradeRequirement, getCarSkins } from '../game/config/c
 import type { CarStats } from '../game/types';
 
 const CAR_INSTALLATION_ZONE_ID = 'car-installation-zone';
+
+// Stable references so re-renders (e.g. the passive scrap tick) don't hand Framer Motion a
+// fresh object identity every frame — that was restarting the in-flight exit transition before
+// its opacity ever reached 0, which left AnimatePresence waiting forever to mount the next car.
+const CAR_SLIDE_INITIAL = { x: '-130%', opacity: 0 };
+const CAR_SLIDE_ANIMATE = { x: 0, opacity: 1 };
+const CAR_SLIDE_EXIT = { x: '130%', opacity: 0 };
+const CAR_SLIDE_TRANSITION = { duration: 0.6, ease: 'easeInOut' } as const;
+const CAR_IDLE_BOB_ANIMATE = { y: [0, -6, 0] };
+const CAR_IDLE_BOB_TRANSITION = { duration: 3, repeat: Infinity, ease: 'easeInOut' } as const;
 
 function formatCountdown(totalSeconds: number): string {
   const minutes = Math.floor(totalSeconds / 60);
@@ -72,6 +82,13 @@ export function GarageScreen() {
   const canBuyPart = scrap >= partCost && inventory.some((slot) => slot === null);
   const upgradeRequirement = getUpgradeRequirement(carTier);
   const isMastered = installedUpgrades.length >= upgradeRequirement;
+  // Stable reference so the once-a-second `now` tick (below) doesn't hand CarInstallationZone
+  // a fresh carStats object every render — that was enough to disrupt its in-flight car-swap
+  // exit animation before it ever finished (see CarInstallationZone's own memo wrapper).
+  const carStats = useMemo(
+    () => getCarStats(carTier, installedUpgrades),
+    [carTier, installedUpgrades],
+  );
   const secondsUntilEnergyRegen = getSecondsUntilNextEnergyRegen(
     energy,
     maxEnergy,
@@ -171,7 +188,7 @@ export function GarageScreen() {
           carTier={carTier}
           upgradesInstalled={installedUpgrades.length}
           upgradesRequired={upgradeRequirement}
-          carStats={getCarStats(carTier, installedUpgrades)}
+          carStats={carStats}
           onDebugNextCar={debugPreviewNextCar}
           onDebugPrevCar={debugPreviewPrevCar}
         />
@@ -352,7 +369,11 @@ interface CarInstallationZoneProps {
   onDebugPrevCar: () => void;
 }
 
-function CarInstallationZone({
+// Memoized so the parent's once-a-second countdown-clock re-render (unrelated to the car on
+// display) doesn't reach this subtree — that re-render was reaching the in-flight AnimatePresence
+// exit transition below and leaving it stuck mid-animation (opacity never reaching its target,
+// so the next car never mounted). See the `carStats` useMemo at its call site for the other half.
+const CarInstallationZone = memo(function CarInstallationZone({
   carName,
   carTier,
   upgradesInstalled,
@@ -363,6 +384,29 @@ function CarInstallationZone({
 }: CarInstallationZoneProps) {
   const { setNodeRef, isOver } = useDroppable({ id: CAR_INSTALLATION_ZONE_ID });
   const upgradesRemaining = Math.max(0, upgradesRequired - upgradesInstalled);
+
+  // Debounces the debug Prev/Next buttons for the slide transition's own duration so a second
+  // click can't retrigger AnimatePresence before the first exit/enter pair finishes — see the
+  // AnimatePresence comment below for why an overlapping retrigger is the thing to avoid. This
+  // is a plain ref with no accompanying state: a state update here would re-render this same
+  // component at the same moment carTier changes, which turned out to be enough on its own to
+  // strand the transition (independent of whether a second click was involved at all).
+  const isSwitchingCarRef = useRef(false);
+  const unlockSwitchingCar = () => {
+    isSwitchingCarRef.current = false;
+  };
+  const handleDebugPrevCar = () => {
+    if (isSwitchingCarRef.current) return;
+    isSwitchingCarRef.current = true;
+    window.setTimeout(unlockSwitchingCar, CAR_SLIDE_TRANSITION.duration * 1000);
+    onDebugPrevCar();
+  };
+  const handleDebugNextCar = () => {
+    if (isSwitchingCarRef.current) return;
+    isSwitchingCarRef.current = true;
+    window.setTimeout(unlockSwitchingCar, CAR_SLIDE_TRANSITION.duration * 1000);
+    onDebugNextCar();
+  };
 
   return (
     // No background fill or box-shadow here on purpose: a `drop-shadow`/`shadow-*` glow
@@ -385,14 +429,14 @@ function CarInstallationZone({
       <div className="absolute left-2 top-1 flex gap-1">
         <button
           type="button"
-          onClick={onDebugPrevCar}
+          onClick={handleDebugPrevCar}
           className="rounded border border-neon-magenta/40 bg-neon-magenta/10 px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-widest text-neon-magenta/80"
         >
           ◀ Prev
         </button>
         <button
           type="button"
-          onClick={onDebugNextCar}
+          onClick={handleDebugNextCar}
           className="rounded border border-neon-magenta/40 bg-neon-magenta/10 px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-widest text-neon-magenta/80"
         >
           Next ▶
@@ -411,29 +455,35 @@ function CarInstallationZone({
       <StatsPanel stats={carStats} />
 
       {/* Keyed on carTier so a trade-in re-triggers this AnimatePresence: the outgoing car
-         drives off to the right while the new one drops in from the top. The outer element
+         drives off to the right while the new one drives in from the left. The outer element
          owns that one-shot enter/exit transform; the inner motion.img owns the perpetual
-         idle bob independently, so the two animations don't fight over the same transform. */}
+         idle bob independently, so the two animations don't fight over the same transform.
+         mode="wait" serializes exit-then-enter, which is what gives the "drives off, then next
+         one drives in" feel — but if the tier changes again before the exit finishes, a second
+         overlapping transition can leave one of them stuck without ever reaching its target
+         opacity/position. The debug Prev/Next buttons guard against that below by disabling
+         themselves for the transition's duration; a real trade-in only ever fires once per
+         upgrade so it can't retrigger mid-flight. */}
       <AnimatePresence mode="wait">
         <motion.div
           key={carTier}
-          initial={{ y: '-140%', opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          exit={{ x: '130%', opacity: 0 }}
-          transition={{ duration: 0.6, ease: 'easeInOut' }}
+          initial={CAR_SLIDE_INITIAL}
+          animate={CAR_SLIDE_ANIMATE}
+          exit={CAR_SLIDE_EXIT}
+          transition={CAR_SLIDE_TRANSITION}
         >
           <motion.img
             src={getCarTier(carTier).image}
             alt={carName}
-            animate={{ y: [0, -6, 0] }}
-            transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+            animate={CAR_IDLE_BOB_ANIMATE}
+            transition={CAR_IDLE_BOB_TRANSITION}
             className="mx-auto w-full max-w-sm object-contain"
           />
         </motion.div>
       </AnimatePresence>
     </div>
   );
-}
+});
 
 /** Stat bars are normalized against this reference ceiling purely for visual fill —
  * stats keep climbing with car tier forever, so a fixed 100 max would pin every bar at full

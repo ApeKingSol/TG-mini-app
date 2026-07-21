@@ -233,15 +233,22 @@ export function JunkyardScreen() {
                 whileTap={canAfford ? { scale: 0.97 } : undefined}
                 className="flex items-center justify-between rounded-lg border border-neutral-800 bg-bg-panel px-3 py-2 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <div>
-                  <p className="text-sm font-medium text-neutral-200">
+                <div className="min-w-0">
+                  <p
+                    className={`truncate font-display text-sm font-bold uppercase tracking-wide text-white ${
+                      // Orbitron's capital E sits with more left bearing than R/A, so "Expanded
+                      // Battery" reads as shifted right of the other two rows even though all
+                      // three boxes start at the same edge — nudge just this glyph to compensate.
+                      upgrade.id === 'expanded-battery' ? '-ml-1' : ''
+                    }`}
+                  >
                     {upgrade.name}
                   </p>
-                  <p className="text-xs text-neutral-500">
+                  <p className="mt-0.5 font-mono text-[10px] uppercase tracking-wide text-neutral-500">
                     Owned {upgrade.owned} · {formatUpgradeBenefit(upgrade)}
                   </p>
                 </div>
-                <span className="font-display text-sm text-neon-cyan tabular-nums">
+                <span className="shrink-0 pl-3 text-right font-display text-sm font-bold text-neon-cyan tabular-nums">
                   {Math.round(upgrade.cost).toLocaleString()}
                 </span>
               </motion.button>
