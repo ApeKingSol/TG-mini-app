@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { motion } from 'framer-motion';
-import { ArrowLeft, Lock, Package, ShieldAlert, Zap, type LucideIcon } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ArrowLeft, Gauge, Lock, Package, ShieldAlert, type LucideIcon } from 'lucide-react';
 import { useGameStore } from '../game/store/GameStore';
-import { Tachometer } from '../components/Tachometer';
-import { SYNDICATE_DRAG, getCarStats } from '../game/config/economy';
+import { AUTO_DRAG, getCarStats } from '../game/config/economy';
+import type { CarStats } from '../game/types';
 
-type RaceView = 'hub' | 'syndicate-drag';
+type RaceView = 'hub' | 'auto-drag';
 
 export function RaceScreen() {
   const [view, setView] = useState<RaceView>('hub');
@@ -18,20 +18,17 @@ export function RaceScreen() {
       transition={{ duration: 0.2 }}
       className="pt-4"
     >
-      {view === 'hub' ? (
-        <RaceHub onSelectDrag={() => setView('syndicate-drag')} />
-      ) : (
-        <SyndicateDragRace onExit={() => setView('hub')} />
-      )}
+      {view === 'hub' && <RaceHub onSelectAutoDrag={() => setView('auto-drag')} />}
+      {view === 'auto-drag' && <AutoDragRace onExit={() => setView('hub')} />}
     </motion.div>
   );
 }
 
 interface RaceHubProps {
-  onSelectDrag: () => void;
+  onSelectAutoDrag: () => void;
 }
 
-function RaceHub({ onSelectDrag }: RaceHubProps) {
+function RaceHub({ onSelectAutoDrag }: RaceHubProps) {
   const neon = useGameStore((state) => state.neon);
 
   return (
@@ -50,11 +47,11 @@ function RaceHub({ onSelectDrag }: RaceHubProps) {
       </p>
 
       <ModeCard
-        icon={Zap}
-        title="Syndicate Drag"
-        subtitle="PvP Betting · Timed-Shift Racing"
-        accentClass="border-neon-cyan/40 bg-neon-cyan/5 text-neon-cyan"
-        onClick={onSelectDrag}
+        icon={Gauge}
+        title="Auto-Drag"
+        subtitle="Hands-Off Betting · Auto-Battler"
+        accentClass="border-neon-magenta/40 bg-neon-magenta/5 text-neon-magenta"
+        onClick={onSelectAutoDrag}
       />
       <ModeCard
         icon={Package}
@@ -105,13 +102,57 @@ function ModeCard({ icon: Icon, title, subtitle, accentClass, locked, onClick }:
   );
 }
 
-type DragRaceState = 'idle' | 'racing' | 'won' | 'lost' | 'blown';
+const AUTO_DRAG_FLOAT_DURATION_MS = 800;
 
-interface SyndicateDragRaceProps {
+type AutoDragState = 'betting' | 'racing' | 'finished';
+
+interface FloatEvent {
+  id: string;
+  text: 'CRIT!' | 'DRIFT!';
+}
+
+/** Rolls the rival's stats once per race, jittered around the player's own — see
+ * AUTO_DRAG.RIVAL_STAT_JITTER's doc comment for why. `durability` is carried through
+ * unchanged only so the object satisfies CarStats; Auto-Drag never reads it (no HP/damage
+ * mechanic in this mode). */
+function rollRivalStats(playerStats: CarStats): CarStats {
+  const jitter = () => 1 + (Math.random() * 2 - 1) * AUTO_DRAG.RIVAL_STAT_JITTER;
+  return {
+    topSpeed: playerStats.topSpeed * jitter(),
+    acceleration: playerStats.acceleration * jitter(),
+    durability: playerStats.durability,
+    handling: playerStats.handling * jitter(),
+  };
+}
+
+function getFillPerSecond(topSpeed: number): number {
+  return (
+    AUTO_DRAG.BASE_FILL_PER_SECOND +
+    Math.max(0, topSpeed - 100) * AUTO_DRAG.FILL_PER_SECOND_PER_SPEED
+  );
+}
+
+function getLaunchJump(acceleration: number): number {
+  return (
+    AUTO_DRAG.BASE_LAUNCH_JUMP + Math.max(0, acceleration - 100) * AUTO_DRAG.LAUNCH_JUMP_PER_ACCEL
+  );
+}
+
+/** Clamped well below 1 — otherwise a heavily-upgraded car could approach guaranteed
+ * slowdown immunity, which would make the resist roll pointless instead of just favorable. */
+function getResistChance(handling: number): number {
+  return Math.min(
+    0.9,
+    AUTO_DRAG.BASE_RESIST_CHANCE +
+      Math.max(0, handling - 100) * AUTO_DRAG.RESIST_CHANCE_PER_HANDLING,
+  );
+}
+
+interface AutoDragRaceProps {
   onExit: () => void;
 }
 
-function SyndicateDragRace({ onExit }: SyndicateDragRaceProps) {
+function AutoDragRace({ onExit }: AutoDragRaceProps) {
   const neon = useGameStore((state) => state.neon);
   const carTier = useGameStore((state) => state.carTier);
   const installedUpgrades = useGameStore((state) => state.installedUpgrades);
@@ -120,55 +161,64 @@ function SyndicateDragRace({ onExit }: SyndicateDragRaceProps) {
 
   const stats = getCarStats(carTier, installedUpgrades);
 
-  // Acceleration widens the Blue Zone (easier timing); TopSpeed raises how much progress
-  // one well-timed shift is worth. Both are pure functions of stats already computed above,
-  // so they don't need to live in state — they can only change between races (trading in a
-  // car or installing a perk both happen outside the Anti-Stall/Drag mini-games).
-  const zoneWidth = Math.min(
-    100,
-    SYNDICATE_DRAG.BASE_ZONE_WIDTH +
-      Math.max(0, stats.acceleration - 100) * SYNDICATE_DRAG.ZONE_WIDTH_PER_ACCELERATION,
-  );
-  const zoneMin = Math.max(0, SYNDICATE_DRAG.ZONE_CENTER - zoneWidth / 2);
-  const zoneMax = Math.min(100, SYNDICATE_DRAG.ZONE_CENTER + zoneWidth / 2);
-  const progressPerShift =
-    SYNDICATE_DRAG.BASE_PROGRESS_PER_SHIFT +
-    Math.max(0, stats.topSpeed - 100) * SYNDICATE_DRAG.PROGRESS_PER_SHIFT_PER_TOP_SPEED;
-
-  const [raceState, setRaceState] = useState<DragRaceState>('idle');
-  const [needleValue, setNeedleValue] = useState(0);
+  const [betAmount, setBetAmount] = useState<number>(AUTO_DRAG.BET_TIERS[0]);
+  const [raceState, setRaceState] = useState<AutoDragState>('betting');
   const [playerProgress, setPlayerProgress] = useState(0);
-  const [aiProgress, setAiProgress] = useState(0);
-  const [playerHp, setPlayerHp] = useState(stats.durability);
+  const [rivalProgress, setRivalProgress] = useState(0);
+  const [playerFloats, setPlayerFloats] = useState<FloatEvent[]>([]);
+  const [rivalFloats, setRivalFloats] = useState<FloatEvent[]>([]);
+  const [winner, setWinner] = useState<'player' | 'rival' | null>(null);
 
-  // Refs mirror the state above as the single source of truth read *inside* handlers and
-  // the rAF loop — same reasoning as the Anti-Stall mini-game: reading React state directly
-  // risks acting on a one-render-stale value if two updates land before a re-render commits.
-  const raceStateRef = useRef<DragRaceState>('idle');
+  // Refs mirror the state above as the single source of truth read *inside* the rAF loop —
+  // reading React state directly there risks acting on a one-render-stale value if two
+  // updates land before a re-render commits (the same lesson from the Anti-Stall/Garage
+  // calibration mini-game).
+  const raceStateRef = useRef<AutoDragState>('betting');
   const raceStartRef = useRef(0);
   const playerProgressRef = useRef(0);
-  const playerHpRef = useRef(stats.durability);
+  const rivalProgressRef = useRef(0);
+  const rivalStatsRef = useRef<CarStats>(stats);
+  const lastEventCheckRef = useRef(0);
   const rafRef = useRef<number | null>(null);
 
-  // Needle sweeps 0 -> 100 -> 0 as a triangle wave, purely as a function of elapsed wall-
-  // clock time — not accumulated per rAF frame — so it stays correct even if rAF fires
-  // sparsely (the same lesson learned fixing the Anti-Stall RPM needle on iOS).
-  const getCurrentNeedle = () => {
-    const elapsedSeconds = (performance.now() - raceStartRef.current) / 1000;
-    const cyclePosition =
-      (elapsedSeconds % SYNDICATE_DRAG.NEEDLE_SWEEP_SECONDS) / SYNDICATE_DRAG.NEEDLE_SWEEP_SECONDS;
-    return cyclePosition < 0.5 ? cyclePosition * 200 : (1 - cyclePosition) * 200;
+  const canAffordBet = neon >= betAmount;
+  const grossPayout = betAmount * AUTO_DRAG.GROSS_WIN_MULTIPLIER;
+  const tax = Math.round(grossPayout * AUTO_DRAG.SYSTEM_TAX_RATE);
+  const netPayout = grossPayout - tax;
+
+  const pushPlayerFloat = (text: FloatEvent['text']) => {
+    const id = crypto.randomUUID();
+    setPlayerFloats((prev) => [...prev, { id, text }]);
+    window.setTimeout(() => {
+      setPlayerFloats((prev) => prev.filter((floatEvent) => floatEvent.id !== id));
+    }, AUTO_DRAG_FLOAT_DURATION_MS);
   };
 
-  const canAffordBet = neon >= SYNDICATE_DRAG.BET_NEON;
+  const pushRivalFloat = (text: FloatEvent['text']) => {
+    const id = crypto.randomUUID();
+    setRivalFloats((prev) => [...prev, { id, text }]);
+    window.setTimeout(() => {
+      setRivalFloats((prev) => prev.filter((floatEvent) => floatEvent.id !== id));
+    }, AUTO_DRAG_FLOAT_DURATION_MS);
+  };
 
   const startRace = () => {
-    if (!canAffordBet || !spendNeon(SYNDICATE_DRAG.BET_NEON, 'Syndicate Drag — Bet')) return;
-    playerProgressRef.current = 0;
-    playerHpRef.current = stats.durability;
-    setPlayerProgress(0);
-    setAiProgress(0);
-    setPlayerHp(stats.durability);
+    if (!canAffordBet || !spendNeon(betAmount, 'Auto-Drag — Bet')) return;
+
+    const rivalStats = rollRivalStats(stats);
+    rivalStatsRef.current = rivalStats;
+
+    const playerStart = Math.min(100, getLaunchJump(stats.acceleration));
+    const rivalStart = Math.min(100, getLaunchJump(rivalStats.acceleration));
+    playerProgressRef.current = playerStart;
+    rivalProgressRef.current = rivalStart;
+    setPlayerProgress(playerStart);
+    setRivalProgress(rivalStart);
+    setPlayerFloats([]);
+    setRivalFloats([]);
+    setWinner(null);
+
+    lastEventCheckRef.current = 0;
     raceStartRef.current = performance.now();
     raceStateRef.current = 'racing';
     setRaceState('racing');
@@ -177,17 +227,82 @@ function SyndicateDragRace({ onExit }: SyndicateDragRaceProps) {
   useEffect(() => {
     if (raceState !== 'racing') return;
 
+    let lastFrameSeconds = 0;
+
     const step = () => {
       const elapsedSeconds = (performance.now() - raceStartRef.current) / 1000;
-      setNeedleValue(getCurrentNeedle());
+      const dt = elapsedSeconds - lastFrameSeconds;
+      lastFrameSeconds = elapsedSeconds;
 
-      const nextAiProgress = Math.min(100, elapsedSeconds * SYNDICATE_DRAG.AI_PROGRESS_PER_SECOND);
-      setAiProgress(nextAiProgress);
+      playerProgressRef.current = Math.min(
+        100,
+        playerProgressRef.current + getFillPerSecond(stats.topSpeed) * dt,
+      );
+      rivalProgressRef.current = Math.min(
+        100,
+        rivalProgressRef.current + getFillPerSecond(rivalStatsRef.current.topSpeed) * dt,
+      );
 
-      if (nextAiProgress >= 100 && raceStateRef.current === 'racing') {
-        raceStateRef.current = 'lost';
-        setRaceState('lost');
-        return;
+      // Both cars independently roll for a random event on the same fixed cadence — a boost
+      // ("CRIT!") always lands, a slowdown attempt only costs progress (and shows "DRIFT!")
+      // if the car's Handling-based resist roll fails; a resisted attempt is silent.
+      if (elapsedSeconds - lastEventCheckRef.current >= AUTO_DRAG.EVENT_CHECK_INTERVAL_SECONDS) {
+        lastEventCheckRef.current = elapsedSeconds;
+
+        if (Math.random() < AUTO_DRAG.EVENT_CHANCE) {
+          if (Math.random() < AUTO_DRAG.SLOWDOWN_SHARE) {
+            if (Math.random() >= getResistChance(stats.handling)) {
+              playerProgressRef.current = Math.max(
+                0,
+                playerProgressRef.current - AUTO_DRAG.SLOWDOWN_AMOUNT,
+              );
+              pushPlayerFloat('DRIFT!');
+            }
+          } else {
+            playerProgressRef.current = Math.min(
+              100,
+              playerProgressRef.current + AUTO_DRAG.BOOST_AMOUNT,
+            );
+            pushPlayerFloat('CRIT!');
+          }
+        }
+
+        if (Math.random() < AUTO_DRAG.EVENT_CHANCE) {
+          if (Math.random() < AUTO_DRAG.SLOWDOWN_SHARE) {
+            if (Math.random() >= getResistChance(rivalStatsRef.current.handling)) {
+              rivalProgressRef.current = Math.max(
+                0,
+                rivalProgressRef.current - AUTO_DRAG.SLOWDOWN_AMOUNT,
+              );
+              pushRivalFloat('DRIFT!');
+            }
+          } else {
+            rivalProgressRef.current = Math.min(
+              100,
+              rivalProgressRef.current + AUTO_DRAG.BOOST_AMOUNT,
+            );
+            pushRivalFloat('CRIT!');
+          }
+        }
+      }
+
+      setPlayerProgress(playerProgressRef.current);
+      setRivalProgress(rivalProgressRef.current);
+
+      if (raceStateRef.current === 'racing') {
+        if (playerProgressRef.current >= 100) {
+          raceStateRef.current = 'finished';
+          setWinner('player');
+          setRaceState('finished');
+          addNeon(netPayout, 'Auto-Drag — Win');
+          return;
+        }
+        if (rivalProgressRef.current >= 100) {
+          raceStateRef.current = 'finished';
+          setWinner('rival');
+          setRaceState('finished');
+          return;
+        }
       }
 
       rafRef.current = requestAnimationFrame(step);
@@ -200,33 +315,7 @@ function SyndicateDragRace({ onExit }: SyndicateDragRaceProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [raceState]);
 
-  const handleShift = () => {
-    if (raceStateRef.current !== 'racing') return;
-    const currentNeedle = getCurrentNeedle();
-    const inZone = currentNeedle >= zoneMin && currentNeedle <= zoneMax;
-
-    if (inZone) {
-      const nextProgress = Math.min(100, playerProgressRef.current + progressPerShift);
-      playerProgressRef.current = nextProgress;
-      setPlayerProgress(nextProgress);
-      if (nextProgress >= 100) {
-        raceStateRef.current = 'won';
-        setRaceState('won');
-        addNeon(SYNDICATE_DRAG.WIN_PAYOUT_NEON, 'Syndicate Drag — Win');
-      }
-      return;
-    }
-
-    const nextHp = Math.max(0, playerHpRef.current - SYNDICATE_DRAG.MISSED_SHIFT_DAMAGE);
-    playerHpRef.current = nextHp;
-    setPlayerHp(nextHp);
-    if (nextHp <= 0) {
-      raceStateRef.current = 'blown';
-      setRaceState('blown');
-    }
-  };
-
-  const reset = () => setRaceState('idle');
+  const raceAgain = () => setRaceState('betting');
 
   return (
     <div className="flex flex-col gap-4">
@@ -239,102 +328,141 @@ function SyndicateDragRace({ onExit }: SyndicateDragRaceProps) {
           <ArrowLeft className="h-3.5 w-3.5" strokeWidth={2} />
           Hub
         </button>
-        <p className="font-display text-sm font-bold uppercase tracking-wide text-neon-cyan">
-          Syndicate Drag
+        <p className="font-display text-sm font-bold uppercase tracking-wide text-neon-magenta">
+          Auto-Drag
         </p>
         <span className="text-xs font-medium tabular-nums text-neon-magenta">{neon} NEON</span>
       </div>
 
-      {raceState === 'idle' && (
-        <div className="rounded-xl border border-neutral-800 bg-bg-panel p-4 text-center">
-          <p className="text-xs uppercase tracking-widest text-neutral-500">Entry Bet</p>
-          <p className="mt-1 font-display text-2xl font-bold text-neon-magenta">
-            {SYNDICATE_DRAG.BET_NEON} NEON
+      {raceState === 'betting' && (
+        <div className="rounded-xl border border-neon-magenta/30 bg-white/5 p-4 backdrop-blur-xl">
+          <p className="text-center text-xs uppercase tracking-widest text-neutral-400">
+            Place Your Bet
           </p>
-          <p className="mt-1 text-xs text-neutral-500">
-            Win pays {SYNDICATE_DRAG.WIN_PAYOUT_NEON} NEON after the Syndicate's 10% commission.
-          </p>
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            {AUTO_DRAG.BET_TIERS.map((tier) => (
+              <button
+                key={tier}
+                type="button"
+                onClick={() => setBetAmount(tier)}
+                className={`rounded-lg border py-3 font-display text-sm font-bold tabular-nums transition-colors ${
+                  betAmount === tier
+                    ? 'border-neon-magenta bg-neon-magenta/15 text-neon-magenta shadow-[0_0_16px_rgba(255,46,230,0.35)]'
+                    : 'border-neutral-700 bg-black/20 text-neutral-400'
+                }`}
+              >
+                {tier}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-4 flex items-center justify-between text-xs text-neutral-500">
+            <span>Win Payout</span>
+            <span className="text-right tabular-nums text-neon-cyan">
+              +{netPayout} NEON{' '}
+              <span className="text-neutral-600">
+                (gross {grossPayout} − {AUTO_DRAG.SYSTEM_TAX_RATE * 100}% tax)
+              </span>
+            </span>
+          </div>
+
           <motion.button
             type="button"
             onClick={startRace}
             disabled={!canAffordBet}
             whileHover={canAffordBet ? { scale: 1.05 } : undefined}
             whileTap={canAffordBet ? { scale: 0.95 } : undefined}
-            className="mt-4 w-full rounded-lg border border-neon-cyan/40 bg-neon-cyan/10 py-2.5 text-sm font-bold text-neon-cyan transition-colors disabled:cursor-not-allowed disabled:border-neutral-800 disabled:bg-transparent disabled:text-neutral-600"
+            className="mt-4 w-full rounded-lg border border-neon-magenta/50 bg-neon-magenta/10 py-3 font-display text-sm font-bold uppercase tracking-wide text-neon-magenta transition-colors disabled:cursor-not-allowed disabled:border-neutral-800 disabled:bg-transparent disabled:text-neutral-600"
           >
-            Place Bet &amp; Race
+            Start Race
           </motion.button>
-          {!canAffordBet && <p className="mt-2 text-xs text-red-400">Not enough NEON</p>}
+          {!canAffordBet && (
+            <p className="mt-2 text-center text-xs text-red-400">Not enough NEON</p>
+          )}
         </div>
       )}
 
       {raceState === 'racing' && (
-        <div className="rounded-xl border border-neutral-800 bg-bg-panel p-4">
-          <Tachometer rpm={needleValue} zoneMin={zoneMin} zoneMax={zoneMax} zoneColor="#38bdf8" />
-          <p className="-mt-2 text-center text-xs text-neutral-600">
-            Tap SHIFT inside the Blue Zone
+        <div className="rounded-xl border border-neon-cyan/20 bg-white/5 p-4 backdrop-blur-xl">
+          <div className="relative">
+            <RaceProgressBar label="You" value={playerProgress} colorClass="bg-neon-cyan" instant />
+            <FloatingEvents events={playerFloats} />
+          </div>
+          <div className="relative mt-4">
+            <RaceProgressBar
+              label="Rival"
+              value={rivalProgress}
+              colorClass="bg-neon-magenta"
+              instant
+            />
+            <FloatingEvents events={rivalFloats} />
+          </div>
+          <p className="mt-4 text-center text-xs uppercase tracking-widest text-neutral-600">
+            {betAmount} NEON on the line — hands off the wheel
           </p>
-
-          <div className="mt-3 space-y-2">
-            <RaceProgressBar label="You" value={playerProgress} colorClass="bg-neon-cyan" />
-            <RaceProgressBar label="Rival" value={aiProgress} colorClass="bg-red-500" instant />
-          </div>
-
-          <div className="mt-3">
-            <div className="mb-1 flex items-center justify-between text-xs text-neutral-500">
-              <span>Engine HP</span>
-              <span className="tabular-nums">
-                {Math.round(playerHp)} / {stats.durability}
-              </span>
-            </div>
-            <div className="h-2 w-full overflow-hidden rounded-full bg-neutral-800">
-              <motion.div
-                className="h-full origin-left rounded-full bg-green-400"
-                animate={{ scaleX: playerHp / stats.durability }}
-                transition={{ duration: 0.2, ease: 'easeOut' }}
-              />
-            </div>
-          </div>
-
-          <motion.button
-            type="button"
-            onClick={handleShift}
-            whileTap={{ scale: 0.95 }}
-            className="mt-4 w-full rounded-full border-2 border-neon-cyan bg-neon-cyan/10 py-4 font-display text-base font-extrabold tracking-wide text-neon-cyan"
-          >
-            SHIFT
-          </motion.button>
         </div>
       )}
 
-      {(raceState === 'won' || raceState === 'lost' || raceState === 'blown') && (
-        <div className="rounded-xl border border-neutral-800 bg-bg-panel p-4 text-center">
-          {raceState === 'won' && (
-            <p className="text-sm font-medium text-green-400">
-              You win the drag! +{SYNDICATE_DRAG.WIN_PAYOUT_NEON} NEON (after commission).
-            </p>
-          )}
-          {raceState === 'lost' && (
-            <p className="text-sm font-medium text-red-400">
-              The Rival crossed first — {SYNDICATE_DRAG.BET_NEON} NEON lost to the Syndicate.
-            </p>
-          )}
-          {raceState === 'blown' && (
-            <p className="text-sm font-medium text-red-400">
-              BLOWN ENGINE — the car couldn't take it. {SYNDICATE_DRAG.BET_NEON} NEON lost.
-            </p>
+      {raceState === 'finished' && (
+        <div className="rounded-xl border border-neon-magenta/30 bg-white/5 p-4 text-center backdrop-blur-xl">
+          {winner === 'player' ? (
+            <>
+              <p className="font-display text-lg font-bold uppercase tracking-wide text-neon-cyan">
+                You Win
+              </p>
+              <p className="mt-1 text-sm text-neutral-400">
+                Gross {grossPayout} NEON − {tax} NEON tax
+              </p>
+              <p className="mt-1 font-display text-2xl font-bold text-neon-cyan drop-shadow-[0_0_10px_rgba(0,240,255,0.5)]">
+                +{netPayout} NEON
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="font-display text-lg font-bold uppercase tracking-wide text-red-400">
+                Rival Wins
+              </p>
+              <p className="mt-1 text-sm text-neutral-400">{betAmount} NEON lost to the Street</p>
+            </>
           )}
           <motion.button
             type="button"
-            onClick={reset}
+            onClick={raceAgain}
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
-            className="mt-3 w-full rounded-lg border border-neutral-700 py-2.5 text-sm font-medium text-neutral-300"
+            className="mt-4 w-full rounded-lg border border-neutral-700 py-2.5 text-sm font-medium text-neutral-300"
           >
             Race Again
           </motion.button>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Floating "CRIT!"/"DRIFT!" callouts over a progress bar — absolutely positioned within
+ * whichever `relative` wrapper it's rendered in, staggered sideways by index so two events
+ * landing close together don't overlap illegibly. */
+function FloatingEvents({ events }: { events: FloatEvent[] }) {
+  return (
+    <div className="pointer-events-none absolute inset-0">
+      <AnimatePresence>
+        {events.map((event, index) => (
+          <motion.span
+            key={event.id}
+            initial={{ opacity: 0, y: 8, scale: 0.85 }}
+            animate={{ opacity: 1, y: -26, scale: 1 }}
+            exit={{ opacity: 0, y: -36 }}
+            transition={{ duration: 0.8, ease: 'easeOut' }}
+            className={`absolute top-1 font-display text-sm font-extrabold uppercase tracking-wide drop-shadow-[0_0_8px_currentColor] ${
+              event.text === 'CRIT!' ? 'text-neon-cyan' : 'text-amber'
+            }`}
+            style={{ left: `${24 + index * 18}%` }}
+          >
+            {event.text}
+          </motion.span>
+        ))}
+      </AnimatePresence>
     </div>
   );
 }

@@ -10,8 +10,8 @@ export const ECONOMY = {
   /** Minimum ms between passive-generation ticks, to avoid re-rendering on every animation frame. */
   TICK_INTERVAL_MS: 1000,
   STARTING_SCRAP: 100,
-  /** Enough for 5 Syndicate Drag bets right out of the gate, so the Race Hub's premium-
-   * currency mode isn't dead on arrival for a brand-new save. */
+  /** Enough for 5 Auto-Drag bets at the low tier right out of the gate, so the Race Hub's
+   * premium-currency mode isn't dead on arrival for a brand-new save. */
   STARTING_NEON: 50,
 
   /** How many of the 8 inventory slots start filled with a Level 1 part, so there's something to merge right away. */
@@ -185,29 +185,55 @@ export function getCarStats(carTier: number, installedUpgrades: PartPerk[]): Car
   };
 }
 
-/** Tuning for the Race Hub's "Syndicate Drag" mode: a timed-shift drag race against an AI
- * opponent, gated behind a $NEON bet the Syndicate takes a cut of. */
-export const SYNDICATE_DRAG = {
-  BET_NEON: 10,
-  /** Gross payout on a win is 20 NEON (a straight double-up); the Syndicate's 10% commission
-   * on that pot brings it down to 18 — a net +8 NEON profit over the bet already paid. */
-  WIN_PAYOUT_NEON: 18,
-  /** Engine damage for tapping SHIFT while the needle is outside the Blue Zone. */
-  MISSED_SHIFT_DAMAGE: 35,
-  /** Full 0->100->0 needle sweep duration — fast enough that landing a shift feels like a
-   * real timing skill, not a slow-motion gimme. */
-  NEEDLE_SWEEP_SECONDS: 1.6,
-  /** Blue Zone width (needle percentage points) at the 100-baseline Acceleration stat. */
-  BASE_ZONE_WIDTH: 14,
-  /** Extra Blue Zone width per Acceleration point above the 100 baseline. */
-  ZONE_WIDTH_PER_ACCELERATION: 0.3,
-  /** The Blue Zone is always centered here; only its width scales with Acceleration. */
-  ZONE_CENTER: 72,
-  /** Race progress (0-100) gained per successfully-timed shift at the 100-baseline TopSpeed. */
-  BASE_PROGRESS_PER_SHIFT: 14,
-  /** Extra progress per shift, per TopSpeed point above the 100 baseline. */
-  PROGRESS_PER_SHIFT_PER_TOP_SPEED: 0.12,
-  /** The AI opponent's constant progress-per-second fill rate — tuned to be beatable by
-   * consistently-landed shifts, not a guaranteed win either way. */
-  AI_PROGRESS_PER_SECOND: 9,
+/** Tuning for the Race Hub's "Auto-Drag" mode: a hands-off auto-battler — the player only
+ * picks a bet tier, then both cars fill their progress bar from stats + random events, with
+ * no timing input required. */
+export const AUTO_DRAG = {
+  /** Selectable bet tiers, kept modest (not the much bigger round numbers a bet-screen mockup
+   * might suggest) so a fresh save (ECONOMY.STARTING_NEON: 50) can always afford the low
+   * tier. */
+  BET_TIERS: [10, 25, 50] as const,
+  /** Gross payout on a win is this many times the bet (a straight double-up, before tax). */
+  GROSS_WIN_MULTIPLIER: 2,
+  /** The Syndicate's cut of the gross payout on a win — light, since there's no timing skill
+   * here to reward, just the bet decision itself. */
+  SYSTEM_TAX_RATE: 0.05,
+
+  /** Race progress (0-100) filled per second at the 100-baseline Speed stat. Tuned so a
+   * baseline-vs-baseline race (no launch jump, no random events) finishes in ~4.5s, the
+   * middle of the intended 3-5s race length. */
+  BASE_FILL_PER_SECOND: 22,
+  /** Extra fill-per-second per Speed point above the 100 baseline. */
+  FILL_PER_SECOND_PER_SPEED: 0.12,
+
+  /** One-time progress jump applied the instant the race starts, at the 100-baseline Accel
+   * stat — models "off the line" launch acceleration rather than top-end speed. */
+  BASE_LAUNCH_JUMP: 6,
+  /** Extra launch jump per Accel point above the 100 baseline. */
+  LAUNCH_JUMP_PER_ACCEL: 0.1,
+
+  /** How often (in-race seconds) each car independently rolls for a random event. */
+  EVENT_CHECK_INTERVAL_SECONDS: 0.5,
+  /** Chance (0-1) a given roll produces *any* event; half of those that do are a boost, half
+   * a slowdown attempt (see SLOWDOWN_SHARE). */
+  EVENT_CHANCE: 0.35,
+  /** Of the events that fire, the fraction that roll as a slowdown attempt rather than a
+   * boost. */
+  SLOWDOWN_SHARE: 0.5,
+  /** Progress granted by a boost event ("CRIT!"). */
+  BOOST_AMOUNT: 10,
+  /** Progress cost of a slowdown event that isn't resisted ("DRIFT!"). A resisted one costs
+   * nothing and shows no floating text at all — it just didn't happen. */
+  SLOWDOWN_AMOUNT: 8,
+  /** Baseline chance (0-1) to resist a slowdown attempt, at the 100-baseline Handling stat. */
+  BASE_RESIST_CHANCE: 0.35,
+  /** Extra resist chance per Handling point above the 100 baseline. Consumers should clamp
+   * the result (see AutoDragRace) — this is high enough that a heavily-upgraded car can
+   * otherwise approach guaranteed immunity, which would make the resist roll pointless. */
+  RESIST_CHANCE_PER_HANDLING: 0.004,
+
+  /** The rival's stats jitter randomly within +/- this fraction of the player's own stats
+   * each race (rolled once, at the green light), so upgrading your car still shifts the odds
+   * in your favor on average without turning every race into a foregone conclusion. */
+  RIVAL_STAT_JITTER: 0.25,
 } as const;
