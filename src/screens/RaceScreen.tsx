@@ -467,15 +467,24 @@ function AutoDragRace({ onExit }: AutoDragRaceProps) {
     if (!hostCanAfford) return;
     setLobbyView('hosting');
     hostActiveRef.current = true;
-    hostMatchToDatabase(hostBetAmount, carTier).then(({ matchId }) => {
-      // The player may have already cancelled while this "create the match" call was in
-      // flight — don't start waiting for an opponent on a match that was just torn down.
-      if (!hostActiveRef.current) return;
-      cancelHostRef.current = subscribeToMatchResult(matchId, (opponent) => {
-        cancelHostRef.current = null;
-        resolveMatch(opponent);
+    hostMatchToDatabase(hostBetAmount, carTier)
+      .then(({ matchId }) => {
+        // The player may have already cancelled while this "create the match" call was in
+        // flight — don't start waiting for an opponent on a match that was just torn down.
+        if (!hostActiveRef.current) return;
+        cancelHostRef.current = subscribeToMatchResult(matchId, (opponent) => {
+          cancelHostRef.current = null;
+          resolveMatch(opponent);
+        });
+      })
+      .catch(() => {
+        // Hosting itself failed (network error, or running outside Telegram where there's no
+        // initData to authenticate with) — don't leave the player stuck on "Waiting for
+        // Opponent..." forever with only a Cancel button that has nothing left to cancel.
+        if (!hostActiveRef.current) return;
+        hostActiveRef.current = false;
+        setLobbyView('browse');
       });
-    });
   };
 
   const cancelHosting = () => {
@@ -488,7 +497,7 @@ function AutoDragRace({ onExit }: AutoDragRaceProps) {
   const handleAcceptMatch = (challenge: OpenChallenge) => {
     if (neon < challenge.betAmount || acceptingMatchId !== null) return;
     setAcceptingMatchId(challenge.id);
-    acceptMatchFromDatabase(challenge.id)
+    acceptMatchFromDatabase(challenge.id, carTier)
       .then((confirmed) => {
         setAcceptingMatchId(null);
         resolveMatch(confirmed);
