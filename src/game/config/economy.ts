@@ -185,55 +185,108 @@ export function getCarStats(carTier: number, installedUpgrades: PartPerk[]): Car
   };
 }
 
-/** Tuning for the Race Hub's "Auto-Drag" mode: a hands-off auto-battler — the player only
- * picks a bet tier, then both cars fill their progress bar from stats + random events, with
- * no timing input required. */
+/** Tuning for the Race Hub's "Auto-Drag" mode: a hands-off auto-battler. "Race vs Player" is
+ * real (mock, for now — see src/game/mock/matchmaking.ts) League-matched PvP: the opponent's
+ * stats come straight from their own car tier via getCarStats, same as the player's. "Syndicate
+ * Bot" is a separate, simpler mode against a flat, disclosed-difficulty baseline (no
+ * matchmaking, no waiting). Both compute win chance the same honest way and roll against
+ * exactly that number — there is no hidden gap between the displayed odds and the real ones. */
 export const AUTO_DRAG = {
   /** Selectable bet tiers, kept modest (not the much bigger round numbers a bet-screen mockup
    * might suggest) so a fresh save (ECONOMY.STARTING_NEON: 50) can always afford the low
-   * tier. */
+   * tier. Also the only bet amounts the mock matchmaking backend hosts/lists. */
   BET_TIERS: [10, 25, 50] as const,
-  /** Gross payout on a win is this many times the bet (a straight double-up, before tax). */
-  GROSS_WIN_MULTIPLIER: 2,
-  /** The Syndicate's cut of the gross payout on a win — light, since there's no timing skill
-   * here to reward, just the bet decision itself. */
+  /** Gross payout on a win against a real (League-matched) Player opponent is this many times
+   * the bet. */
+  GROSS_WIN_MULTIPLIER_PLAYER: 2,
+  /** Gross payout on a win against the tougher "Syndicate Bot" rival — bigger, since
+   * BOT_RIVAL_STAT_MULTIPLIER makes that win chance lower for the same car. */
+  GROSS_WIN_MULTIPLIER_BOT: 2.6,
+  /** The Syndicate's cut of the gross payout on a win, either mode — light, since there's no
+   * timing skill here to reward, just the bet and opponent choice. */
   SYSTEM_TAX_RATE: 0.05,
 
-  /** Race progress (0-100) filled per second at the 100-baseline Speed stat. Tuned so a
-   * baseline-vs-baseline race (no launch jump, no random events) finishes in ~4.5s, the
-   * middle of the intended 3-5s race length. */
-  BASE_FILL_PER_SECOND: 22,
-  /** Extra fill-per-second per Speed point above the 100 baseline. */
-  FILL_PER_SECOND_PER_SPEED: 0.12,
+  /** "Average street racer" baseline that Syndicate Bot's difficulty multiplier scales up from
+   * below — Race vs Player no longer uses a flat baseline at all (real opponents' stats come
+   * from their own tier), so this constant is Bot-only now. */
+  BOT_RIVAL_BASE_STAT: 100,
+  /** Syndicate Bot's stats are the baseline above, scaled up by this much — a real, disclosed
+   * difficulty bump, not a hidden one. */
+  BOT_RIVAL_STAT_MULTIPLIER: 1.35,
+  /** Win chance (topSpeed+acceleration+handling power ratio) is clamped to this range so
+   * neither side is ever a mathematical lock — see computeWinChance in RaceScreen.tsx. */
+  MIN_WIN_CHANCE_PERCENT: 8,
+  MAX_WIN_CHANCE_PERCENT: 92,
 
-  /** One-time progress jump applied the instant the race starts, at the 100-baseline Accel
-   * stat — models "off the line" launch acceleration rather than top-end speed. */
-  BASE_LAUNCH_JUMP: 6,
-  /** Extra launch jump per Accel point above the 100 baseline. */
-  LAUNCH_JUMP_PER_ACCEL: 0.1,
+  /** The scripted race animation is chopped into this many uneven segments so the fill looks
+   * like bursts of speed rather than a metronomic ramp. */
+  RACE_STEPS: 7,
+  /** Total race animation length is randomized in this range (seconds) each race, purely for
+   * variety — has no bearing on the win/loss RNG, which is already resolved before the first
+   * frame plays. */
+  RACE_DURATION_MIN_SECONDS: 3,
+  RACE_DURATION_MAX_SECONDS: 4,
+  /** The predetermined loser's bar still climbs, just short of 100 — randomized in this range
+   * so it's not always a suspiciously round number. */
+  LOSER_FINAL_PROGRESS_MIN: 55,
+  LOSER_FINAL_PROGRESS_MAX: 90,
+  /** The predetermined winner's designated "NITRO!" segment gets its random weight scaled up
+   * by this much before the segments are normalized — a visible surge, not just noise. */
+  WINNER_BOOST_MULTIPLIER: 2.2,
+  /** The predetermined loser's occasional "DRIFT!" segment gets scaled down by this much
+   * instead — a visible stumble, used together with STUMBLE_CHANCE below. */
+  LOSER_STUMBLE_MULTIPLIER: 0.15,
+  /** Chance (0-1) the loser gets an early stumble segment at all — otherwise their climb is
+   * just evenly noisy, no scripted dip. */
+  STUMBLE_CHANCE: 0.5,
+  /** Chance (0-1) the loser's early segments are front-loaded (scaled up) — this is what
+   * produces "the loser takes an early lead before the winner's Nitro catches them." */
+  FRONT_LOAD_CHANCE: 0.6,
+  FRONT_LOAD_MULTIPLIER: 1.6,
+} as const;
 
-  /** How often (in-race seconds) each car independently rolls for a random event. */
-  EVENT_CHECK_INTERVAL_SECONDS: 0.5,
-  /** Chance (0-1) a given roll produces *any* event; half of those that do are a boost, half
-   * a slowdown attempt (see SLOWDOWN_SHARE). */
-  EVENT_CHANCE: 0.35,
-  /** Of the events that fire, the fraction that roll as a slowdown attempt rather than a
-   * boost. */
-  SLOWDOWN_SHARE: 0.5,
-  /** Progress granted by a boost event ("CRIT!"). */
-  BOOST_AMOUNT: 10,
-  /** Progress cost of a slowdown event that isn't resisted ("DRIFT!"). A resisted one costs
-   * nothing and shows no floating text at all — it just didn't happen. */
-  SLOWDOWN_AMOUNT: 8,
-  /** Baseline chance (0-1) to resist a slowdown attempt, at the 100-baseline Handling stat. */
-  BASE_RESIST_CHANCE: 0.35,
-  /** Extra resist chance per Handling point above the 100 baseline. Consumers should clamp
-   * the result (see AutoDragRace) — this is high enough that a heavily-upgraded car can
-   * otherwise approach guaranteed immunity, which would make the resist roll pointless. */
-  RESIST_CHANCE_PER_HANDLING: 0.004,
+/** One sector of Smuggler's Run — the chance of clearing it, and the total payout multiplier
+ * (applied to the entry fee) if the player cashes out immediately after clearing it. Chance
+ * drops and reward climbs every sector, the standard push-your-luck curve: each further step
+ * is a strictly worse bet in expected value (chance × multiplier shrinks tier over tier) so the
+ * tension is real, not free — see SMUGGLERS_RUN.SECTORS below for the actual numbers. */
+export interface SmugglersRunSector {
+  successChance: number;
+  rewardMultiplier: number;
+}
 
-  /** The rival's stats jitter randomly within +/- this fraction of the player's own stats
-   * each race (rolled once, at the green light), so upgrading your car still shifts the odds
-   * in your favor on average without turning every race into a foregone conclusion. */
-  RIVAL_STAT_JITTER: 0.25,
+/** Tuning for the Race Hub's "Smuggler's Run": a solo push-your-luck run through 4 sectors.
+ * Every sector cleared is a mandatory decision — bank the current multiplier or push deeper for
+ * a worse-odds, bigger payout — until either a cash-out or a bust (which forfeits the entry fee
+ * and everything accumulated). Odds and multipliers are hardcoded client-side for now (see
+ * src/game/mock/smugglerApi.ts) rather than fetched, same TODO-real-backend shape as
+ * matchmaking.ts. */
+export const SMUGGLERS_RUN = {
+  ENTRY_FEE_SCRAP: 500,
+  SECTORS: [
+    { successChance: 0.85, rewardMultiplier: 1.5 },
+    { successChance: 0.65, rewardMultiplier: 3.0 },
+    { successChance: 0.4, rewardMultiplier: 5.0 },
+    { successChance: 0.15, rewardMultiplier: 10.0 },
+  ] satisfies SmugglersRunSector[],
+  /** How long the "Evading Cops..." tense loading state holds before a sector's result reveals
+   * — purely dramatic pacing, has no bearing on the RNG roll itself (already resolved server-
+   * side, or in this mock, the instant resolveSector is called). */
+  RESOLVE_DELAY_MS: 1500,
+} as const;
+
+/** Tuning for Night Siege: a Syndicate-only cooperative World Boss raid (see
+ * src/screens/SyndicateHub.tsx — it's gated behind clan membership, not a Race Hub mode card).
+ * No entry fee: every member gets one free 30-second tap-damage window per raid against the
+ * same Corporate Convoy, and session damage is submitted to (mock, for now) the server for the
+ * shared kill — see src/game/mock/siegeApi.ts for the placeholder network shape this will
+ * eventually replace with a real live-HP raid boss. A shared kill's loot is a Syndicate-wide
+ * concern, not a per-tap Scrap/Neon payout, so there's deliberately no reward-per-damage rate
+ * here. */
+export const NIGHT_SIEGE = {
+  COMBAT_DURATION_SECONDS: 30,
+  /** Each tap deals a random amount in this range — random so the floating damage numbers
+   * don't feel like a metronome, same reasoning as Auto-Drag's segment weights. */
+  DAMAGE_PER_TAP_MIN: 300,
+  DAMAGE_PER_TAP_MAX: 700,
 } as const;

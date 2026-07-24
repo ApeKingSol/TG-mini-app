@@ -1,14 +1,29 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Gauge, Lock, Package, ShieldAlert, type LucideIcon } from 'lucide-react';
+import { ArrowLeft, Gauge, Lock, Package, type LucideIcon } from 'lucide-react';
 import { useGameStore } from '../game/store/GameStore';
 import { AUTO_DRAG, getCarStats } from '../game/config/economy';
+import { getCarTier, getLeagueForTier } from '../game/config/carTiers';
+import {
+  acceptMatchFromDatabase,
+  fetchLobbyMatches,
+  hostMatchToDatabase,
+  subscribeToMatchResult,
+  type OpenChallenge,
+} from '../game/mock/matchmaking';
+import { PlayerLobby, type LobbyView } from './PlayerLobby';
+import { SmugglersRun } from './SmugglersRun';
+import { SyndicateHub } from './SyndicateHub';
 import type { CarStats } from '../game/types';
 
-type RaceView = 'hub' | 'auto-drag';
+type RaceView = 'hub' | 'auto-drag' | 'smugglers-run';
+type StreetsTab = 'lone-wolf' | 'syndicates';
 
 export function RaceScreen() {
   const [view, setView] = useState<RaceView>('hub');
+  // Lives here (not inside the hub component) so it survives a round-trip into Auto-Drag or
+  // Smuggler's Run and back — returning to the hub lands back on whichever tab the player left.
+  const [activeTab, setActiveTab] = useState<StreetsTab>('lone-wolf');
 
   return (
     <motion.div
@@ -18,17 +33,37 @@ export function RaceScreen() {
       transition={{ duration: 0.2 }}
       className="pt-4"
     >
-      {view === 'hub' && <RaceHub onSelectAutoDrag={() => setView('auto-drag')} />}
+      {view === 'hub' && (
+        <TheStreetsHub
+          activeTab={activeTab}
+          onChangeTab={setActiveTab}
+          onSelectAutoDrag={() => setView('auto-drag')}
+          onSelectSmugglersRun={() => setView('smugglers-run')}
+        />
+      )}
       {view === 'auto-drag' && <AutoDragRace onExit={() => setView('hub')} />}
+      {view === 'smugglers-run' && <SmugglersRun onExit={() => setView('hub')} />}
     </motion.div>
   );
 }
 
-interface RaceHubProps {
+interface TheStreetsHubProps {
+  activeTab: StreetsTab;
+  onChangeTab: (tab: StreetsTab) => void;
   onSelectAutoDrag: () => void;
+  onSelectSmugglersRun: () => void;
 }
 
-function RaceHub({ onSelectAutoDrag }: RaceHubProps) {
+/** The Streets' top-level hub — a persistent Neon balance readout, a Lone Wolf/Syndicates tab
+ * toggle, and whichever tab's content that selects. Night Siege isn't a mode card here at all
+ * anymore: it's gated behind Syndicate membership and lives entirely inside SyndicateHub, so
+ * solo players never see an entry point to it outside the Syndicates tab. */
+function TheStreetsHub({
+  activeTab,
+  onChangeTab,
+  onSelectAutoDrag,
+  onSelectSmugglersRun,
+}: TheStreetsHubProps) {
   const neon = useGameStore((state) => state.neon);
 
   return (
@@ -42,24 +77,55 @@ function RaceHub({ onSelectAutoDrag }: RaceHubProps) {
         </p>
       </div>
 
-      <p className="text-center text-xs uppercase tracking-widest text-neutral-500">
-        Select a Game Mode
-      </p>
+      <div className="grid grid-cols-2 gap-2 rounded-xl border border-neutral-800 bg-black/20 p-1">
+        <button
+          type="button"
+          onClick={() => onChangeTab('lone-wolf')}
+          className={`rounded-lg py-2.5 font-display text-xs font-bold uppercase tracking-wide transition-colors ${
+            activeTab === 'lone-wolf'
+              ? 'border border-neon-cyan bg-neon-cyan/15 text-neon-cyan shadow-[0_0_16px_rgba(0,240,255,0.35)]'
+              : 'border border-transparent text-neutral-400'
+          }`}
+        >
+          Lone Wolf
+        </button>
+        <button
+          type="button"
+          onClick={() => onChangeTab('syndicates')}
+          className={`rounded-lg py-2.5 font-display text-xs font-bold uppercase tracking-wide transition-colors ${
+            activeTab === 'syndicates'
+              ? 'border border-amber bg-amber/15 text-amber shadow-[0_0_16px_rgba(255,149,0,0.35)]'
+              : 'border border-transparent text-neutral-400'
+          }`}
+        >
+          Syndicates
+        </button>
+      </div>
 
-      <ModeCard
-        icon={Gauge}
-        title="Auto-Drag"
-        subtitle="Hands-Off Betting · Auto-Battler"
-        accentClass="border-neon-magenta/40 bg-neon-magenta/5 text-neon-magenta"
-        onClick={onSelectAutoDrag}
-      />
-      <ModeCard
-        icon={Package}
-        title="Smuggler's Run"
-        subtitle="Risk/Reward Convoy Run"
-        locked
-      />
-      <ModeCard icon={ShieldAlert} title="Night Siege" subtitle="Convoy Defense" locked />
+      {activeTab === 'lone-wolf' && (
+        <div className="flex flex-col gap-4">
+          <p className="text-center text-xs uppercase tracking-widest text-neutral-500">
+            Select a Game Mode
+          </p>
+
+          <ModeCard
+            icon={Gauge}
+            title="Auto-Drag"
+            subtitle="Hands-Off Betting · Auto-Battler"
+            accentClass="border-neon-magenta/40 bg-neon-magenta/5 text-neon-magenta"
+            onClick={onSelectAutoDrag}
+          />
+          <ModeCard
+            icon={Package}
+            title="Smuggler's Run"
+            subtitle="Risk/Reward Convoy Run"
+            accentClass="border-danger-red/40 bg-danger-red/5 text-danger-red"
+            onClick={onSelectSmugglersRun}
+          />
+        </div>
+      )}
+
+      {activeTab === 'syndicates' && <SyndicateHub />}
     </div>
   );
 }
@@ -105,47 +171,80 @@ function ModeCard({ icon: Icon, title, subtitle, accentClass, locked, onClick }:
 const AUTO_DRAG_FLOAT_DURATION_MS = 800;
 
 type AutoDragState = 'betting' | 'racing' | 'finished';
+type RaceMode = 'player' | 'bot';
+type RaceSide = 'player' | 'rival';
 
 interface FloatEvent {
   id: string;
-  text: 'CRIT!' | 'DRIFT!';
+  text: 'NITRO!' | 'DRIFT!';
 }
 
-/** Rolls the rival's stats once per race, jittered around the player's own — see
- * AUTO_DRAG.RIVAL_STAT_JITTER's doc comment for why. `durability` is carried through
- * unchanged only so the object satisfies CarStats; Auto-Drag never reads it (no HP/damage
- * mechanic in this mode). */
-function rollRivalStats(playerStats: CarStats): CarStats {
-  const jitter = () => 1 + (Math.random() * 2 - 1) * AUTO_DRAG.RIVAL_STAT_JITTER;
-  return {
-    topSpeed: playerStats.topSpeed * jitter(),
-    acceleration: playerStats.acceleration * jitter(),
-    durability: playerStats.durability,
-    handling: playerStats.handling * jitter(),
-  };
+/** Sum of the 3 stats that matter for a race — durability is a Syndicate Drag-only concept
+ * (this mode has no HP/damage mechanic) so it's deliberately left out of the power total. */
+function getStatPower(stats: Pick<CarStats, 'topSpeed' | 'acceleration' | 'handling'>): number {
+  return stats.topSpeed + stats.acceleration + stats.handling;
 }
 
-function getFillPerSecond(topSpeed: number): number {
-  return (
-    AUTO_DRAG.BASE_FILL_PER_SECOND +
-    Math.max(0, topSpeed - 100) * AUTO_DRAG.FILL_PER_SECOND_PER_SPEED
+/** Syndicate Bot's total power — a flat, disclosed-difficulty baseline scaled up by
+ * BOT_RIVAL_STAT_MULTIPLIER. Race vs Player doesn't use this at all: a real (mock, for now)
+ * opponent's power comes straight from their own car tier via getStatPower(getCarStats(...)),
+ * same as the player's — see resolveMatch below. */
+function getBotRivalPower(): number {
+  return AUTO_DRAG.BOT_RIVAL_BASE_STAT * 3 * AUTO_DRAG.BOT_RIVAL_STAT_MULTIPLIER;
+}
+
+/** The single number driving both the UI's "Win Chance" readout AND the actual race RNG roll
+ * — see startRace below, which rolls against exactly this value for either mode. There is no
+ * second, hidden number; what's displayed is what's used. Clamped so neither side is ever a
+ * mathematical lock, same reasoning as a real bookmaker never posting 0% or 100%. */
+function computeWinChancePercent(playerPower: number, rivalPower: number): number {
+  const raw = (playerPower / (playerPower + rivalPower)) * 100;
+  return Math.round(
+    Math.min(AUTO_DRAG.MAX_WIN_CHANCE_PERCENT, Math.max(AUTO_DRAG.MIN_WIN_CHANCE_PERCENT, raw)),
   );
 }
 
-function getLaunchJump(acceleration: number): number {
-  return (
-    AUTO_DRAG.BASE_LAUNCH_JUMP + Math.max(0, acceleration - 100) * AUTO_DRAG.LAUNCH_JUMP_PER_ACCEL
-  );
+interface RaceSegmentOptions {
+  finalTotal: number;
+  boostIndex?: number;
+  boostMultiplier?: number;
+  stumbleIndex?: number;
+  stumbleMultiplier?: number;
+  frontLoadIndices?: number[];
+  frontLoadMultiplier?: number;
 }
 
-/** Clamped well below 1 — otherwise a heavily-upgraded car could approach guaranteed
- * slowdown immunity, which would make the resist roll pointless instead of just favorable. */
-function getResistChance(handling: number): number {
-  return Math.min(
-    0.9,
-    AUTO_DRAG.BASE_RESIST_CHANCE +
-      Math.max(0, handling - 100) * AUTO_DRAG.RESIST_CHANCE_PER_HANDLING,
-  );
+/** Builds one car's per-segment progress deltas for the scripted race animation: random
+ * weights, optionally biased at specific indices for a "NITRO!" surge, a "DRIFT!" stumble, or
+ * an early front-loaded lead, then normalized so they sum to exactly `finalTotal`. The winner
+ * is always built with finalTotal 100 and the loser with something short of it (see
+ * AUTO_DRAG.LOSER_FINAL_PROGRESS_MIN/MAX) — the outcome is locked in before any of this runs,
+ * this only shapes how the animation gets there. */
+function buildRaceSegments({
+  finalTotal,
+  boostIndex,
+  boostMultiplier = 1,
+  stumbleIndex,
+  stumbleMultiplier = 1,
+  frontLoadIndices = [],
+  frontLoadMultiplier = 1,
+}: RaceSegmentOptions): number[] {
+  const weights = Array.from({ length: AUTO_DRAG.RACE_STEPS }, () => 0.6 + Math.random() * 0.8);
+  if (boostIndex !== undefined) weights[boostIndex] *= boostMultiplier;
+  if (stumbleIndex !== undefined) weights[stumbleIndex] *= stumbleMultiplier;
+  frontLoadIndices.forEach((index) => {
+    weights[index] *= frontLoadMultiplier;
+  });
+  const total = weights.reduce((sum, weight) => sum + weight, 0);
+  return weights.map((weight) => (weight / total) * finalTotal);
+}
+
+/** Running totals *before* each segment (index 0 is always 0), so the rAF loop can interpolate
+ * within the current segment without re-summing the array every frame. */
+function cumulativeSums(segments: number[]): number[] {
+  const cumulative = [0];
+  segments.forEach((segment) => cumulative.push(cumulative[cumulative.length - 1] + segment));
+  return cumulative;
 }
 
 interface AutoDragRaceProps {
@@ -160,14 +259,31 @@ function AutoDragRace({ onExit }: AutoDragRaceProps) {
   const addNeon = useGameStore((state) => state.addNeon);
 
   const stats = getCarStats(carTier, installedUpgrades);
+  const playerCarImage = getCarTier(carTier).image;
 
+  const [raceMode, setRaceMode] = useState<RaceMode>('player');
   const [betAmount, setBetAmount] = useState<number>(AUTO_DRAG.BET_TIERS[0]);
+  const [rivalCarImage, setRivalCarImage] = useState<string>(getCarTier(1).image);
   const [raceState, setRaceState] = useState<AutoDragState>('betting');
   const [playerProgress, setPlayerProgress] = useState(0);
   const [rivalProgress, setRivalProgress] = useState(0);
   const [playerFloats, setPlayerFloats] = useState<FloatEvent[]>([]);
   const [rivalFloats, setRivalFloats] = useState<FloatEvent[]>([]);
-  const [winner, setWinner] = useState<'player' | 'rival' | null>(null);
+  const [playerBoosting, setPlayerBoosting] = useState(false);
+  const [rivalBoosting, setRivalBoosting] = useState(false);
+  const [winner, setWinner] = useState<RaceSide | null>(null);
+
+  // --- Race vs Player lobby state (mock matchmaking — see src/game/mock/matchmaking.ts) ---
+  const league = getLeagueForTier(carTier);
+  const [lobbyView, setLobbyView] = useState<LobbyView>('browse');
+  const [openChallenges, setOpenChallenges] = useState<OpenChallenge[]>([]);
+  const [isFetching, setIsFetching] = useState(false);
+  const [acceptingMatchId, setAcceptingMatchId] = useState<string | null>(null);
+  const [hostBetAmount, setHostBetAmount] = useState<number>(AUTO_DRAG.BET_TIERS[0]);
+  const cancelHostRef = useRef<(() => void) | null>(null);
+  // Guards against a stale subscribeToMatchResult starting after the player already cancelled
+  // hosting while hostMatchToDatabase's own "create the match" call was still in flight.
+  const hostActiveRef = useRef(false);
 
   // Refs mirror the state above as the single source of truth read *inside* the rAF loop —
   // reading React state directly there risks acting on a one-render-stale value if two
@@ -175,14 +291,31 @@ function AutoDragRace({ onExit }: AutoDragRaceProps) {
   // calibration mini-game).
   const raceStateRef = useRef<AutoDragState>('betting');
   const raceStartRef = useRef(0);
-  const playerProgressRef = useRef(0);
-  const rivalProgressRef = useRef(0);
-  const rivalStatsRef = useRef<CarStats>(stats);
-  const lastEventCheckRef = useRef(0);
+  const stepDurationRef = useRef(0);
+  const totalDurationRef = useRef(0);
+  const winnerRef = useRef<RaceSide | null>(null);
+  const playerSegmentsRef = useRef<number[]>([]);
+  const rivalSegmentsRef = useRef<number[]>([]);
+  const playerCumulativeRef = useRef<number[]>([0]);
+  const rivalCumulativeRef = useRef<number[]>([0]);
+  const playerBoostStepRef = useRef<number | null>(null);
+  const rivalBoostStepRef = useRef<number | null>(null);
+  const playerStumbleStepRef = useRef<number | null>(null);
+  const rivalStumbleStepRef = useRef<number | null>(null);
+  const lastStepIndexRef = useRef(-1);
   const rafRef = useRef<number | null>(null);
 
+  const playerPower = getStatPower(stats);
+  // Only meaningful for Syndicate Bot's betting screen now — Race vs Player shows a per-
+  // opponent estimate instead (see MatchCard), computed the same honest way once a real
+  // opponent's tier is known.
+  const botWinChance = computeWinChancePercent(playerPower, getBotRivalPower());
+
   const canAffordBet = neon >= betAmount;
-  const grossPayout = betAmount * AUTO_DRAG.GROSS_WIN_MULTIPLIER;
+  const hostCanAfford = neon >= hostBetAmount;
+  const grossMultiplier =
+    raceMode === 'bot' ? AUTO_DRAG.GROSS_WIN_MULTIPLIER_BOT : AUTO_DRAG.GROSS_WIN_MULTIPLIER_PLAYER;
+  const grossPayout = Math.round(betAmount * grossMultiplier);
   const tax = Math.round(grossPayout * AUTO_DRAG.SYSTEM_TAX_RATE);
   const netPayout = grossPayout - tax;
 
@@ -202,107 +335,213 @@ function AutoDragRace({ onExit }: AutoDragRaceProps) {
     }, AUTO_DRAG_FLOAT_DURATION_MS);
   };
 
-  const startRace = () => {
-    if (!canAffordBet || !spendNeon(betAmount, 'Auto-Drag — Bet')) return;
+  // Brief "wheelie" tilt + brightness pulse on a NITRO!, auto-clearing itself — see the
+  // `.car-boost` class in index.css for what this actually renders.
+  const triggerPlayerBoost = () => {
+    setPlayerBoosting(true);
+    window.setTimeout(() => setPlayerBoosting(false), 500);
+  };
 
-    const rivalStats = rollRivalStats(stats);
-    rivalStatsRef.current = rivalStats;
+  const triggerRivalBoost = () => {
+    setRivalBoosting(true);
+    window.setTimeout(() => setRivalBoosting(false), 500);
+  };
 
-    const playerStart = Math.min(100, getLaunchJump(stats.acceleration));
-    const rivalStart = Math.min(100, getLaunchJump(rivalStats.acceleration));
-    playerProgressRef.current = playerStart;
-    rivalProgressRef.current = rivalStart;
-    setPlayerProgress(playerStart);
-    setRivalProgress(rivalStart);
+  // The entire outcome is resolved right here, in one roll against the exact percentage that
+  // was (or could have been) shown to the player for this specific opponent — everything from
+  // this point on (segments, boosts, stumbles) only scripts how the animation dramatizes an
+  // outcome that's already locked in. Shared by both Syndicate Bot's "Start Race" button and
+  // Race vs Player's resolveMatch below, parameterized by whatever bet/opponent got the player
+  // here — see those two call sites for how each fills in rivalPowerValue/rivalImage.
+  const beginRace = (
+    bet: number,
+    rivalPowerValue: number,
+    rivalImage: string,
+    betLabel: string,
+  ): boolean => {
+    if (neon < bet || !spendNeon(bet, betLabel)) return false;
+
+    setBetAmount(bet);
+    setRivalCarImage(rivalImage);
+
+    const chance = computeWinChancePercent(playerPower, rivalPowerValue);
+    const winnerSide: RaceSide = Math.random() * 100 < chance ? 'player' : 'rival';
+    winnerRef.current = winnerSide;
+
+    const boostIndex = 3 + Math.floor(Math.random() * 3);
+    const stumbleIndex =
+      Math.random() < AUTO_DRAG.STUMBLE_CHANCE ? Math.floor(Math.random() * 3) : undefined;
+    const frontLoad = Math.random() < AUTO_DRAG.FRONT_LOAD_CHANCE;
+    const loserTotal =
+      AUTO_DRAG.LOSER_FINAL_PROGRESS_MIN +
+      Math.random() * (AUTO_DRAG.LOSER_FINAL_PROGRESS_MAX - AUTO_DRAG.LOSER_FINAL_PROGRESS_MIN);
+
+    const winnerSegments = buildRaceSegments({
+      finalTotal: 100,
+      boostIndex,
+      boostMultiplier: AUTO_DRAG.WINNER_BOOST_MULTIPLIER,
+    });
+    const loserSegments = buildRaceSegments({
+      finalTotal: loserTotal,
+      stumbleIndex,
+      stumbleMultiplier: AUTO_DRAG.LOSER_STUMBLE_MULTIPLIER,
+      frontLoadIndices: frontLoad ? [0, 1] : [],
+      frontLoadMultiplier: AUTO_DRAG.FRONT_LOAD_MULTIPLIER,
+    });
+
+    const playerSegments = winnerSide === 'player' ? winnerSegments : loserSegments;
+    const rivalSegments = winnerSide === 'player' ? loserSegments : winnerSegments;
+    playerSegmentsRef.current = playerSegments;
+    rivalSegmentsRef.current = rivalSegments;
+    playerCumulativeRef.current = cumulativeSums(playerSegments);
+    rivalCumulativeRef.current = cumulativeSums(rivalSegments);
+
+    playerBoostStepRef.current = winnerSide === 'player' ? boostIndex : null;
+    rivalBoostStepRef.current = winnerSide === 'rival' ? boostIndex : null;
+    playerStumbleStepRef.current = winnerSide === 'rival' ? (stumbleIndex ?? null) : null;
+    rivalStumbleStepRef.current = winnerSide === 'player' ? (stumbleIndex ?? null) : null;
+    lastStepIndexRef.current = -1;
+
+    setPlayerProgress(0);
+    setRivalProgress(0);
     setPlayerFloats([]);
     setRivalFloats([]);
+    setPlayerBoosting(false);
+    setRivalBoosting(false);
     setWinner(null);
 
-    lastEventCheckRef.current = 0;
+    const duration =
+      AUTO_DRAG.RACE_DURATION_MIN_SECONDS +
+      Math.random() * (AUTO_DRAG.RACE_DURATION_MAX_SECONDS - AUTO_DRAG.RACE_DURATION_MIN_SECONDS);
+    totalDurationRef.current = duration;
+    stepDurationRef.current = duration / AUTO_DRAG.RACE_STEPS;
+
     raceStartRef.current = performance.now();
     raceStateRef.current = 'racing';
     setRaceState('racing');
+    return true;
+  };
+
+  // --- Race vs Player lobby handlers (mock matchmaking) ---
+  const refreshLobbyMatches = () => {
+    setIsFetching(true);
+    fetchLobbyMatches(league.id)
+      .then((challenges) => setOpenChallenges(challenges))
+      .finally(() => setIsFetching(false));
+  };
+
+  useEffect(() => {
+    if (raceState === 'betting' && raceMode === 'player' && lobbyView === 'browse') {
+      refreshLobbyMatches();
+    }
+    // TODO real backend: swap the effect above for a live subscription to the league's open-
+    // match list (WebSocket message or polling interval) instead of only fetching on view entry
+    // — see the comment inside fetchLobbyMatches in matchmaking.ts for exactly where that goes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [raceState, raceMode, lobbyView, league.id]);
+
+  // Cancels any in-flight mock "waiting for opponent" timer if the player backs all the way
+  // out of Auto-Drag mid-host — a real backend would need the equivalent (closing the hosted
+  // match / unsubscribing) here too.
+  useEffect(() => {
+    return () => {
+      hostActiveRef.current = false;
+      cancelHostRef.current?.();
+    };
+  }, []);
+
+  /** One real (mock, for now) opponent's stats come from their own tier, same as the
+   * player's — no flat baseline, no jitter, nothing hidden. */
+  const resolveMatch = (opponent: OpenChallenge) => {
+    const rivalPowerValue = getStatPower(getCarStats(opponent.opponentCarTier, []));
+    const rivalImage = getCarTier(opponent.opponentCarTier).image;
+    beginRace(
+      opponent.betAmount,
+      rivalPowerValue,
+      rivalImage,
+      `Auto-Drag — Bet (vs ${opponent.opponentName})`,
+    );
+  };
+
+  const startHosting = () => {
+    if (!hostCanAfford) return;
+    setLobbyView('hosting');
+    hostActiveRef.current = true;
+    hostMatchToDatabase(hostBetAmount, carTier).then(({ matchId }) => {
+      // The player may have already cancelled while this "create the match" call was in
+      // flight — don't start waiting for an opponent on a match that was just torn down.
+      if (!hostActiveRef.current) return;
+      cancelHostRef.current = subscribeToMatchResult(matchId, (opponent) => {
+        cancelHostRef.current = null;
+        resolveMatch(opponent);
+      });
+    });
+  };
+
+  const cancelHosting = () => {
+    hostActiveRef.current = false;
+    cancelHostRef.current?.();
+    cancelHostRef.current = null;
+    setLobbyView('browse');
+  };
+
+  const handleAcceptMatch = (challenge: OpenChallenge) => {
+    if (neon < challenge.betAmount || acceptingMatchId !== null) return;
+    setAcceptingMatchId(challenge.id);
+    acceptMatchFromDatabase(challenge.id)
+      .then((confirmed) => {
+        setAcceptingMatchId(null);
+        resolveMatch(confirmed);
+      })
+      .catch(() => {
+        // Someone else claimed it first — drop it from the list and let the player pick again.
+        setAcceptingMatchId(null);
+        refreshLobbyMatches();
+      });
   };
 
   useEffect(() => {
     if (raceState !== 'racing') return;
 
-    let lastFrameSeconds = 0;
-
     const step = () => {
       const elapsedSeconds = (performance.now() - raceStartRef.current) / 1000;
-      const dt = elapsedSeconds - lastFrameSeconds;
-      lastFrameSeconds = elapsedSeconds;
+      const totalDuration = totalDurationRef.current;
+      const clampedElapsed = Math.min(elapsedSeconds, totalDuration);
 
-      playerProgressRef.current = Math.min(
-        100,
-        playerProgressRef.current + getFillPerSecond(stats.topSpeed) * dt,
+      const stepFloat = clampedElapsed / stepDurationRef.current;
+      const stepIndex = Math.min(AUTO_DRAG.RACE_STEPS - 1, Math.floor(stepFloat));
+      const fraction = Math.min(1, stepFloat - stepIndex);
+
+      setPlayerProgress(
+        playerCumulativeRef.current[stepIndex] + playerSegmentsRef.current[stepIndex] * fraction,
       );
-      rivalProgressRef.current = Math.min(
-        100,
-        rivalProgressRef.current + getFillPerSecond(rivalStatsRef.current.topSpeed) * dt,
+      setRivalProgress(
+        rivalCumulativeRef.current[stepIndex] + rivalSegmentsRef.current[stepIndex] * fraction,
       );
 
-      // Both cars independently roll for a random event on the same fixed cadence — a boost
-      // ("CRIT!") always lands, a slowdown attempt only costs progress (and shows "DRIFT!")
-      // if the car's Handling-based resist roll fails; a resisted attempt is silent.
-      if (elapsedSeconds - lastEventCheckRef.current >= AUTO_DRAG.EVENT_CHECK_INTERVAL_SECONDS) {
-        lastEventCheckRef.current = elapsedSeconds;
-
-        if (Math.random() < AUTO_DRAG.EVENT_CHANCE) {
-          if (Math.random() < AUTO_DRAG.SLOWDOWN_SHARE) {
-            if (Math.random() >= getResistChance(stats.handling)) {
-              playerProgressRef.current = Math.max(
-                0,
-                playerProgressRef.current - AUTO_DRAG.SLOWDOWN_AMOUNT,
-              );
-              pushPlayerFloat('DRIFT!');
-            }
-          } else {
-            playerProgressRef.current = Math.min(
-              100,
-              playerProgressRef.current + AUTO_DRAG.BOOST_AMOUNT,
-            );
-            pushPlayerFloat('CRIT!');
-          }
+      if (stepIndex !== lastStepIndexRef.current) {
+        lastStepIndexRef.current = stepIndex;
+        if (stepIndex === playerBoostStepRef.current) {
+          pushPlayerFloat('NITRO!');
+          triggerPlayerBoost();
         }
-
-        if (Math.random() < AUTO_DRAG.EVENT_CHANCE) {
-          if (Math.random() < AUTO_DRAG.SLOWDOWN_SHARE) {
-            if (Math.random() >= getResistChance(rivalStatsRef.current.handling)) {
-              rivalProgressRef.current = Math.max(
-                0,
-                rivalProgressRef.current - AUTO_DRAG.SLOWDOWN_AMOUNT,
-              );
-              pushRivalFloat('DRIFT!');
-            }
-          } else {
-            rivalProgressRef.current = Math.min(
-              100,
-              rivalProgressRef.current + AUTO_DRAG.BOOST_AMOUNT,
-            );
-            pushRivalFloat('CRIT!');
-          }
+        if (stepIndex === rivalBoostStepRef.current) {
+          pushRivalFloat('NITRO!');
+          triggerRivalBoost();
         }
+        if (stepIndex === playerStumbleStepRef.current) pushPlayerFloat('DRIFT!');
+        if (stepIndex === rivalStumbleStepRef.current) pushRivalFloat('DRIFT!');
       }
 
-      setPlayerProgress(playerProgressRef.current);
-      setRivalProgress(rivalProgressRef.current);
-
-      if (raceStateRef.current === 'racing') {
-        if (playerProgressRef.current >= 100) {
-          raceStateRef.current = 'finished';
-          setWinner('player');
-          setRaceState('finished');
-          addNeon(netPayout, 'Auto-Drag — Win');
-          return;
-        }
-        if (rivalProgressRef.current >= 100) {
-          raceStateRef.current = 'finished';
-          setWinner('rival');
-          setRaceState('finished');
-          return;
-        }
+      if (elapsedSeconds >= totalDuration) {
+        const finalWinner = winnerRef.current;
+        raceStateRef.current = 'finished';
+        setPlayerProgress(finalWinner === 'player' ? 100 : playerCumulativeRef.current.at(-1)!);
+        setRivalProgress(finalWinner === 'rival' ? 100 : rivalCumulativeRef.current.at(-1)!);
+        setWinner(finalWinner);
+        setRaceState('finished');
+        if (finalWinner === 'player') addNeon(netPayout, `Auto-Drag — Win (${raceMode})`);
+        return;
       }
 
       rafRef.current = requestAnimationFrame(step);
@@ -315,7 +554,10 @@ function AutoDragRace({ onExit }: AutoDragRaceProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [raceState]);
 
-  const raceAgain = () => setRaceState('betting');
+  const raceAgain = () => {
+    setLobbyView('browse');
+    setRaceState('betting');
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -335,112 +577,297 @@ function AutoDragRace({ onExit }: AutoDragRaceProps) {
       </div>
 
       {raceState === 'betting' && (
-        <div className="rounded-xl border border-neon-magenta/30 bg-white/5 p-4 backdrop-blur-xl">
-          <p className="text-center text-xs uppercase tracking-widest text-neutral-400">
-            Place Your Bet
-          </p>
-          <div className="mt-3 grid grid-cols-3 gap-2">
-            {AUTO_DRAG.BET_TIERS.map((tier) => (
+        <>
+          <div className="rounded-xl border border-neon-magenta/30 bg-white/5 p-4 backdrop-blur-xl">
+            <p className="text-center text-xs uppercase tracking-widest text-neutral-400">
+              Choose Your Opponent
+            </p>
+            <div className="mt-3 grid grid-cols-2 gap-2">
               <button
-                key={tier}
                 type="button"
-                onClick={() => setBetAmount(tier)}
-                className={`rounded-lg border py-3 font-display text-sm font-bold tabular-nums transition-colors ${
-                  betAmount === tier
+                onClick={() => {
+                  setRaceMode('player');
+                  setLobbyView('browse');
+                }}
+                className={`rounded-lg border py-2.5 font-display text-xs font-bold uppercase tracking-wide transition-colors ${
+                  raceMode === 'player'
+                    ? 'border-neon-cyan bg-neon-cyan/15 text-neon-cyan shadow-[0_0_16px_rgba(0,240,255,0.35)]'
+                    : 'border-neutral-700 bg-black/20 text-neutral-400'
+                }`}
+              >
+                Race vs Player
+              </button>
+              <button
+                type="button"
+                onClick={() => setRaceMode('bot')}
+                className={`rounded-lg border py-2.5 font-display text-xs font-bold uppercase tracking-wide transition-colors ${
+                  raceMode === 'bot'
                     ? 'border-neon-magenta bg-neon-magenta/15 text-neon-magenta shadow-[0_0_16px_rgba(255,46,230,0.35)]'
                     : 'border-neutral-700 bg-black/20 text-neutral-400'
                 }`}
               >
-                {tier}
+                Syndicate Bot
               </button>
-            ))}
+            </div>
+            <p className="mt-1.5 text-center text-[10px] text-neutral-600">
+              {raceMode === 'bot'
+                ? 'Hardened rival, lower odds — bigger payout if you take it.'
+                : 'Real racers, League-matched — same odds either side can see.'}
+            </p>
           </div>
 
-          <div className="mt-4 flex items-center justify-between text-xs text-neutral-500">
-            <span>Win Payout</span>
-            <span className="text-right tabular-nums text-neon-cyan">
-              +{netPayout} NEON{' '}
-              <span className="text-neutral-600">
-                (gross {grossPayout} − {AUTO_DRAG.SYSTEM_TAX_RATE * 100}% tax)
-              </span>
-            </span>
-          </div>
+          {raceMode === 'bot' && (
+            <div className="rounded-xl border border-neon-magenta/30 bg-white/5 p-4 backdrop-blur-xl">
+              <div className="rounded-lg border border-neutral-800 bg-black/20 py-3 text-center">
+                <p className="text-[10px] uppercase tracking-widest text-neutral-500">
+                  Win Chance
+                </p>
+                <p
+                  className={`font-display text-3xl font-bold tabular-nums ${
+                    botWinChance >= 55
+                      ? 'text-neon-cyan'
+                      : botWinChance >= 40
+                        ? 'text-amber'
+                        : 'text-red-400'
+                  }`}
+                >
+                  {botWinChance}%
+                </p>
+              </div>
 
-          <motion.button
-            type="button"
-            onClick={startRace}
-            disabled={!canAffordBet}
-            whileHover={canAffordBet ? { scale: 1.05 } : undefined}
-            whileTap={canAffordBet ? { scale: 0.95 } : undefined}
-            className="mt-4 w-full rounded-lg border border-neon-magenta/50 bg-neon-magenta/10 py-3 font-display text-sm font-bold uppercase tracking-wide text-neon-magenta transition-colors disabled:cursor-not-allowed disabled:border-neutral-800 disabled:bg-transparent disabled:text-neutral-600"
-          >
-            Start Race
-          </motion.button>
-          {!canAffordBet && (
-            <p className="mt-2 text-center text-xs text-red-400">Not enough NEON</p>
+              <p className="mt-4 text-center text-xs uppercase tracking-widest text-neutral-400">
+                Place Your Bet
+              </p>
+              <div className="mt-2 grid grid-cols-3 gap-2">
+                {AUTO_DRAG.BET_TIERS.map((tier) => (
+                  <button
+                    key={tier}
+                    type="button"
+                    onClick={() => setBetAmount(tier)}
+                    className={`rounded-lg border py-3 font-display text-sm font-bold tabular-nums transition-colors ${
+                      betAmount === tier
+                        ? 'border-neon-magenta bg-neon-magenta/15 text-neon-magenta shadow-[0_0_16px_rgba(255,46,230,0.35)]'
+                        : 'border-neutral-700 bg-black/20 text-neutral-400'
+                    }`}
+                  >
+                    {tier}
+                  </button>
+                ))}
+              </div>
+
+              <div className="mt-4 flex items-center justify-between text-xs text-neutral-500">
+                <span>Win Payout</span>
+                <span className="text-right tabular-nums text-neon-cyan">
+                  +{netPayout} NEON{' '}
+                  <span className="text-neutral-600">
+                    (gross {grossPayout} − {AUTO_DRAG.SYSTEM_TAX_RATE * 100}% tax)
+                  </span>
+                </span>
+              </div>
+
+              <motion.button
+                type="button"
+                onClick={() =>
+                  beginRace(
+                    betAmount,
+                    getBotRivalPower(),
+                    getCarTier(18).image,
+                    'Auto-Drag — Bet (bot)',
+                  )
+                }
+                disabled={!canAffordBet}
+                whileHover={canAffordBet ? { scale: 1.05 } : undefined}
+                whileTap={canAffordBet ? { scale: 0.95 } : undefined}
+                className="mt-4 w-full rounded-lg border border-neon-magenta/50 bg-neon-magenta/10 py-3 font-display text-sm font-bold uppercase tracking-wide text-neon-magenta transition-colors disabled:cursor-not-allowed disabled:border-neutral-800 disabled:bg-transparent disabled:text-neutral-600"
+              >
+                Start Race
+              </motion.button>
+              {!canAffordBet && (
+                <p className="mt-2 text-center text-xs text-red-400">Not enough NEON</p>
+              )}
+            </div>
           )}
-        </div>
-      )}
 
-      {raceState === 'racing' && (
-        <div className="rounded-xl border border-neon-cyan/20 bg-white/5 p-4 backdrop-blur-xl">
-          <div className="relative">
-            <RaceProgressBar label="You" value={playerProgress} colorClass="bg-neon-cyan" instant />
-            <FloatingEvents events={playerFloats} />
-          </div>
-          <div className="relative mt-4">
-            <RaceProgressBar
-              label="Rival"
-              value={rivalProgress}
-              colorClass="bg-neon-magenta"
-              instant
+          {raceMode === 'player' && (
+            <PlayerLobby
+              league={league}
+              betTiers={AUTO_DRAG.BET_TIERS}
+              lobbyView={lobbyView}
+              openChallenges={openChallenges}
+              isFetching={isFetching}
+              acceptingMatchId={acceptingMatchId}
+              hostBetAmount={hostBetAmount}
+              hostCanAfford={hostCanAfford}
+              computeWinChance={(opponentCarTier) =>
+                computeWinChancePercent(playerPower, getStatPower(getCarStats(opponentCarTier, [])))
+              }
+              onSetHostBetAmount={setHostBetAmount}
+              onStartHosting={startHosting}
+              onCancelHosting={cancelHosting}
+              onRefreshMatches={refreshLobbyMatches}
+              onAcceptMatch={handleAcceptMatch}
             />
-            <FloatingEvents events={rivalFloats} />
-          </div>
-          <p className="mt-4 text-center text-xs uppercase tracking-widest text-neutral-600">
-            {betAmount} NEON on the line — hands off the wheel
-          </p>
-        </div>
+          )}
+        </>
       )}
 
-      {raceState === 'finished' && (
-        <div className="rounded-xl border border-neon-magenta/30 bg-white/5 p-4 text-center backdrop-blur-xl">
-          {winner === 'player' ? (
-            <>
-              <p className="font-display text-lg font-bold uppercase tracking-wide text-neon-cyan">
-                You Win
-              </p>
-              <p className="mt-1 text-sm text-neutral-400">
-                Gross {grossPayout} NEON − {tax} NEON tax
-              </p>
-              <p className="mt-1 font-display text-2xl font-bold text-neon-cyan drop-shadow-[0_0_10px_rgba(0,240,255,0.5)]">
-                +{netPayout} NEON
-              </p>
-            </>
-          ) : (
-            <>
-              <p className="font-display text-lg font-bold uppercase tracking-wide text-red-400">
-                Rival Wins
-              </p>
-              <p className="mt-1 text-sm text-neutral-400">{betAmount} NEON lost to the Street</p>
-            </>
+      {(raceState === 'racing' || raceState === 'finished') && (
+        <div className="relative flex min-h-[60vh] flex-col overflow-hidden rounded-2xl border border-neon-cyan/20 bg-black/80 p-6 backdrop-blur-xl">
+          <div className="auto-drag-track" aria-hidden="true" />
+
+          <div className="relative z-10 flex flex-1 flex-col justify-center gap-8">
+            <div className="grid grid-cols-2 gap-5">
+              <CarLane
+                label="You"
+                imageSrc={playerCarImage}
+                progress={playerProgress}
+                colorClass="bg-neon-cyan"
+                glowColor="cyan"
+                floats={playerFloats}
+                isBoosting={playerBoosting}
+              />
+              <CarLane
+                label="Rival"
+                imageSrc={rivalCarImage}
+                progress={rivalProgress}
+                colorClass="bg-neon-magenta"
+                glowColor="magenta"
+                floats={rivalFloats}
+                isBoosting={rivalBoosting}
+              />
+            </div>
+            <p className="text-center text-xs uppercase tracking-widest text-neutral-600">
+              {betAmount} NEON on the line — hands off the wheel
+            </p>
+          </div>
+
+          {raceState === 'finished' && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.3, duration: 0.3 }}
+              className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 bg-black/85 backdrop-blur-sm"
+            >
+              <motion.p
+                initial={{ scale: 1.8, opacity: 0, rotate: -6 }}
+                animate={{ scale: 1, opacity: 1, rotate: -4 }}
+                transition={{ delay: 0.35, type: 'spring', stiffness: 260, damping: 16 }}
+                className={`font-display text-5xl font-black uppercase tracking-widest ${
+                  winner === 'player'
+                    ? 'text-neon-cyan drop-shadow-[0_0_28px_rgba(0,240,255,0.85)]'
+                    : 'text-red-500 drop-shadow-[0_0_28px_rgba(239,68,68,0.85)]'
+                }`}
+              >
+                {winner === 'player' ? 'Victory' : 'Defeat'}
+              </motion.p>
+
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.6, duration: 0.25 }}
+                className="text-center"
+              >
+                {winner === 'player' ? (
+                  <>
+                    <p className="text-xs text-neutral-400">
+                      Gross {grossPayout} NEON − {tax} NEON tax
+                    </p>
+                    <p className="mt-1 font-display text-3xl font-bold text-neon-cyan drop-shadow-[0_0_10px_rgba(0,240,255,0.5)]">
+                      +{netPayout} NEON
+                    </p>
+                  </>
+                ) : (
+                  <p className="font-display text-2xl font-bold text-red-400">
+                    −{betAmount} NEON
+                  </p>
+                )}
+              </motion.div>
+
+              <motion.button
+                type="button"
+                onClick={raceAgain}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.8, duration: 0.25 }}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className="mt-2 rounded-lg border border-neutral-600 bg-white/10 px-6 py-2.5 text-sm font-bold uppercase tracking-wide text-neutral-100"
+              >
+                Claim &amp; Continue
+              </motion.button>
+            </motion.div>
           )}
-          <motion.button
-            type="button"
-            onClick={raceAgain}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            className="mt-4 w-full rounded-lg border border-neutral-700 py-2.5 text-sm font-medium text-neutral-300"
-          >
-            Race Again
-          </motion.button>
         </div>
       )}
     </div>
   );
 }
 
-/** Floating "CRIT!"/"DRIFT!" callouts over a progress bar — absolutely positioned within
+interface CarLaneProps {
+  label: string;
+  imageSrc: string;
+  progress: number;
+  colorClass: string;
+  glowColor: 'cyan' | 'magenta';
+  floats: FloatEvent[];
+  isBoosting: boolean;
+}
+
+/** One lane of the drag strip, three independently-animated layers so their transforms don't
+ * fight each other: the outer div creeps forward (translateX) as progress climbs, the middle
+ * div owns the continuous "bumpy road" wobble (`animate-road-bump`, infinite), and the img
+ * itself only reacts to a NITRO! (`.car-boost` — brightness pulse + wheelie tilt, eased in/out
+ * over 0.3s by the plain CSS transition rather than a second keyframe animation). The big
+ * italic percentage and thin glowing bar sit below, with floating NITRO!/DRIFT! callouts
+ * overlaid on top of both. */
+function CarLane({
+  label,
+  imageSrc,
+  progress,
+  colorClass,
+  glowColor,
+  floats,
+  isBoosting,
+}: CarLaneProps) {
+  const textGlowClass =
+    glowColor === 'cyan'
+      ? 'text-neon-cyan drop-shadow-[0_0_14px_rgba(0,240,255,0.65)]'
+      : 'text-neon-magenta drop-shadow-[0_0_14px_rgba(255,46,230,0.65)]';
+
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <div
+        className="transition-transform duration-150 ease-out"
+        style={{ transform: `translateX(${(progress / 100) * 16}px)` }}
+      >
+        <div className="animate-road-bump">
+          <img
+            src={imageSrc}
+            alt={label}
+            className={`h-16 w-auto object-contain transition-[filter,transform] duration-300 ease-out ${
+              isBoosting ? 'car-boost' : ''
+            }`}
+          />
+        </div>
+      </div>
+
+      <div className="relative w-full">
+        <p
+          className={`text-center font-mono text-4xl font-black italic tabular-nums ${textGlowClass}`}
+        >
+          {Math.round(progress)}%
+        </p>
+        <FloatingEvents events={floats} />
+      </div>
+
+      <p className="text-[10px] uppercase tracking-widest text-neutral-500">{label}</p>
+
+      <RaceProgressBar value={progress} colorClass={colorClass} glowColor={glowColor} instant />
+    </div>
+  );
+}
+
+/** Floating "NITRO!"/"DRIFT!" callouts over a progress bar — absolutely positioned within
  * whichever `relative` wrapper it's rendered in, staggered sideways by index so two events
  * landing close together don't overlap illegibly. */
 function FloatingEvents({ events }: { events: FloatEvent[] }) {
@@ -455,9 +882,9 @@ function FloatingEvents({ events }: { events: FloatEvent[] }) {
             exit={{ opacity: 0, y: -36 }}
             transition={{ duration: 0.8, ease: 'easeOut' }}
             className={`absolute top-1 font-display text-sm font-extrabold uppercase tracking-wide drop-shadow-[0_0_8px_currentColor] ${
-              event.text === 'CRIT!' ? 'text-neon-cyan' : 'text-amber'
+              event.text === 'NITRO!' ? 'text-neon-cyan' : 'text-amber'
             }`}
-            style={{ left: `${24 + index * 18}%` }}
+            style={{ left: `${10 + index * 18}%` }}
           >
             {event.text}
           </motion.span>
@@ -468,36 +895,48 @@ function FloatingEvents({ events }: { events: FloatEvent[] }) {
 }
 
 interface RaceProgressBarProps {
-  label: string;
   value: number;
   colorClass: string;
   /** Skips the Framer Motion transition for bars driven by a continuous per-frame value
-   * (the AI's fill, recomputed fresh from elapsed time every rAF tick) — animating *toward*
-   * a target that itself moves every frame just makes the bar chase a perpetually-stale
-   * position, the exact bug fixed on the Garage's Calibration bar. The player's own bar only
-   * changes on discrete shift taps, so an eased transition there reads as a satisfying
-   * "surge" instead of introducing lag. */
+   * (recomputed fresh from the race script every rAF tick) — animating *toward* a target that
+   * itself moves every frame just makes the bar chase a perpetually-stale position, the exact
+   * bug fixed on the Garage's Calibration bar. */
   instant?: boolean;
+  /** Adds a box-shadow glow that intensifies as `value` approaches 100, in the given color. */
+  glowColor?: 'cyan' | 'magenta';
 }
 
-function RaceProgressBar({ label, value, colorClass, instant }: RaceProgressBarProps) {
+const GLOW_RGB: Record<'cyan' | 'magenta', string> = {
+  cyan: '0, 240, 255',
+  magenta: '255, 46, 230',
+};
+
+/** Just the glowing bar itself — CarLane renders the label and the big percentage separately,
+ * above this, so this component no longer owns any text. */
+function RaceProgressBar({ value, colorClass, instant, glowColor }: RaceProgressBarProps) {
+  const glowStyle = glowColor
+    ? {
+        boxShadow: `0 0 ${6 + (value / 100) * 20}px rgba(${GLOW_RGB[glowColor]}, ${(
+          0.25 +
+          (value / 100) * 0.55
+        ).toFixed(2)})`,
+      }
+    : undefined;
+
   return (
-    <div>
-      <div className="mb-0.5 flex items-center justify-between text-[10px] uppercase tracking-wide text-neutral-500">
-        <span>{label}</span>
-        <span className="tabular-nums">{Math.round(value)}%</span>
-      </div>
+    <div className="w-full">
       <div className="h-2.5 w-full overflow-hidden rounded-full bg-neutral-800">
         {instant ? (
           <div
             className={`h-full origin-left rounded-full ${colorClass}`}
-            style={{ transform: `scaleX(${value / 100})` }}
+            style={{ transform: `scaleX(${value / 100})`, ...glowStyle }}
           />
         ) : (
           <motion.div
             className={`h-full origin-left rounded-full ${colorClass}`}
             animate={{ scaleX: value / 100 }}
             transition={{ duration: 0.3, ease: 'easeOut' }}
+            style={glowStyle}
           />
         )}
       </div>

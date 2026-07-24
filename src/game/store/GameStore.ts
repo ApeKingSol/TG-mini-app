@@ -8,8 +8,11 @@ import type { CarState, NeonTransaction, Part, PlayerState, Upgrade } from '../t
 const LEGACY_STORAGE_KEY = 'cyber-garage-save';
 
 /** Reads the Telegram user id directly from `window`, defensively — this runs at module
- * load time, before React (and the `useTelegram` hook) ever mounts. */
-function getTelegramUserId(): string | null {
+ * load time, before React (and the `useTelegram` hook) ever mounts. Exported so other
+ * modules needing the same per-account identity (e.g. src/game/mock/syndicateApi.ts) derive
+ * it the same way this save file does, rather than re-implementing their own reader that could
+ * drift out of sync with it. */
+export function getTelegramUserId(): string | null {
   try {
     const id = (
       window as unknown as {

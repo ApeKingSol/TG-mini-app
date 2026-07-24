@@ -24,6 +24,14 @@ dist-ssr
 .env.*
 !.env.example
 
+# Scratch dirs for one-off Python image-processing scripts (watermark removal, crops, etc.) —
+# raw inputs/outputs, not app source; the app only ever reads finished assets from public/
+__pycache__/
+input/
+input_cars/
+output/
+output_cars/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

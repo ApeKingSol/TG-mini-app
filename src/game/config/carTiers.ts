@@ -32,6 +32,32 @@ export function getCarTier(tier: number): CarTierInfo {
   return CAR_TIERS[Math.max(0, index)];
 }
 
+export interface League {
+  id: 'street' | 'pro' | 'elite' | 'legend';
+  name: string;
+  minTier: number;
+  maxTier: number;
+}
+
+export type LeagueId = League['id'];
+
+/** Auto-Drag's Race-vs-Player leagues — cars are grouped by tier so a Tier 2 Rustbucket never
+ * gets matched against a Tier 19 Phantom Hologram. Legend has no upper bound (`Infinity`) so
+ * the roster can keep growing past Tier 20 later without needing a 5th league. */
+export const LEAGUES: League[] = [
+  { id: 'street', name: 'Street League', minTier: 1, maxTier: 5 },
+  { id: 'pro', name: 'Pro League', minTier: 6, maxTier: 10 },
+  { id: 'elite', name: 'Elite League', minTier: 11, maxTier: 15 },
+  { id: 'legend', name: 'Legend League', minTier: 16, maxTier: Infinity },
+];
+
+export function getLeagueForTier(tier: number): League {
+  return (
+    LEAGUES.find((league) => tier >= league.minTier && tier <= league.maxTier) ??
+    LEAGUES[LEAGUES.length - 1]
+  );
+}
+
 /** Requirement growth flattens at this many installs — see getUpgradeRequirement below for
  * why. */
 const UPGRADE_REQUIREMENT_CAP = 8;
