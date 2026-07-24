@@ -59,7 +59,7 @@ export function NightSiege() {
   const [convoyStatus, setConvoyStatus] = useState<ConvoyStatus | null>(null);
   const [bossImageFailed, setBossImageFailed] = useState(false);
 
-  const [timeLeft, setTimeLeft] = useState(NIGHT_SIEGE.COMBAT_DURATION_SECONDS);
+  const [timeLeft, setTimeLeft] = useState<number>(NIGHT_SIEGE.COMBAT_DURATION_SECONDS);
   const [sessionDamage, setSessionDamage] = useState(0);
   const [floatingNumbers, setFloatingNumbers] = useState<FloatingDamage[]>([]);
   const [sparks, setSparks] = useState<Spark[]>([]);
