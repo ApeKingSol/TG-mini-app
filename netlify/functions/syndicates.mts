@@ -40,10 +40,21 @@ function toPublicSyndicate(record: StoredSyndicate): Syndicate {
   };
 }
 
+/** Every response goes through here specifically so no-cache headers can never be forgotten on
+ * a new branch — a WebView/CDN that caches a "no Syndicates yet" GET response would look
+ * identical to the real Netlify Blobs eventual-consistency lag this file also fixes below (see
+ * the getStore() calls in the default export), so both are worth closing at once. */
+const NO_CACHE_HEADERS = {
+  'content-type': 'application/json',
+  'cache-control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+  pragma: 'no-cache',
+  expires: '0',
+};
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'content-type': 'application/json' },
+    headers: NO_CACHE_HEADERS,
   });
 }
 
@@ -230,8 +241,15 @@ async function handlePost(
 }
 
 export default async (req: Request, _context: Context) => {
-  const syndicates = getStore('syndicates');
-  const membership = getStore('syndicate-membership');
+  // 'strong' consistency trades a little latency for always reading the very latest write,
+  // regardless of which region/instance served it — required here because, unlike sync.mts's
+  // save data (which tolerates a few seconds of eventual-consistency lag since it's re-polled
+  // every 2s anyway), a Syndicate browse or "am I in one" check is a one-shot read with nothing
+  // to retry it: under the default 'eventual' mode, another player's just-created Syndicate could
+  // genuinely be invisible to a GET landing on a different edge/region moments later, which is
+  // exactly the "can't find Syndicates other players made" symptom this fixes.
+  const syndicates = getStore({ name: 'syndicates', consistency: 'strong' });
+  const membership = getStore({ name: 'syndicate-membership', consistency: 'strong' });
 
   if (req.method === 'GET') return handleGet(req, syndicates, membership);
   if (req.method === 'POST') return handlePost(req, syndicates, membership);

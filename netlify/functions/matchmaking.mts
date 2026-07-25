@@ -56,10 +56,21 @@ function toOpenChallengeFromAccepter(record: StoredRace): OpenChallenge | null {
   };
 }
 
+/** Every response goes through here specifically so no-cache headers can never be forgotten on a
+ * new branch — a WebView/CDN that caches an empty "no open races" GET would look identical to the
+ * real Netlify Blobs eventual-consistency lag this file also fixes below (see the getStore() call
+ * in the default export), so both are worth closing at once. */
+const NO_CACHE_HEADERS = {
+  'content-type': 'application/json',
+  'cache-control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+  pragma: 'no-cache',
+  expires: '0',
+};
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'content-type': 'application/json' },
+    headers: NO_CACHE_HEADERS,
   });
 }
 
@@ -267,7 +278,13 @@ async function handlePost(req: Request, races: ReturnType<typeof getStore>): Pro
 }
 
 export default async (req: Request, _context: Context) => {
-  const races = getStore('matchmaking-races');
+  // 'strong' consistency trades a little latency for always reading the very latest write,
+  // regardless of which region/instance served it — required here because a lobby browse is a
+  // one-shot read with nothing to retry it (unlike sync.mts's save data, re-polled every 2s):
+  // under the default 'eventual' mode, another player's just-hosted race could genuinely be
+  // invisible to a GET landing on a different edge/region moments later, which is exactly the
+  // "can't find races other players hosted" symptom this fixes.
+  const races = getStore({ name: 'matchmaking-races', consistency: 'strong' });
 
   if (req.method === 'GET') return handleGet(req, races);
   if (req.method === 'POST') return handlePost(req, races);

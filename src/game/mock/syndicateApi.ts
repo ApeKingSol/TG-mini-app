@@ -67,7 +67,12 @@ function requireTelegram(): Promise<never> {
  * than firing a request that can only ever 401. */
 export function fetchSyndicates(): Promise<Syndicate[]> {
   if (!isRunningInTelegram()) return Promise.resolve([]);
-  return fetch(SYNDICATES_ENDPOINT, { headers: authHeaders() })
+  // `_t` busts any GET cache a Telegram WebView/mobile Safari/intermediate proxy might apply on
+  // its own initiative — belt-and-suspenders alongside the server's own Cache-Control: no-store
+  // (see syndicates.mts's NO_CACHE_HEADERS) and, more importantly, the store's 'strong'
+  // consistency mode there, which is what actually guarantees a just-created Syndicate is visible
+  // here rather than just guarding against caching.
+  return fetch(`${SYNDICATES_ENDPOINT}?_t=${Date.now()}`, { headers: authHeaders(), cache: 'no-store' })
     .then((response) => parseJsonOrThrow<{ syndicates: Syndicate[] }>(response))
     .then((body) => body.syndicates);
 }
@@ -78,7 +83,10 @@ export function fetchSyndicates(): Promise<Syndicate[]> {
  * device now sees the same answer, unlike the old localStorage-backed version). */
 export function fetchMySyndicate(): Promise<Syndicate | null> {
   if (!isRunningInTelegram()) return Promise.resolve(null);
-  return fetch(`${SYNDICATES_ENDPOINT}?mine=1`, { headers: authHeaders() })
+  return fetch(`${SYNDICATES_ENDPOINT}?mine=1&_t=${Date.now()}`, {
+    headers: authHeaders(),
+    cache: 'no-store',
+  })
     .then((response) => parseJsonOrThrow<{ syndicate: Syndicate | null }>(response))
     .then((body) => body.syndicate);
 }
@@ -92,6 +100,7 @@ export function createSyndicate(name: string, tag: string): Promise<Syndicate> {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ initData: WebApp.initData, action: 'create', name, tag }),
+    cache: 'no-store',
   }).then((response) => parseJsonOrThrow<Syndicate>(response));
 }
 
@@ -104,6 +113,7 @@ export function joinSyndicate(syndicateId: string): Promise<Syndicate> {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ initData: WebApp.initData, action: 'join', syndicateId }),
+    cache: 'no-store',
   }).then((response) => parseJsonOrThrow<Syndicate>(response));
 }
 
@@ -115,6 +125,7 @@ export function leaveSyndicate(): Promise<void> {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ initData: WebApp.initData, action: 'leave' }),
+    cache: 'no-store',
   })
     .then((response) => parseJsonOrThrow<{ ok: true }>(response))
     .then(() => undefined);

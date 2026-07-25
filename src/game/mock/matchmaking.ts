@@ -63,9 +63,13 @@ function requireTelegram(): Promise<never> {
  * instead of firing a request that can only ever 401. */
 export function fetchLobbyMatches(leagueId: LeagueId): Promise<OpenChallenge[]> {
   if (!isRunningInTelegram()) return Promise.resolve([]);
-  return fetch(`${MATCHMAKING_ENDPOINT}?league=${encodeURIComponent(leagueId)}`, {
-    headers: authHeaders(),
-  })
+  // `_t` busts any GET cache a Telegram WebView/mobile Safari/intermediate proxy might apply on
+  // its own initiative — belt-and-suspenders alongside the server's own Cache-Control: no-store
+  // (see matchmaking.mts's NO_CACHE_HEADERS) and, more importantly, the store's 'strong'
+  // consistency mode there, which is what actually guarantees a just-hosted race is visible here
+  // rather than just guarding against caching.
+  const url = `${MATCHMAKING_ENDPOINT}?league=${encodeURIComponent(leagueId)}&_t=${Date.now()}`;
+  return fetch(url, { headers: authHeaders(), cache: 'no-store' })
     .then((response) => parseJsonOrThrow<{ challenges: OpenChallenge[] }>(response))
     .then((body) => body.challenges);
 }
@@ -89,6 +93,7 @@ export function hostMatchToDatabase(
       betAmount,
       carTier: playerTier,
     }),
+    cache: 'no-store',
   }).then((response) => parseJsonOrThrow<{ matchId: string }>(response));
 }
 
@@ -110,6 +115,7 @@ export function subscribeToMatchResult(
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ initData: WebApp.initData, action: 'status', matchId }),
+      cache: 'no-store',
     })
       .then((response) => parseJsonOrThrow<{ status: string; opponent?: OpenChallenge }>(response))
       .then((body) => {
@@ -137,6 +143,7 @@ export function subscribeToMatchResult(
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ initData: WebApp.initData, action: 'cancel', matchId }),
+      cache: 'no-store',
     }).catch(() => {});
   };
 }
@@ -154,6 +161,7 @@ export function acceptMatchFromDatabase(matchId: string, carTier: number): Promi
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ initData: WebApp.initData, action: 'accept', matchId, carTier }),
+    cache: 'no-store',
   })
     .then((response) => parseJsonOrThrow<{ opponent: OpenChallenge }>(response))
     .then((body) => body.opponent);
