@@ -98,4 +98,14 @@ export interface PlayerState {
   offlineEarnings: number | null;
   /** Unix ms timestamp of the last time state was brought current — drives both the live per-second tick and the offline-progress catch-up on reload. */
   lastSaved: number;
+  /** Consecutive Daily Reward claim count (1-indexed once the first claim happens) — see
+   * DAILY_REWARDS in economy.ts for what each day pays out and getDailyRewardForStreak for how
+   * this number maps to a tier. Resets to 0 once DAILY_REWARD_STREAK_RESET_HOURS have passed
+   * since lastDailyRewardClaim without a new claim. */
+  dailyRewardStreak: number;
+  /** Unix ms timestamp of the last successful Daily Reward claim, or null if this save has
+   * never claimed one. Drives both claim eligibility (isDailyRewardClaimable) and the streak-
+   * reset check — a plain timestamp rather than a derived "claimed today" boolean so it stays
+   * meaningful across app restarts and cross-device sync without needing its own reconciliation. */
+  lastDailyRewardClaim: number | null;
 }

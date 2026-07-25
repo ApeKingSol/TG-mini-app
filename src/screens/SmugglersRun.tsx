@@ -27,9 +27,9 @@ function getSectorStatus(
 }
 
 export function SmugglersRun({ onExit }: SmugglersRunProps) {
-  const scrap = useGameStore((state) => state.scrap);
-  const spendScrap = useGameStore((state) => state.spendScrap);
-  const addScrap = useGameStore((state) => state.addScrap);
+  const neon = useGameStore((state) => state.neon);
+  const spendNeon = useGameStore((state) => state.spendNeon);
+  const addNeon = useGameStore((state) => state.addNeon);
   const carTier = useGameStore((state) => state.carTier);
   const carImage = getCarTier(carTier).image;
 
@@ -39,11 +39,11 @@ export function SmugglersRun({ onExit }: SmugglersRunProps) {
   const [finalPayout, setFinalPayout] = useState(0);
   const [flash, setFlash] = useState<{ id: string; color: 'green' | 'red' } | null>(null);
 
-  const canAffordFee = scrap >= SMUGGLERS_RUN.ENTRY_FEE_SCRAP;
+  const canAffordFee = neon >= SMUGGLERS_RUN.ENTRY_FEE_NEON;
   const currentSectorConfig: SmugglersRunSector | undefined =
     SMUGGLERS_RUN.SECTORS[currentSector - 1];
   const currentLoot = currentSectorConfig
-    ? Math.round(SMUGGLERS_RUN.ENTRY_FEE_SCRAP * currentSectorConfig.rewardMultiplier)
+    ? Math.round(SMUGGLERS_RUN.ENTRY_FEE_NEON * currentSectorConfig.rewardMultiplier)
     : 0;
   const isFinalSector = currentSector === TOTAL_SECTORS;
 
@@ -57,11 +57,11 @@ export function SmugglersRun({ onExit }: SmugglersRunProps) {
 
   const handleStartEngine = async () => {
     if (!canAffordFee || isBusy) return;
-    if (!spendScrap(SMUGGLERS_RUN.ENTRY_FEE_SCRAP)) return;
+    if (!spendNeon(SMUGGLERS_RUN.ENTRY_FEE_NEON, "Smuggler's Run — Entry Fee")) return;
     setIsBusy(true);
     setGameState('rolling');
     setCurrentSector(1);
-    await startConvoy(SMUGGLERS_RUN.ENTRY_FEE_SCRAP);
+    await startConvoy(SMUGGLERS_RUN.ENTRY_FEE_NEON);
     const { success } = await resolveSector(1);
     setGameState(success ? 'decision' : 'busted');
     setIsBusy(false);
@@ -82,8 +82,8 @@ export function SmugglersRun({ onExit }: SmugglersRunProps) {
     if (isBusy || !currentSectorConfig) return;
     setIsBusy(true);
     const { finalMultiplier } = await cashOutConvoy(currentSectorConfig.rewardMultiplier);
-    const payout = Math.round(SMUGGLERS_RUN.ENTRY_FEE_SCRAP * finalMultiplier);
-    addScrap(payout);
+    const payout = Math.round(SMUGGLERS_RUN.ENTRY_FEE_NEON * finalMultiplier);
+    addNeon(payout, "Smuggler's Run — Cash Out");
     setFinalPayout(payout);
     setGameState('cashed_out');
     setIsBusy(false);
@@ -124,8 +124,8 @@ export function SmugglersRun({ onExit }: SmugglersRunProps) {
         <p className="font-display text-sm font-bold uppercase tracking-wide text-danger-red">
           Smuggler's Run
         </p>
-        <span className="text-xs font-medium tabular-nums text-scrap">
-          {Math.floor(scrap).toLocaleString()} Scrap
+        <span className="text-xs font-medium tabular-nums text-neon-magenta">
+          {Math.floor(neon).toLocaleString()} NEON
         </span>
       </div>
 
@@ -342,8 +342,8 @@ function IdleScreen({ canAffordFee, onStartEngine }: IdleScreenProps) {
 
       <div className="mt-4 rounded-lg border border-neutral-800 bg-black/20 py-3">
         <p className="text-[10px] uppercase tracking-widest text-neutral-500">Entry Fee</p>
-        <p className="font-display text-2xl font-bold tabular-nums text-scrap">
-          {SMUGGLERS_RUN.ENTRY_FEE_SCRAP.toLocaleString()} Scrap
+        <p className="font-display text-2xl font-bold tabular-nums text-neon-magenta">
+          {SMUGGLERS_RUN.ENTRY_FEE_NEON.toLocaleString()} NEON
         </p>
       </div>
 
@@ -358,7 +358,7 @@ function IdleScreen({ canAffordFee, onStartEngine }: IdleScreenProps) {
         Start Engine
       </motion.button>
       {!canAffordFee && (
-        <p className="mt-2 text-center text-xs text-danger-red">Not enough Scrap</p>
+        <p className="mt-2 text-center text-xs text-danger-red">Not enough NEON</p>
       )}
     </div>
   );
@@ -421,7 +421,7 @@ function DecisionScreen({
         </p>
       </div>
       <p className="text-center font-display text-4xl font-black tabular-nums text-toxic-green drop-shadow-[0_0_16px_rgba(57,255,20,0.6)]">
-        {currentLoot.toLocaleString()} Scrap
+        {currentLoot.toLocaleString()} NEON
       </p>
       <p className="text-center text-[10px] uppercase tracking-widest text-neutral-600">
         Current Haul
@@ -440,7 +440,7 @@ function DecisionScreen({
             Cash Out
           </span>
           <span className="text-[10px] uppercase tracking-widest text-toxic-green/70">
-            Safe · Bank {currentLoot.toLocaleString()} Scrap
+            Safe · Bank {currentLoot.toLocaleString()} NEON
           </span>
         </motion.button>
 
@@ -545,7 +545,7 @@ function CashedOutScreen({ payout, onBackToHub, onRunItBack }: CashedOutScreenPr
         Transfer Complete
       </p>
       <p className="font-display text-4xl font-black tabular-nums text-toxic-green">
-        +{payout.toLocaleString()} Scrap
+        +{payout.toLocaleString()} NEON
       </p>
 
       <div className="mt-2 flex w-full flex-col gap-2">

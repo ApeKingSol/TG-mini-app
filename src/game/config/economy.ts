@@ -31,19 +31,30 @@ export const ECONOMY = {
    * See the getUpgradeRequirement doc in carTiers.ts for the other half of that balance (why
    * its growth is capped).
    *
-   * Lowered from 3.5 to 1.8 (alongside PART_BUY_COST_MULTIPLIER below) when the roster grew
-   * from 10 car tiers to 20 — the old 3.5x/tier rate was tuned for a 10-tier climb (Tier 10
-   * in ~3 months for an always-available/"perfect" player); left unchanged across 20 tiers it
-   * compounds twice as many times, pushing Tier 20 out to centuries. Re-tuned so that same
-   * kind of player, simulated against the real store mechanics (buyPart/mergeParts/tradeInCar
-   * math, fixed energy regen, capped install requirement), still can't clear Tier 20 in under
-   * ~3 months (lands around ~105 days) — early tiers (1-8) still clear within a day each, so
-   * the climb still opens easy and ramps up, it just no longer collapses to hours. */
+   * Lowered from 3.5 to 1.8 when the roster grew from 10 car tiers to 20 — the old 3.5x/tier
+   * rate was tuned for a 10-tier climb; left unchanged across 20 tiers it compounds twice as
+   * many times, pushing Tier 20 out to centuries. Left at 1.8 by the most recent rebalance
+   * below (PART_BUY_COST_MULTIPLIER was the actual lever that needed fixing, not this one). */
   BUY_PART_COST_TIER_MULTIPLIER: 1.8,
   /** Each part bought within the current car's lifetime multiplies the next one's cost by
-   * this factor — the standard compound-growth idle-game curve. Lowered from 1.18 to 1.13
-   * alongside BUY_PART_COST_TIER_MULTIPLIER above, for the same reason. */
-  PART_BUY_COST_MULTIPLIER: 1.13,
+   * this factor — the standard compound-growth idle-game curve.
+   *
+   * A prior value of 1.13 here was documented as landing "~105 days" to clear all 20 tiers,
+   * but that number was never actually reproducible: simulated properly against the real
+   * mechanics (getPartBuyCost/getUpgradeRequirement/tradeInCar, an always-available/"perfect"
+   * player, fixed energy regen), 1.13 clears Tier 20 in ~2197 days (~6 years), not ~105 — the
+   * old comment was simply wrong. The reason 1.13 blows up this badly:
+   * getUpgradeRequirement caps at 8 installs/tier from Tier 11 onward, i.e. 64 Lv.1 part
+   * purchases per tier before a trade-in resets partsPurchased back to 0, and this multiplier
+   * compounds across *all* of them uninterrupted — 1.13^63 ≈ 2,200x just within one late
+   * tier, on top of BUY_PART_COST_TIER_MULTIPLIER's own 1.8x-per-tier growth on top of that.
+   * Re-simulated (see the economy sim this rebalance was verified against) and re-tuned to
+   * 1.062, which lands a full 20-tier clear at ~89 days for that same always-available
+   * player — Tiers 1-8 still clear within hours each (the early game still opens easy), Tier
+   * 20 alone takes ~18-19 days (the late game still ramps up hard), and the 20-tier total
+   * lands solidly inside the intended "~3 months for a highly active, optimal player" target
+   * instead of years past it. */
+  PART_BUY_COST_MULTIPLIER: 1.062,
 
   /** Starting max value of Energy, before any Expanded Battery upgrades — used exclusively
    * by the Garage merge grid. The Junkyard's tap loop doesn't touch this at all; taps are
@@ -260,9 +271,15 @@ export interface SmugglersRunSector {
  * a worse-odds, bigger payout — until either a cash-out or a bust (which forfeits the entry fee
  * and everything accumulated). Odds and multipliers are hardcoded client-side for now (see
  * src/game/mock/smugglerApi.ts) rather than fetched, same TODO-real-backend shape as
- * matchmaking.ts. */
+ * matchmaking.ts.
+ *
+ * Entry fee and payout are $NEON, not Scrap — The Streets (every racing mode: Auto-Drag,
+ * Smuggler's Run) is a premium-currency zone by design, so a losing streak can never eat into
+ * the Garage's Scrap-driven car progression, and Scrap can never leak out through racing either
+ * (see ECONOMY.STARTING_NEON/the 3-month Garage rebalance above — that simulation assumes
+ * *zero* Scrap income or expense from racing, which is only true once this line is $NEON). */
 export const SMUGGLERS_RUN = {
-  ENTRY_FEE_SCRAP: 500,
+  ENTRY_FEE_NEON: 15,
   SECTORS: [
     { successChance: 0.85, rewardMultiplier: 1.5 },
     { successChance: 0.65, rewardMultiplier: 3.0 },
@@ -290,3 +307,54 @@ export const NIGHT_SIEGE = {
   DAMAGE_PER_TAP_MIN: 300,
   DAMAGE_PER_TAP_MAX: 700,
 } as const;
+
+/** One day's Daily Reward — always exactly one of Scrap or $NEON, never both, so the claim
+ * toast/UI never has to handle a split payout. */
+export interface DailyRewardTier {
+  day: number;
+  scrap?: number;
+  neon?: number;
+}
+
+/** The retention login-streak reward table, keyed by streak day (1-indexed). Days 1-6 escalate
+ * in Scrap (sized against the early-game economy above — Tier 1 parts cost ~15-27 Scrap, so
+ * even Day 1 is a meaningful chunk of a part), Day 7 pays out in $NEON instead, both a bigger
+ * "why bother with the whole week" payoff and a taste of the premium currency for a player who
+ * hasn't touched The Streets yet. getDailyRewardForStreak below cycles this table forever past
+ * Day 7 (Day 8 repeats Day 1's reward, Day 14 repeats Day 7's, ...) rather than capping — a
+ * streak has no defined end. */
+export const DAILY_REWARDS: readonly DailyRewardTier[] = [
+  { day: 1, scrap: 50 },
+  { day: 2, scrap: 100 },
+  { day: 3, scrap: 200 },
+  { day: 4, scrap: 350 },
+  { day: 5, scrap: 550 },
+  { day: 6, scrap: 800 },
+  { day: 7, neon: 25 },
+] as const;
+
+/** Below this many hours since the last claim, the reward isn't ready yet — claiming exactly
+ * once per real calendar day (rolling 24h window, not a calendar-date boundary, so timezone
+ * changes/travel can't be gamed into a same-day double claim). */
+export const DAILY_REWARD_CLAIM_WINDOW_HOURS = 24;
+/** Above this many hours since the last claim, the streak is broken — matches the literal "a
+ * full day missed" spec: claiming again within this window (i.e. sometime in the *next* day
+ * after becoming eligible, not just the instant it opens) still continues the streak, waiting
+ * any longer resets it to a fresh Day 1 on the next claim. */
+export const DAILY_REWARD_STREAK_RESET_HOURS = 48;
+
+/** Which reward tier a given streak count (1-indexed, so a first-ever claim is streak 1) maps
+ * to — see DAILY_REWARDS' own doc comment for why this cycles rather than stopping at Day 7. */
+export function getDailyRewardForStreak(streak: number): DailyRewardTier {
+  const index = (Math.max(1, streak) - 1) % DAILY_REWARDS.length;
+  return DAILY_REWARDS[index];
+}
+
+/** Whether a claim is available right now — true for a player who has never claimed, or once
+ * DAILY_REWARD_CLAIM_WINDOW_HOURS have passed since the last one. Pure function of
+ * (lastClaim, now) so both the store's claimDailyReward action and the Garage's live claimable-
+ * badge indicator derive the exact same answer from the exact same rule. */
+export function isDailyRewardClaimable(lastClaim: number | null, now: number): boolean {
+  if (lastClaim === null) return true;
+  return now - lastClaim >= DAILY_REWARD_CLAIM_WINDOW_HOURS * 60 * 60 * 1000;
+}

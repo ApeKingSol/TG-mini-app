@@ -13,7 +13,7 @@ const MOCK_START_DELAY_MS = 400;
 const MOCK_CASH_OUT_DELAY_MS = 400;
 
 /** Starts a new convoy run server-side for the given entry fee. The fee itself is deducted from
- * Scrap by the caller (via the game store) — this call just simulates the server confirming a
+ * $NEON by the caller (via the game store) — this call just simulates the server confirming a
  * run has begun and handing back its id.
  *
  * TODO real backend: `POST /smugglers-run/start { fee }` → the server should verify + deduct the
@@ -41,7 +41,7 @@ export function resolveSector(sectorNumber: number): Promise<{ success: boolean 
   });
 }
 
-/** Claims the payout for the run's current multiplier and ends it safely. The actual Scrap
+/** Claims the payout for the run's current multiplier and ends it safely. The actual $NEON
  * award is credited by the caller (via the game store) — this call just simulates the server
  * confirming the claim.
  *

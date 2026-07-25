@@ -1,6 +1,14 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { ECONOMY, UPGRADE_BLUEPRINTS, getPartBuyCost } from '../config/economy';
+import {
+  ECONOMY,
+  UPGRADE_BLUEPRINTS,
+  getPartBuyCost,
+  getDailyRewardForStreak,
+  isDailyRewardClaimable,
+  DAILY_REWARD_STREAK_RESET_HOURS,
+  type DailyRewardTier,
+} from '../config/economy';
 import { getPartTier, rollPartPerk, type PartPerk } from '../config/parts';
 import { CAR_TIERS, getCarTier, getUpgradeRequirement } from '../config/carTiers';
 import type { CarState, NeonTransaction, Part, PlayerState, Upgrade } from '../types';
@@ -77,8 +85,16 @@ const ADMIN_SCRAP_GRANT_AMOUNT = 5_000_000;
  * so an existing save's Tier 2 would silently become a different car than the one it was
  * actually trading in for). The Tier cost curve was also re-tuned for the new 20-tier length
  * (see BUY_PART_COST_TIER_MULTIPLIER in economy.ts), which existing accumulated-scrap saves
- * would otherwise blow straight through. */
-const SAVE_VERSION = 2;
+ * would otherwise blow straight through.
+ *
+ * v3: PART_BUY_COST_MULTIPLIER was corrected from 1.13 to 1.062 — the old value's documented
+ * "~105 days to clear all 20 tiers" turned out to be wrong when actually simulated (it's really
+ * ~2197 days), so every save made under it is sitting on a curve that was never the intended
+ * one. Existing Scrap/partsPurchased/scrapPerSecond progress doesn't translate cleanly onto the
+ * corrected curve, same reasoning as v2. (dailyRewardStreak/lastDailyRewardClaim are also new
+ * in this version, but those default safely via createInitialPlayerState() on their own and
+ * aren't why this bumped.) */
+const SAVE_VERSION = 3;
 
 interface GameActions {
   /** Advances passive Scrap generation and Energy regen based on real elapsed time since the last save. */
@@ -122,6 +138,11 @@ interface GameActions {
    * rehydration — the remote snapshot's own `lastSaved` may be stale by however long it's
    * been since that other device last pushed it. */
   hydrateFromRemote: (remoteState: PlayerState) => void;
+  /** Claims today's Daily Reward if one is available (see isDailyRewardClaimable), crediting
+   * Scrap or $NEON per getDailyRewardForStreak and advancing/resetting the streak. Returns the
+   * tier that was actually granted so the UI can show what the player just got, or null if
+   * nothing was claimable (called again before the window opens). */
+  claimDailyReward: () => DailyRewardTier | null;
 }
 
 type GameStore = PlayerState & GameActions;
@@ -180,6 +201,8 @@ function createInitialPlayerState(): PlayerState {
     critMultiplier: ECONOMY.STARTING_CRIT_MULTIPLIER,
     offlineEarnings: null,
     lastSaved: Date.now(),
+    dailyRewardStreak: 0,
+    lastDailyRewardClaim: null,
   };
 }
 
@@ -570,6 +593,33 @@ export const useGameStore = create<GameStore>()(
       hydrateFromRemote: (remoteState) => {
         set(remoteState);
         get().applyOfflineProgress();
+      },
+
+      claimDailyReward: () => {
+        const { lastDailyRewardClaim, dailyRewardStreak } = get();
+        const now = Date.now();
+        if (!isDailyRewardClaimable(lastDailyRewardClaim, now)) return null;
+
+        const streakBroken =
+          lastDailyRewardClaim !== null &&
+          now - lastDailyRewardClaim > DAILY_REWARD_STREAK_RESET_HOURS * 60 * 60 * 1000;
+        const newStreak = lastDailyRewardClaim === null || streakBroken ? 1 : dailyRewardStreak + 1;
+        const reward = getDailyRewardForStreak(newStreak);
+        const label = `Daily Reward — Day ${reward.day}`;
+
+        set((state) => ({
+          dailyRewardStreak: newStreak,
+          lastDailyRewardClaim: now,
+          ...(reward.scrap ? { scrap: state.scrap + reward.scrap } : {}),
+          ...(reward.neon
+            ? {
+                neon: state.neon + reward.neon,
+                neonHistory: withNeonTransaction(state.neonHistory, label, reward.neon),
+              }
+            : {}),
+        }));
+
+        return reward;
       },
     }),
     {
