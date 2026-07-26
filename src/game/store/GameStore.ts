@@ -8,6 +8,9 @@ import {
   isDailyRewardClaimable,
   DAILY_REWARD_STREAK_RESET_HOURS,
   type DailyRewardTier,
+  OVERCLOCK,
+  getBoostedScrapEarned,
+  NEON_TO_SCRAP_RATE,
 } from '../config/economy';
 import { getPartTier, rollPartPerk, type PartPerk } from '../config/parts';
 import { CAR_TIERS, getCarTier, getUpgradeRequirement } from '../config/carTiers';
@@ -143,6 +146,15 @@ interface GameActions {
    * tier that was actually granted so the UI can show what the player just got, or null if
    * nothing was claimable (called again before the window opens). */
   claimDailyReward: () => DailyRewardTier | null;
+  /** Activates (or extends) the Overclock boost by OVERCLOCK.DURATION_HOURS from whichever is
+   * later, now or the current boostEndsAt — so buying another one while one is still running
+   * adds to the remaining time instead of wasting it. This is the action the Shop calls once
+   * Telegram confirms the Stars payment succeeded (see ShopScreen.tsx's openInvoice callback) —
+   * it does not itself charge anything. */
+  activateOverclockBoost: () => void;
+  /** Converts $NEON into Scrap at NEON_TO_SCRAP_RATE. Returns false without charging if the
+   * player can't afford `neonAmount`. */
+  exchangeNeonForScrap: (neonAmount: number) => boolean;
 }
 
 type GameStore = PlayerState & GameActions;
@@ -203,6 +215,7 @@ function createInitialPlayerState(): PlayerState {
     lastSaved: Date.now(),
     dailyRewardStreak: 0,
     lastDailyRewardClaim: null,
+    boostEndsAt: null,
   };
 }
 
@@ -292,12 +305,17 @@ export const useGameStore = create<GameStore>()(
         const { lastSaved } = get();
         const deltaTime = now - lastSaved; // ms
         if (deltaTime <= 0) return;
-        const deltaSeconds = deltaTime / 1000;
 
         set((state) => {
           const regen = applyEnergyRegen(state.energy, state.maxEnergy, state.lastEnergyRegenAt, now);
+          const earnedScrap = getBoostedScrapEarned(
+            state.scrapPerSecond,
+            lastSaved,
+            now,
+            state.boostEndsAt,
+          );
           return {
-            scrap: state.scrap + state.scrapPerSecond * deltaSeconds,
+            scrap: state.scrap + earnedScrap,
             energy: regen.energy,
             lastEnergyRegenAt: regen.lastEnergyRegenAt,
             lastSaved: now,
@@ -566,7 +584,7 @@ export const useGameStore = create<GameStore>()(
           };
         });
 
-        const { lastSaved, scrapPerSecond } = get();
+        const { lastSaved, scrapPerSecond, boostEndsAt } = get();
         const elapsedSeconds = Math.min(
           Math.max(0, (now - lastSaved) / 1000),
           ECONOMY.MAX_OFFLINE_SECONDS,
@@ -576,7 +594,11 @@ export const useGameStore = create<GameStore>()(
           return;
         }
 
-        const earnedScrap = elapsedSeconds * scrapPerSecond;
+        // Windowed against the *capped* elapsed time (not raw lastSaved) so a save that was
+        // closed far longer than MAX_OFFLINE_SECONDS still only ever earns for that capped
+        // span — getBoostedScrapEarned then splits *that* span into its boosted/normal portions.
+        const cappedWindowStart = now - elapsedSeconds * 1000;
+        const earnedScrap = getBoostedScrapEarned(scrapPerSecond, cappedWindowStart, now, boostEndsAt);
 
         set((state) => ({
           scrap: state.scrap + earnedScrap,
@@ -620,6 +642,21 @@ export const useGameStore = create<GameStore>()(
         }));
 
         return reward;
+      },
+
+      activateOverclockBoost: () => {
+        const now = Date.now();
+        const durationMs = OVERCLOCK.DURATION_HOURS * 60 * 60 * 1000;
+        set((state) => ({
+          boostEndsAt: Math.max(now, state.boostEndsAt ?? 0) + durationMs,
+        }));
+      },
+
+      exchangeNeonForScrap: (neonAmount) => {
+        if (!Number.isFinite(neonAmount) || neonAmount <= 0) return false;
+        if (!get().spendNeon(neonAmount, `Exchange — ${neonAmount} NEON → Scrap`)) return false;
+        set((state) => ({ scrap: state.scrap + neonAmount * NEON_TO_SCRAP_RATE }));
+        return true;
       },
     }),
     {

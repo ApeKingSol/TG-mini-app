@@ -358,3 +358,68 @@ export function isDailyRewardClaimable(lastClaim: number | null, now: number): b
   if (lastClaim === null) return true;
   return now - lastClaim >= DAILY_REWARD_CLAIM_WINDOW_HOURS * 60 * 60 * 1000;
 }
+
+/** Tuning for the Shop's premium Telegram Stars item — a temporary passive-income multiplier,
+ * sold as "the auto-mechanic works the Garage for you." Modeled purely as a multiplier applied
+ * at the point Scrap is actually earned (see getBoostedScrapEarned below), never as a stored
+ * mutation of scrapPerSecond itself — that way it needs no "undo" when it expires and can't
+ * drift out of sync with whatever else is touching scrapPerSecond (calibration/trade-in growth)
+ * in the meantime. */
+export const OVERCLOCK = {
+  DURATION_HOURS: 24,
+  /** While active, both the live per-second tick and offline-progress catch-up earn Scrap at
+   * this many times the normal scrapPerSecond rate. */
+  SCRAP_PER_SECOND_MULTIPLIER: 3,
+  /** Price in Telegram Stars (XTR) — see the createOverclockInvoice placeholder in
+   * netlify/functions/create-invoice.mts for where this becomes an actual invoice amount. */
+  STARS_PRICE: 150,
+} as const;
+
+/** Whether the Overclock boost is currently active. */
+export function isOverclockActive(boostEndsAt: number | null, now: number): boolean {
+  return boostEndsAt !== null && boostEndsAt > now;
+}
+
+/** Scrap earned over a `[windowStart, now]` span, honoring the Overclock multiplier for exactly
+ * however much of that span fell before `boostEndsAt` (and the normal rate for the rest) —
+ * shared by both tick() (called every ECONOMY.TICK_INTERVAL_MS while the app is open) and
+ * applyOfflineProgress() (a single, potentially much longer span), so a boost that expires
+ * *while the app is closed* still pays out exactly what it would have live, instead of either
+ * the whole offline span getting the multiplier (if it merely checked "is boost active now") or
+ * none of it (if it didn't account for the boost at all). */
+export function getBoostedScrapEarned(
+  scrapPerSecond: number,
+  windowStart: number,
+  now: number,
+  boostEndsAt: number | null,
+): number {
+  const deltaSeconds = (now - windowStart) / 1000;
+  if (deltaSeconds <= 0) return 0;
+  if (boostEndsAt === null || boostEndsAt <= windowStart) {
+    return scrapPerSecond * deltaSeconds;
+  }
+  const boostedUntil = Math.min(now, boostEndsAt);
+  const boostedSeconds = Math.max(0, (boostedUntil - windowStart) / 1000);
+  const normalSeconds = deltaSeconds - boostedSeconds;
+  return (
+    scrapPerSecond * OVERCLOCK.SCRAP_PER_SECOND_MULTIPLIER * boostedSeconds +
+    scrapPerSecond * normalSeconds
+  );
+}
+
+/** The Shop's Exchange grid: premium $NEON converted into Garage-progression Scrap at a fixed
+ * rate. One-way (Scrap can never convert back into $NEON) — this is a Scrap-progression relief
+ * valve for players sitting on spare racing winnings, not a way to launder Scrap into racing
+ * currency. */
+export const NEON_TO_SCRAP_RATE = 10_000;
+
+export interface NeonExchangePackage {
+  neon: number;
+  scrap: number;
+}
+
+export const NEON_EXCHANGE_PACKAGES: readonly NeonExchangePackage[] = [
+  { neon: 1, scrap: 1 * NEON_TO_SCRAP_RATE },
+  { neon: 10, scrap: 10 * NEON_TO_SCRAP_RATE },
+  { neon: 50, scrap: 50 * NEON_TO_SCRAP_RATE },
+] as const;

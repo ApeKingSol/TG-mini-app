@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Zap, Store, X, Lock, Gift, Flame, Coins, Sparkles } from 'lucide-react';
+import { Zap, Store, X, Gift, Flame, Coins, Sparkles } from 'lucide-react';
 import {
   DndContext,
   PointerSensor,
@@ -27,7 +27,8 @@ import {
   type DailyRewardTier,
 } from '../game/config/economy';
 import { getPartTier, PERK_DESCRIPTIONS, type PartPerk } from '../game/config/parts';
-import { getCarTier, getUpgradeRequirement, getCarSkins } from '../game/config/carTiers';
+import { getCarTier, getUpgradeRequirement } from '../game/config/carTiers';
+import { ShopModal } from './ShopScreen';
 import type { CarStats } from '../game/types';
 
 const CAR_INSTALLATION_ZONE_ID = 'car-installation-zone';
@@ -323,7 +324,7 @@ export function GarageScreen() {
       </AnimatePresence>
 
       <AnimatePresence>
-        {isShopOpen && <SkinShopModal carTier={carTier} onClose={() => setIsShopOpen(false)} />}
+        {isShopOpen && <ShopModal onClose={() => setIsShopOpen(false)} />}
       </AnimatePresence>
 
       <AnimatePresence>
@@ -343,66 +344,6 @@ export function GarageScreen() {
   );
 }
 
-interface SkinShopModalProps {
-  carTier: number;
-  onClose: () => void;
-}
-
-/** Skins are purely cosmetic and not purchasable yet — shown as "In Development" so
- * players can see what's coming without a half-built purchase/skin-swap flow. */
-function SkinShopModal({ carTier, onClose }: SkinShopModalProps) {
-  const skins = getCarSkins(carTier);
-
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      onClick={onClose}
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/70 px-4 pt-24 backdrop-blur-sm"
-    >
-      <motion.div
-        initial={{ opacity: 0, y: -24, scale: 0.95 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: -24, scale: 0.95 }}
-        transition={{ duration: 0.25, ease: 'easeOut' }}
-        onClick={(event) => event.stopPropagation()}
-        className="panel-cut w-full max-w-xs border border-neon-cyan/50 bg-bg-panel p-4 text-left shadow-lg"
-      >
-        <div className="mb-2 flex items-center justify-between">
-          <p className="font-display text-sm font-bold uppercase tracking-widest text-neon-cyan">
-            Skin Shop
-          </p>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1 text-neutral-500 hover:text-neutral-300"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-        <p className="mb-2 text-xs text-neutral-500">
-          Cosmetic skins for your current car. In development — coming soon.
-        </p>
-
-        <div className="flex flex-col gap-2">
-          {skins.map((skin) => (
-            <div
-              key={skin.id}
-              className="panel-cut-sm flex items-center justify-between border border-neutral-800 bg-black/30 px-3 py-2 opacity-60"
-            >
-              <p className="text-sm font-medium text-neutral-200">{skin.name}</p>
-              <span className="flex items-center gap-1 font-mono text-xs font-medium text-neutral-500">
-                <Lock className="h-3.5 w-3.5" /> In Development
-              </span>
-            </div>
-          ))}
-        </div>
-      </motion.div>
-    </motion.div>
-  );
-}
-
 interface DailyRewardModalProps {
   /** Consecutive claims completed so far (0 if never claimed). */
   streak: number;
@@ -415,8 +356,8 @@ interface DailyRewardModalProps {
 
 /** The 7-day login-streak track — Days 1-6 escalating Scrap, Day 7 a $NEON payout, cycling
  * forever past Day 7 (see DAILY_REWARDS/getDailyRewardForStreak in economy.ts). Mirrors
- * SkinShopModal's overlay/panel structure so the Garage's two header buttons open visually
- * consistent modals. */
+ * ShopScreen.tsx's ShopModal overlay/panel structure so the Garage's two header buttons open
+ * visually consistent modals. */
 function DailyRewardModal({ streak, lastClaim, onClose, onClaimed }: DailyRewardModalProps) {
   const claimDailyReward = useGameStore((state) => state.claimDailyReward);
   const [now, setNow] = useState(() => Date.now());

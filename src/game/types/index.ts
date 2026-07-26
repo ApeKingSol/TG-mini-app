@@ -108,4 +108,9 @@ export interface PlayerState {
    * reset check — a plain timestamp rather than a derived "claimed today" boolean so it stays
    * meaningful across app restarts and cross-device sync without needing its own reconciliation. */
   lastDailyRewardClaim: number | null;
+  /** Unix ms timestamp the "Overclock: 24h Auto-Mechanic" Shop boost expires at, or null if
+   * none is active. See OVERCLOCK/isOverclockActive/getBoostedScrapEarned in economy.ts — this
+   * is deliberately just an expiry timestamp, not a stored rate mutation, so the boost needs no
+   * explicit "undo" when it lapses. */
+  boostEndsAt: number | null;
 }
