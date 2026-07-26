@@ -8,7 +8,6 @@ import {
   isDailyRewardClaimable,
   DAILY_REWARD_STREAK_RESET_HOURS,
   type DailyRewardTier,
-  OVERCLOCK,
   getBoostedScrapEarned,
   NEON_TO_SCRAP_RATE,
 } from '../config/economy';
@@ -146,12 +145,6 @@ interface GameActions {
    * tier that was actually granted so the UI can show what the player just got, or null if
    * nothing was claimable (called again before the window opens). */
   claimDailyReward: () => DailyRewardTier | null;
-  /** Activates (or extends) the Overclock boost by OVERCLOCK.DURATION_HOURS from whichever is
-   * later, now or the current boostEndsAt — so buying another one while one is still running
-   * adds to the remaining time instead of wasting it. This is the action the Shop calls once
-   * Telegram confirms the Stars payment succeeded (see ShopScreen.tsx's openInvoice callback) —
-   * it does not itself charge anything. */
-  activateOverclockBoost: () => void;
   /** Converts $NEON into Scrap at NEON_TO_SCRAP_RATE. Returns false without charging if the
    * player can't afford `neonAmount`. */
   exchangeNeonForScrap: (neonAmount: number) => boolean;
@@ -642,14 +635,6 @@ export const useGameStore = create<GameStore>()(
         }));
 
         return reward;
-      },
-
-      activateOverclockBoost: () => {
-        const now = Date.now();
-        const durationMs = OVERCLOCK.DURATION_HOURS * 60 * 60 * 1000;
-        set((state) => ({
-          boostEndsAt: Math.max(now, state.boostEndsAt ?? 0) + durationMs,
-        }));
       },
 
       exchangeNeonForScrap: (neonAmount) => {

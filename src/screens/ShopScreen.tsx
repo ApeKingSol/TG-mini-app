@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X,
@@ -32,6 +32,13 @@ function formatDuration(ms: number): string {
   return `${hours}h ${minutes}m`;
 }
 
+/** How long to wait for the Overclock webhook's grant to sync down before giving up on showing
+ * a live "Confirming..." state — useCloudSync (mounted once at the app root) polls every ~2s
+ * regardless of this modal, so this is generous slack for that plus normal webhook latency, not
+ * a tight timeout. Not giving up sooner avoids flashing a wrong "still syncing" message for what
+ * is, the overwhelming majority of the time, just two or three ordinary poll cycles. */
+const CONFIRMATION_TIMEOUT_MS = 20_000;
+
 /** The Shop: the premium "Overclock: 24h Auto-Mechanic" Telegram Stars boost, and the NEON →
  * Scrap Exchange grid. Replaces the old cosmetic Skin Shop entirely (skins were never actually
  * purchasable — see the removed getCarSkins/CarSkin in carTiers.ts). Mirrors the Garage's other
@@ -40,17 +47,23 @@ function formatDuration(ms: number): string {
 export function ShopModal({ onClose }: ShopModalProps) {
   const neon = useGameStore((state) => state.neon);
   const boostEndsAt = useGameStore((state) => state.boostEndsAt);
-  const activateOverclockBoost = useGameStore((state) => state.activateOverclockBoost);
   const exchangeNeonForScrap = useGameStore((state) => state.exchangeNeonForScrap);
 
   const [now, setNow] = useState(() => Date.now());
   const [isPurchasing, setIsPurchasing] = useState(false);
+  // Set the instant Telegram's own UI reports the payment succeeded; cleared once boostEndsAt
+  // actually changes (see the effect below). There is deliberately no client-side action that
+  // sets boostEndsAt directly — see its own doc comment in game/types/index.ts — so this is
+  // *waiting for telegram-webhook.mts's write to sync down*, not a fake progress bar standing
+  // in for an instant grant.
+  const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
+  const boostEndsAtBeforePurchaseRef = useRef<number | null>(null);
   const [message, setMessage] = useState<{ text: string; variant: 'error' | 'success' } | null>(
     null,
   );
 
   // The Overclock countdown (if active) needs a live clock of its own — this modal can be left
-  // open across the boost expiring.
+  // open across the boost expiring, or across a purchase's confirmation window.
   useEffect(() => {
     const interval = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(interval);
@@ -63,13 +76,40 @@ export function ShopModal({ onClose }: ShopModalProps) {
     window.setTimeout(() => setMessage(null), 3500);
   };
 
-  /** Kicks off the Telegram Stars checkout: asks the backend for an invoice URL, then hands it
-   * to Telegram's native payment sheet via WebApp.openInvoice. The boost is granted the instant
-   * that callback reports 'paid' — see create-invoice.mts's doc comment for why that's a known,
-   * flagged gap (the callback is client-reported, not itself proof a payment happened) rather
-   * than a finished, spoof-proof purchase flow. */
+  // Detects the moment the webhook's grant actually lands: boostEndsAt genuinely moved past
+  // whatever it was right before this purchase. Nothing here *triggers* a sync — useCloudSync's
+  // own interval does that on its own regardless of this modal — this just reacts once it does.
+  useEffect(() => {
+    if (!isConfirmingPayment) return;
+    const before = boostEndsAtBeforePurchaseRef.current;
+    if (boostEndsAt !== null && (before === null || boostEndsAt > before)) {
+      setIsConfirmingPayment(false);
+      showMessage('Overclock activated — the Auto-Mechanic is on the clock!', 'success');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isConfirmingPayment, boostEndsAt]);
+
+  // Gives up *displaying* the wait after a while — not a claim the payment failed (as far as
+  // this client knows, Telegram already reported success on-device), just an acknowledgment that
+  // sync is taking longer than usual; the grant itself, once the webhook processes it, still
+  // lands on its own via the next poll regardless of whether this modal is even still open.
+  useEffect(() => {
+    if (!isConfirmingPayment) return;
+    const timeoutId = window.setTimeout(() => {
+      setIsConfirmingPayment(false);
+      showMessage('Payment received — still syncing, check back in a moment.', 'success');
+    }, CONFIRMATION_TIMEOUT_MS);
+    return () => window.clearTimeout(timeoutId);
+  }, [isConfirmingPayment]);
+
+  /** Kicks off the Telegram Stars checkout: asks the backend for a real invoice URL (backed by
+   * Telegram's own createInvoiceLink — see create-invoice.mts), then hands it to Telegram's
+   * native payment sheet via WebApp.openInvoice. That callback reporting 'paid' is *not* itself
+   * proof of payment (it's the client reporting what its own UI did) — the boost is only ever
+   * actually granted server-side, once Telegram separately confirms the charge to
+   * telegram-webhook.mts. This just starts waiting for that to sync down. */
   const handleBuyOverclock = async () => {
-    if (isPurchasing) return;
+    if (isPurchasing || isConfirmingPayment) return;
     if (!isRunningInTelegram()) {
       showMessage('Open this from Telegram to buy with Stars.');
       return;
@@ -91,11 +131,11 @@ export function ShopModal({ onClose }: ShopModalProps) {
       }
 
       const invoiceUrl = body.invoiceUrl;
+      boostEndsAtBeforePurchaseRef.current = boostEndsAt;
       WebApp.openInvoice(invoiceUrl, (status) => {
         setIsPurchasing(false);
         if (status === 'paid') {
-          activateOverclockBoost();
-          showMessage('Overclock activated — the Auto-Mechanic is on the clock!', 'success');
+          setIsConfirmingPayment(true);
         } else if (status === 'failed') {
           showMessage('Payment failed — try again.');
         }
@@ -178,21 +218,23 @@ export function ShopModal({ onClose }: ShopModalProps) {
           <motion.button
             type="button"
             onClick={handleBuyOverclock}
-            disabled={isPurchasing}
-            whileHover={!isPurchasing ? { scale: 1.02 } : undefined}
-            whileTap={!isPurchasing ? { scale: 0.97 } : undefined}
+            disabled={isPurchasing || isConfirmingPayment}
+            whileHover={!isPurchasing && !isConfirmingPayment ? { scale: 1.02 } : undefined}
+            whileTap={!isPurchasing && !isConfirmingPayment ? { scale: 0.97 } : undefined}
             className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border-2 border-amber bg-amber/10 py-2.5 font-display text-sm font-black uppercase tracking-widest text-amber shadow-[0_0_16px_rgba(255,149,0,0.3)] transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {isPurchasing ? (
+            {isPurchasing || isConfirmingPayment ? (
               <Loader2 className="h-4 w-4 animate-spin" strokeWidth={2} />
             ) : (
               <Star className="h-4 w-4" fill="currentColor" strokeWidth={1.5} />
             )}
             {isPurchasing
               ? 'Processing...'
-              : boostActive
-                ? `Extend +24h — ${OVERCLOCK.STARS_PRICE}`
-                : `Buy — ${OVERCLOCK.STARS_PRICE}`}
+              : isConfirmingPayment
+                ? 'Confirming payment...'
+                : boostActive
+                  ? `Extend +24h — ${OVERCLOCK.STARS_PRICE}`
+                  : `Buy — ${OVERCLOCK.STARS_PRICE}`}
           </motion.button>
         </div>
 

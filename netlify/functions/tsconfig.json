@@ -12,5 +12,10 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["**/*.mts", "**/*.ts", "../../src/game/config/carTiers.ts"]
+  "include": [
+    "**/*.mts",
+    "**/*.ts",
+    "../../src/game/config/carTiers.ts",
+    "../../src/game/config/economy.ts"
+  ]
 }

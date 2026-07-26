@@ -111,6 +111,14 @@ export interface PlayerState {
   /** Unix ms timestamp the "Overclock: 24h Auto-Mechanic" Shop boost expires at, or null if
    * none is active. See OVERCLOCK/isOverclockActive/getBoostedScrapEarned in economy.ts — this
    * is deliberately just an expiry timestamp, not a stored rate mutation, so the boost needs no
-   * explicit "undo" when it lapses. */
+   * explicit "undo" when it lapses.
+   *
+   * Deliberately no client-side action sets this. It's only ever written by
+   * netlify/functions/telegram-webhook.mts, once Telegram confirms a real Stars payment
+   * happened (see that file's doc comment) — the client only ever *observes* it, via the
+   * existing cloud-sync pull, once the webhook's write lands. Do not add a
+   * store.activateOverclockBoost()-style action that sets this directly from the client; that
+   * exact pattern existed once and was removed because it let a modified client grant itself
+   * the boost without ever paying. */
   boostEndsAt: number | null;
 }
