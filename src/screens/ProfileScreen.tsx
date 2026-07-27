@@ -116,18 +116,20 @@ export function ProfileScreen({ onBack, syncStatus, onSyncNow }: ProfileScreenPr
       <div className={hasWallet ? 'grid grid-cols-2 gap-3' : 'grid grid-cols-1 gap-3'}>
         <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-neon-cyan/40 bg-neon-cyan/5 p-4">
           <p className="text-xs font-bold uppercase tracking-wide text-neon-cyan">TON Wallet</p>
-          {!isConnectedOnThisDevice && hasWallet ? (
-            <div className="flex items-center gap-1.5 rounded-lg border border-neon-cyan/30 bg-black/30 px-3 py-1.5">
-              <Wallet className="h-3.5 w-3.5 shrink-0 text-neon-cyan" strokeWidth={2} />
-              <span className="font-mono text-xs text-neon-cyan">
-                {truncateAddress(storeWalletAddress)}
+          {/* Always the live button — never swapped out for a read-only substitute. TonConnect's
+           * own restoreConnection is asynchronous (useTonAddress briefly returns '' even on the
+           * device that actually holds the session, until it finishes hydrating), so gating the
+           * button itself on isConnectedOnThisDevice made it flash — or get stuck showing — the
+           * "linked on another device" state on the *correct* device too. The synced-elsewhere
+           * address is now purely an additional, non-replacing footnote. */}
+          <TonConnectButton />
+          {!isConnectedOnThisDevice && hasWallet && (
+            <div className="flex items-center gap-1.5 rounded-lg border border-neon-cyan/20 bg-black/20 px-2.5 py-1">
+              <Wallet className="h-3 w-3 shrink-0 text-neon-cyan/70" strokeWidth={2} />
+              <span className="font-mono text-[10px] text-neon-cyan/70">
+                {truncateAddress(storeWalletAddress)} · linked on another device
               </span>
             </div>
-          ) : (
-            <TonConnectButton />
-          )}
-          {!isConnectedOnThisDevice && hasWallet && (
-            <p className="text-center text-[9px] text-neutral-600">Linked on another device</p>
           )}
         </div>
         {hasWallet && (
