@@ -24,10 +24,15 @@ function App() {
   const { isTelegram, userFirstName, userPhotoUrl } = useTelegram();
   const [activeScreen, setActiveScreen] = useState<ScreenId>('garage');
   // The Profile and Airdrop screens both live outside the tab system (reached via header
-  // buttons, not the bottom nav) — tracking them separately means returning from either lands
-  // back on whatever tab was active, instead of needing their own ScreenId in the nav.
-  const [isProfileOpen, setIsProfileOpen] = useState(false);
-  const [isAirdropOpen, setIsAirdropOpen] = useState(false);
+  // buttons, not the bottom nav) — tracking them as one mutually-exclusive value (rather than
+  // two independent isProfileOpen/isAirdropOpen booleans, which this used to be) means returning
+  // from either lands back on whatever tab was active, instead of needing their own ScreenId in
+  // the nav, *and* makes "both open at once" structurally impossible. Two independent booleans
+  // let exactly that happen: opening Airdrop from inside Profile only ever set isAirdropOpen to
+  // true while isProfileOpen stayed true, and the render ternary checked isProfileOpen first —
+  // so the Airdrop button silently did nothing whenever Profile was already open, the exact bug
+  // this replaced.
+  const [activeOverlay, setActiveOverlay] = useState<'profile' | 'airdrop' | null>(null);
 
   useEffect(() => {
     trackAppOpened();
@@ -52,8 +57,8 @@ function App() {
              and being later in the DOM it painted on top, swallowing every tap even though
              the button itself was never broken. A real (non-auto) z-index wins regardless of
              DOM order or sibling filters. */}
-          <AirdropEntryButton onClick={() => setIsAirdropOpen(true)} />
-          <ProfileAvatarButton photoUrl={userPhotoUrl} onClick={() => setIsProfileOpen(true)} />
+          <AirdropEntryButton onClick={() => setActiveOverlay('airdrop')} />
+          <ProfileAvatarButton photoUrl={userPhotoUrl} onClick={() => setActiveOverlay('profile')} />
           <p className="px-11 font-mono text-[9px] uppercase tracking-[0.2em] text-amber/70">
             Sys.Online // Uplink: Stable
           </p>
@@ -71,15 +76,15 @@ function App() {
 
         <main className="mt-6">
           <AnimatePresence mode="wait">
-            {isProfileOpen ? (
+            {activeOverlay === 'profile' ? (
               <ProfileScreen
                 key="profile"
-                onBack={() => setIsProfileOpen(false)}
+                onBack={() => setActiveOverlay(null)}
                 syncStatus={cloudSync.status}
                 onSyncNow={cloudSync.syncNow}
               />
-            ) : isAirdropOpen ? (
-              <AirdropScreen key="airdrop" onBack={() => setIsAirdropOpen(false)} />
+            ) : activeOverlay === 'airdrop' ? (
+              <AirdropScreen key="airdrop" onBack={() => setActiveOverlay(null)} />
             ) : (
               <>
                 {activeScreen === 'junkyard' && <JunkyardScreen key="junkyard" />}
@@ -91,7 +96,7 @@ function App() {
         </main>
       </div>
 
-      {!isProfileOpen && !isAirdropOpen && (
+      {activeOverlay === null && (
         <BottomNav active={activeScreen} onChange={setActiveScreen} />
       )}
     </div>

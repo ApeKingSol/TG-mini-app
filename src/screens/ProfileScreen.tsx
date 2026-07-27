@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TonConnectButton, useTonAddress } from '@tonconnect/ui-react';
 import {
@@ -7,6 +7,7 @@ import {
   Clock,
   Lock,
   RefreshCw,
+  Wallet,
   type LucideIcon,
 } from 'lucide-react';
 import { useGameStore } from '../game/store/GameStore';
@@ -30,22 +31,50 @@ function formatTimestamp(timestamp: number): string {
   });
 }
 
+/** UQ…xyz1 style truncation for a wallet address too long to show in full inside a small card. */
+function truncateAddress(address: string): string {
+  if (address.length <= 14) return address;
+  return `${address.slice(0, 8)}…${address.slice(-4)}`;
+}
+
 export function ProfileScreen({ onBack, syncStatus, onSyncNow }: ProfileScreenProps) {
   const neon = useGameStore((state) => state.neon);
   const neonHistory = useGameStore((state) => state.neonHistory);
   const scrap = useGameStore((state) => state.scrap);
+  const storeWalletAddress = useGameStore((state) => state.walletAddress);
   const setWalletAddress = useGameStore((state) => state.setWalletAddress);
 
   const [message, setMessage] = useState<string | null>(null);
 
-  // TonConnectUIProvider (see main.tsx) owns the actual connection; this just mirrors its
-  // current address into the game store so the rest of the app (the Airdrop "Connect TON
-  // Wallet" quest, analytics) can read it without needing TonConnect's own hooks. Fires on
-  // every change, including disconnect (useTonAddress returns '' then) and switching wallets.
-  const walletAddress = useTonAddress();
+  // TonConnectUIProvider (see main.tsx) owns the actual connection *on this device*.
+  // useTonAddress() only ever reflects a session this exact browser/app instance holds — it
+  // knows nothing about a wallet linked from a different device, and correctly returns '' the
+  // very first time this device has never connected one itself.
+  //
+  // Bug this guards against: naively doing `setWalletAddress(liveTonAddress || null)`
+  // unconditionally clobbered a walletAddress that had just arrived via cross-device sync (e.g.
+  // linked on a Mac, opened on an iPhone that has never connected a wallet locally) back to null
+  // the instant this screen mounted on the *other* device — because that device's own
+  // useTonAddress() is legitimately empty, but that emptiness doesn't mean "the player has no
+  // wallet," just "not connected *here*." hasConnectedLocallyRef tracks whether *this* mount
+  // ever actually saw a real local connection; only then does a later empty value get treated as
+  // a genuine disconnect worth writing back to the store. Until that happens, a synced address
+  // from elsewhere is left alone.
+  const liveTonAddress = useTonAddress();
+  const hasConnectedLocallyRef = useRef(false);
   useEffect(() => {
-    setWalletAddress(walletAddress || null);
-  }, [walletAddress, setWalletAddress]);
+    if (liveTonAddress) {
+      hasConnectedLocallyRef.current = true;
+      setWalletAddress(liveTonAddress);
+    } else if (hasConnectedLocallyRef.current) {
+      setWalletAddress(null);
+    }
+  }, [liveTonAddress, setWalletAddress]);
+
+  const hasWallet = storeWalletAddress !== null;
+  // Genuinely connected right here vs. just known-synced-from-elsewhere — these render
+  // differently (a live, disconnectable TonConnectButton vs. a plain read-only address).
+  const isConnectedOnThisDevice = liveTonAddress !== '';
 
   const handleWithdrawClick = () => {
     setMessage(WITHDRAW_LOCKED_MESSAGE);
@@ -84,12 +113,26 @@ export function ProfileScreen({ onBack, syncStatus, onSyncNow }: ProfileScreenPr
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className={hasWallet ? 'grid grid-cols-2 gap-3' : 'grid grid-cols-1 gap-3'}>
         <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-neon-cyan/40 bg-neon-cyan/5 p-4">
           <p className="text-xs font-bold uppercase tracking-wide text-neon-cyan">TON Wallet</p>
-          <TonConnectButton />
+          {!isConnectedOnThisDevice && hasWallet ? (
+            <div className="flex items-center gap-1.5 rounded-lg border border-neon-cyan/30 bg-black/30 px-3 py-1.5">
+              <Wallet className="h-3.5 w-3.5 shrink-0 text-neon-cyan" strokeWidth={2} />
+              <span className="font-mono text-xs text-neon-cyan">
+                {truncateAddress(storeWalletAddress)}
+              </span>
+            </div>
+          ) : (
+            <TonConnectButton />
+          )}
+          {!isConnectedOnThisDevice && hasWallet && (
+            <p className="text-center text-[9px] text-neutral-600">Linked on another device</p>
+          )}
         </div>
-        <LockedActionButton icon={ArrowUpFromLine} label="Withdraw" onClick={handleWithdrawClick} />
+        {hasWallet && (
+          <LockedActionButton icon={ArrowUpFromLine} label="Withdraw" onClick={handleWithdrawClick} />
+        )}
       </div>
 
       <AnimatePresence>

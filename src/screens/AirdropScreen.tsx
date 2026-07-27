@@ -1,7 +1,21 @@
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Check, Lock, Rocket } from 'lucide-react';
-import { useGameStore } from '../game/store/GameStore';
+import { ArrowLeft, Check, Copy, Lock, Rocket, Send, Users } from 'lucide-react';
+import { useGameStore, getTelegramUserId } from '../game/store/GameStore';
 import { QUESTS, isQuestComplete, type QuestDefinition } from '../game/config/economy';
+import { WebApp } from '../lib/telegram';
+
+/** Your bot's @username (no leading @, no https://t.me/ prefix) — REQUIRED for the referral
+ * link below to actually resolve to your Mini App. Replace this before shipping; left as a
+ * placeholder here since it isn't something derivable from anywhere else in this codebase. */
+const BOT_USERNAME = 'YourBotUsername';
+
+function buildReferralLink(userId: string): string {
+  return `https://t.me/${BOT_USERNAME}/app?startapp=ref_${userId}`;
+}
+
+const REFERRAL_SHARE_TEXT =
+  "Join me in Cyber-Garage — build your rig, race The Streets, and stack $NEON before the airdrop. Tap in:";
 
 interface AirdropScreenProps {
   onBack: () => void;
@@ -62,8 +76,101 @@ export function AirdropScreen({ onBack }: AirdropScreenProps) {
             onClaim={() => claimQuest(quest.id)}
           />
         ))}
+        <InviteFriendsCard />
       </div>
     </motion.div>
+  );
+}
+
+/** Not one of QUESTS (no isComplete/claimedQuests entry, no NEON reward button) — attributing a
+ * real referral (crediting the *inviter* once someone actually joins via their link) needs
+ * server-side tracking this doesn't have yet: whoever opens the app with `?startapp=ref_X` would
+ * have to be verified and matched back to X on the backend, the same way Syndicates/Matchmaking
+ * moved off client-trusted state earlier. Until that exists, this is honestly just the share
+ * surface — Share and Copy actually work right now, a reward for successful invites doesn't. */
+function InviteFriendsCard() {
+  const [copied, setCopied] = useState(false);
+  const userId = getTelegramUserId();
+
+  if (!userId) {
+    return (
+      <div className="rounded-xl border border-neutral-800 bg-bg-panel/60 p-4">
+        <div className="flex items-center gap-1.5 text-neutral-400">
+          <Users className="h-4 w-4" strokeWidth={2} />
+          <p className="font-display text-sm font-bold uppercase tracking-wide">Invite Friends</p>
+        </div>
+        <p className="mt-1 text-xs text-neutral-500">
+          Open this from Telegram to get your referral link.
+        </p>
+      </div>
+    );
+  }
+
+  const referralLink = buildReferralLink(userId);
+
+  const handleShare = () => {
+    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(referralLink)}&text=${encodeURIComponent(REFERRAL_SHARE_TEXT)}`;
+    WebApp.openTelegramLink(shareUrl);
+  };
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(referralLink);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard access can be blocked (permissions, insecure context) — Share is still a
+      // fully working fallback, so this fails silently rather than surfacing an error.
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-neon-magenta/50 bg-neon-magenta/10 p-4">
+      <div className="flex items-center gap-1.5 text-neon-magenta">
+        <Users className="h-4 w-4" strokeWidth={2} />
+        <p className="font-display text-sm font-bold uppercase tracking-wide">Invite Friends</p>
+      </div>
+      <p className="mt-1 text-xs text-neutral-400">
+        Bring your crew into the Syndicate — every runner you pull in raises your standing before
+        the TGE.
+      </p>
+
+      <div className="mt-3 flex gap-2">
+        <motion.button
+          type="button"
+          onClick={handleShare}
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.97 }}
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border-2 border-neon-magenta bg-neon-magenta/15 py-2.5 font-display text-xs font-black uppercase tracking-widest text-neon-magenta shadow-[0_0_16px_rgba(255,46,230,0.35)]"
+        >
+          <Send className="h-3.5 w-3.5" strokeWidth={2} />
+          Share
+        </motion.button>
+        <motion.button
+          type="button"
+          onClick={handleCopy}
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.97 }}
+          className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg border-2 py-2.5 font-display text-xs font-black uppercase tracking-widest transition-colors ${
+            copied
+              ? 'border-toxic-green bg-toxic-green/15 text-toxic-green'
+              : 'border-neutral-700 bg-black/20 text-neutral-300'
+          }`}
+        >
+          {copied ? (
+            <>
+              <Check className="h-3.5 w-3.5" strokeWidth={2.5} />
+              Copied!
+            </>
+          ) : (
+            <>
+              <Copy className="h-3.5 w-3.5" strokeWidth={2} />
+              Copy Link
+            </>
+          )}
+        </motion.button>
+      </div>
+    </div>
   );
 }
 

@@ -9,6 +9,11 @@ interface ProfileAvatarButtonProps {
   onClick: () => void;
 }
 
+/** z-[1001], not the plain z-10 this used to have — see AirdropEntryButton.tsx's doc comment
+ * for the full explanation: @tonconnect/ui-react leaves an ambient, still-interactive layer at
+ * z-index:1000 in the DOM (outside React's tree, appended to document.body) for as long as any
+ * TonConnect UI component is mounted, which silently ate clicks on this button too whenever
+ * ProfileScreen was open. */
 export function ProfileAvatarButton({ photoUrl, onClick }: ProfileAvatarButtonProps) {
   const [failedToLoad, setFailedToLoad] = useState(false);
   const showPhoto = photoUrl !== null && !failedToLoad;
@@ -18,7 +23,7 @@ export function ProfileAvatarButton({ photoUrl, onClick }: ProfileAvatarButtonPr
       type="button"
       onClick={onClick}
       aria-label="Player Profile"
-      className="panel-cut-sm absolute right-0 top-0 z-10 flex h-9 w-9 items-center justify-center overflow-hidden border border-neon-cyan/50 bg-neon-cyan/10 text-neon-cyan"
+      className="panel-cut-sm absolute right-0 top-0 z-[1001] flex h-9 w-9 items-center justify-center overflow-hidden border border-neon-cyan/50 bg-neon-cyan/10 text-neon-cyan"
     >
       {showPhoto ? (
         <img
