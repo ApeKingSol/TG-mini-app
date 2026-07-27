@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { TonConnectButton, useTonAddress } from '@tonconnect/ui-react';
+import { TonConnectButton, useTonAddress, useTonConnectUI } from '@tonconnect/ui-react';
 import {
   ArrowLeft,
   ArrowUpFromLine,
@@ -72,13 +72,20 @@ export function ProfileScreen({ onBack, syncStatus, onSyncNow }: ProfileScreenPr
   }, [liveTonAddress, setWalletAddress]);
 
   const hasWallet = storeWalletAddress !== null;
-  // Genuinely connected right here vs. just known-synced-from-elsewhere — these render
-  // differently (a live, disconnectable TonConnectButton vs. a plain read-only address).
+  // Genuinely connected right here vs. just known-synced-from-elsewhere. Both render the exact
+  // same address card (storeWalletAddress is identical either way, since it's the synced,
+  // cross-device value) — the *only* difference is whether a Disconnect control shows up too,
+  // since only a device with a real local session has anything to actually disconnect.
   const isConnectedOnThisDevice = liveTonAddress !== '';
+  const [tonConnectUI] = useTonConnectUI();
 
   const handleWithdrawClick = () => {
     setMessage(WITHDRAW_LOCKED_MESSAGE);
     window.setTimeout(() => setMessage(null), 4000);
+  };
+
+  const handleDisconnect = () => {
+    void tonConnectUI.disconnect();
   };
 
   return (
@@ -116,20 +123,30 @@ export function ProfileScreen({ onBack, syncStatus, onSyncNow }: ProfileScreenPr
       <div className={hasWallet ? 'grid grid-cols-2 gap-3' : 'grid grid-cols-1 gap-3'}>
         <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-neon-cyan/40 bg-neon-cyan/5 p-4">
           <p className="text-xs font-bold uppercase tracking-wide text-neon-cyan">TON Wallet</p>
-          {/* Always the live button — never swapped out for a read-only substitute. TonConnect's
-           * own restoreConnection is asynchronous (useTonAddress briefly returns '' even on the
-           * device that actually holds the session, until it finishes hydrating), so gating the
-           * button itself on isConnectedOnThisDevice made it flash — or get stuck showing — the
-           * "linked on another device" state on the *correct* device too. The synced-elsewhere
-           * address is now purely an additional, non-replacing footnote. */}
-          <TonConnectButton />
-          {!isConnectedOnThisDevice && hasWallet && (
-            <div className="flex items-center gap-1.5 rounded-lg border border-neon-cyan/20 bg-black/20 px-2.5 py-1">
-              <Wallet className="h-3 w-3 shrink-0 text-neon-cyan/70" strokeWidth={2} />
-              <span className="font-mono text-[10px] text-neon-cyan/70">
-                {truncateAddress(storeWalletAddress)} · linked on another device
-              </span>
-            </div>
+          {hasWallet ? (
+            // Same card, same address, on every device — storeWalletAddress is the one synced,
+            // cross-device value, so this never depends on whether *this* device is the one that
+            // actually holds the live TonConnect session. Disconnect is the only thing that does:
+            // it only appears where there's a real local session to actually tear down.
+            <>
+              <div className="flex items-center gap-1.5 rounded-lg border border-neon-cyan/30 bg-black/30 px-3 py-1.5">
+                <Wallet className="h-3.5 w-3.5 shrink-0 text-neon-cyan" strokeWidth={2} />
+                <span className="font-mono text-xs text-neon-cyan">
+                  {truncateAddress(storeWalletAddress)}
+                </span>
+              </div>
+              {isConnectedOnThisDevice && (
+                <button
+                  type="button"
+                  onClick={handleDisconnect}
+                  className="text-[9px] uppercase tracking-widest text-neutral-600 underline decoration-dotted underline-offset-2 hover:text-neutral-400"
+                >
+                  Disconnect
+                </button>
+              )}
+            </>
+          ) : (
+            <TonConnectButton />
           )}
         </div>
         {hasWallet && (
