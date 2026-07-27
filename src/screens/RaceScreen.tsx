@@ -1,8 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Gauge, Lock, Package, type LucideIcon } from 'lucide-react';
+import { ArrowLeft, Gauge, Lock, Package, Radio, type LucideIcon } from 'lucide-react';
 import { useGameStore } from '../game/store/GameStore';
-import { AUTO_DRAG, getCarStats } from '../game/config/economy';
+import {
+  AUTO_DRAG,
+  getCarStats,
+  NEON_SYPHON,
+  getNeonSyphonReward,
+  isNeonSyphonClaimable,
+} from '../game/config/economy';
 import { getCarTier, getLeagueForTier } from '../game/config/carTiers';
 import {
   acceptMatchFromDatabase,
@@ -122,6 +128,7 @@ function TheStreetsHub({
             accentClass="border-danger-red/40 bg-danger-red/5 text-danger-red"
             onClick={onSelectSmugglersRun}
           />
+          <NeonSyphonCard />
         </div>
       )}
 
@@ -165,6 +172,94 @@ function ModeCard({ icon: Icon, title, subtitle, accentClass, locked, onClick }:
         </span>
       )}
     </motion.button>
+  );
+}
+
+/** Zero-pads and formats a countdown as HH:MM:SS — Neon Syphon's cooldown can run up to 24h,
+ * so unlike the Garage's energy-regen countdown (always under 5 minutes, MM:SS is enough) this
+ * needs the hours place too. */
+function formatSyphonCountdown(ms: number): string {
+  const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds
+    .toString()
+    .padStart(2, '0')}`;
+}
+
+/** The Streets' free, 24h-gated $NEON trickle — the one way a Free-to-Play player earns premium
+ * currency without racing or paying. Unlike the other two mode cards (which just navigate
+ * elsewhere), this one *is* the whole interaction: a live countdown while on cooldown, or a
+ * one-tap claim showing exactly what it pays out for the player's current carTier, right on the
+ * button — nothing to navigate into. */
+function NeonSyphonCard() {
+  const carTier = useGameStore((state) => state.carTier);
+  const lastNeonSyphonTime = useGameStore((state) => state.lastNeonSyphonTime);
+  const claimNeonSyphon = useGameStore((state) => state.claimNeonSyphon);
+
+  const [now, setNow] = useState(() => Date.now());
+  const [flash, setFlash] = useState<number | null>(null);
+
+  // The countdown needs a live clock of its own — nothing else on this screen ticks every
+  // second while sitting idle on the hub.
+  useEffect(() => {
+    const interval = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  const claimable = isNeonSyphonClaimable(lastNeonSyphonTime, now);
+  const reward = getNeonSyphonReward(carTier);
+  const msRemaining =
+    lastNeonSyphonTime === null ? 0 : NEON_SYPHON.COOLDOWN_MS - (now - lastNeonSyphonTime);
+
+  const handleClaim = () => {
+    const granted = claimNeonSyphon();
+    if (granted === null) return; // cooldown ticked over between render and click — no-op
+    setFlash(granted);
+    window.setTimeout(() => setFlash(null), 2000);
+  };
+
+  return (
+    <div className="rounded-xl border border-neon-cyan/40 bg-neon-cyan/5 p-4">
+      <div className="flex items-center gap-3">
+        <Radio className="h-8 w-8 shrink-0 text-neon-cyan" strokeWidth={1.75} />
+        <div className="min-w-0 flex-1">
+          <p className="font-display text-sm font-bold uppercase tracking-wide text-neon-cyan">
+            Neon Syphon
+          </p>
+          <p className="text-xs text-neutral-500">Passive Extraction</p>
+        </div>
+      </div>
+
+      <motion.button
+        type="button"
+        onClick={handleClaim}
+        disabled={!claimable}
+        whileHover={claimable ? { scale: 1.02 } : undefined}
+        whileTap={claimable ? { scale: 0.97 } : undefined}
+        className={`mt-3 w-full rounded-lg border-2 py-2.5 font-display text-sm font-black uppercase tracking-widest transition-colors disabled:cursor-not-allowed ${
+          claimable
+            ? 'border-neon-cyan bg-neon-cyan/15 text-neon-cyan shadow-[0_0_16px_rgba(0,240,255,0.35)]'
+            : 'border-neutral-700 bg-black/20 text-neutral-500'
+        }`}
+      >
+        {claimable ? `Claim ${reward} NEON` : `Available in ${formatSyphonCountdown(msRemaining)}`}
+      </motion.button>
+
+      <AnimatePresence>
+        {flash !== null && (
+          <motion.p
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="mt-2 text-center text-xs font-bold uppercase tracking-widest text-neon-cyan"
+          >
+            +{flash} NEON
+          </motion.p>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }
 

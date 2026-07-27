@@ -10,6 +10,8 @@ import {
   type DailyRewardTier,
   getBoostedScrapEarned,
   NEON_TO_SCRAP_RATE,
+  getNeonSyphonReward,
+  isNeonSyphonClaimable,
 } from '../config/economy';
 import { getPartTier, rollPartPerk, type PartPerk } from '../config/parts';
 import { CAR_TIERS, getCarTier, getUpgradeRequirement } from '../config/carTiers';
@@ -148,6 +150,10 @@ interface GameActions {
   /** Converts $NEON into Scrap at NEON_TO_SCRAP_RATE. Returns false without charging if the
    * player can't afford `neonAmount`. */
   exchangeNeonForScrap: (neonAmount: number) => boolean;
+  /** Claims Neon Syphon's free $NEON trickle if the 24h cooldown has elapsed (see
+   * isNeonSyphonClaimable), crediting getNeonSyphonReward(carTier) and resetting the cooldown.
+   * Returns the amount granted so the UI can show it, or null if the cooldown hasn't elapsed. */
+  claimNeonSyphon: () => number | null;
 }
 
 type GameStore = PlayerState & GameActions;
@@ -209,6 +215,7 @@ function createInitialPlayerState(): PlayerState {
     dailyRewardStreak: 0,
     lastDailyRewardClaim: null,
     boostEndsAt: null,
+    lastNeonSyphonTime: null,
   };
 }
 
@@ -642,6 +649,20 @@ export const useGameStore = create<GameStore>()(
         if (!get().spendNeon(neonAmount, `Exchange — ${neonAmount} NEON → Scrap`)) return false;
         set((state) => ({ scrap: state.scrap + neonAmount * NEON_TO_SCRAP_RATE }));
         return true;
+      },
+
+      claimNeonSyphon: () => {
+        const { lastNeonSyphonTime, carTier } = get();
+        const now = Date.now();
+        if (!isNeonSyphonClaimable(lastNeonSyphonTime, now)) return null;
+
+        const amount = getNeonSyphonReward(carTier);
+        set((state) => ({
+          lastNeonSyphonTime: now,
+          neon: state.neon + amount,
+          neonHistory: withNeonTransaction(state.neonHistory, 'Neon Syphon — Passive Extraction', amount),
+        }));
+        return amount;
       },
     }),
     {

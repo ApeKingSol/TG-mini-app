@@ -121,4 +121,8 @@ export interface PlayerState {
    * exact pattern existed once and was removed because it let a modified client grant itself
    * the boost without ever paying. */
   boostEndsAt: number | null;
+  /** Unix ms timestamp of the last "Neon Syphon" claim (The Streets' free, 24h-gated $NEON
+   * trickle), or null if this save has never claimed one. See NEON_SYPHON/
+   * isNeonSyphonClaimable/getNeonSyphonReward in economy.ts. */
+  lastNeonSyphonTime: number | null;
 }

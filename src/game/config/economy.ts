@@ -423,3 +423,28 @@ export const NEON_EXCHANGE_PACKAGES: readonly NeonExchangePackage[] = [
   { neon: 10, scrap: 10 * NEON_TO_SCRAP_RATE },
   { neon: 50, scrap: 50 * NEON_TO_SCRAP_RATE },
 ] as const;
+
+/** Tuning for "Neon Syphon" — The Streets' free, time-gated trickle of $NEON, there so a
+ * Free-to-Play player always has *some* way to earn premium currency without racing or paying,
+ * just a slow and strictly rate-limited one so it can never substitute for either. A flat 24h
+ * cooldown (not per-calendar-day) keeps it exactly once-per-24h regardless of what time of day
+ * the player claims at, same reasoning as DAILY_REWARD_CLAIM_WINDOW_HOURS above. */
+export const NEON_SYPHON = {
+  COOLDOWN_MS: 24 * 60 * 60 * 1000,
+} as const;
+
+/** The $NEON payout for one claim, scaled to the player's current Garage tier — Tier 1 nets 1
+ * $NEON, Tier 20 nets 11, a deliberately modest curve (never a substitute for racing/Overclock)
+ * that still gives high-tier progress *some* payoff here too. */
+export function getNeonSyphonReward(carTier: number): number {
+  return Math.floor(1 + carTier * 0.5);
+}
+
+/** Whether a claim is available right now — true for a player who has never claimed, or once
+ * NEON_SYPHON.COOLDOWN_MS have passed since lastNeonSyphonTime. Pure function of (lastClaim,
+ * now), same shape as isDailyRewardClaimable, so both the store action and the live countdown
+ * UI derive the exact same answer from the exact same rule. */
+export function isNeonSyphonClaimable(lastClaim: number | null, now: number): boolean {
+  if (lastClaim === null) return true;
+  return now - lastClaim >= NEON_SYPHON.COOLDOWN_MS;
+}
