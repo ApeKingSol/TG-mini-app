@@ -1,6 +1,7 @@
-import { motion } from 'framer-motion';
+import { useEffect, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { TonConnectButton, useTonAddress } from '@tonconnect/ui-react';
 import {
-  ArrowDownToLine,
   ArrowLeft,
   ArrowUpFromLine,
   Clock,
@@ -17,6 +18,9 @@ interface ProfileScreenProps {
   onSyncNow: () => void;
 }
 
+const WITHDRAW_LOCKED_MESSAGE =
+  'Withdrawals of $NEON will unlock after the official TGE (Token Generation Event). Stack your NEON now!';
+
 function formatTimestamp(timestamp: number): string {
   return new Date(timestamp).toLocaleString(undefined, {
     month: 'short',
@@ -30,6 +34,23 @@ export function ProfileScreen({ onBack, syncStatus, onSyncNow }: ProfileScreenPr
   const neon = useGameStore((state) => state.neon);
   const neonHistory = useGameStore((state) => state.neonHistory);
   const scrap = useGameStore((state) => state.scrap);
+  const setWalletAddress = useGameStore((state) => state.setWalletAddress);
+
+  const [message, setMessage] = useState<string | null>(null);
+
+  // TonConnectUIProvider (see main.tsx) owns the actual connection; this just mirrors its
+  // current address into the game store so the rest of the app (the Airdrop "Connect TON
+  // Wallet" quest, analytics) can read it without needing TonConnect's own hooks. Fires on
+  // every change, including disconnect (useTonAddress returns '' then) and switching wallets.
+  const walletAddress = useTonAddress();
+  useEffect(() => {
+    setWalletAddress(walletAddress || null);
+  }, [walletAddress, setWalletAddress]);
+
+  const handleWithdrawClick = () => {
+    setMessage(WITHDRAW_LOCKED_MESSAGE);
+    window.setTimeout(() => setMessage(null), 4000);
+  };
 
   return (
     <motion.div
@@ -64,9 +85,25 @@ export function ProfileScreen({ onBack, syncStatus, onSyncNow }: ProfileScreenPr
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <ActionCard icon={ArrowDownToLine} label="Deposit" />
-        <ActionCard icon={ArrowUpFromLine} label="Withdraw" />
+        <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-neon-cyan/40 bg-neon-cyan/5 p-4">
+          <p className="text-xs font-bold uppercase tracking-wide text-neon-cyan">TON Wallet</p>
+          <TonConnectButton />
+        </div>
+        <LockedActionButton icon={ArrowUpFromLine} label="Withdraw" onClick={handleWithdrawClick} />
       </div>
+
+      <AnimatePresence>
+        {message && (
+          <motion.p
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="rounded-lg border border-amber/40 bg-amber/10 px-3 py-2 text-center text-xs font-medium text-amber"
+          >
+            {message}
+          </motion.p>
+        )}
+      </AnimatePresence>
 
       <SyncStatusPanel status={syncStatus} localScrap={scrap} onSyncNow={onSyncNow} />
 
@@ -188,15 +225,28 @@ function SyncStatusPanel({ status, localScrap, onSyncNow }: SyncStatusPanelProps
   );
 }
 
-function ActionCard({ icon: Icon, label }: { icon: LucideIcon; label: string }) {
+interface LockedActionButtonProps {
+  icon: LucideIcon;
+  label: string;
+  onClick: () => void;
+}
+
+/** Still visually "locked" (matches the old Deposit/Withdraw ActionCard look) but genuinely
+ * clickable now — Withdraw needs to explain *why* it's locked (the TGE message), not just show
+ * a static "Soon" badge with nothing behind it. */
+function LockedActionButton({ icon: Icon, label, onClick }: LockedActionButtonProps) {
   return (
-    <div className="flex cursor-not-allowed flex-col items-center gap-2 rounded-xl border border-neutral-800 bg-bg-panel/60 p-4 opacity-60">
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex flex-col items-center gap-2 rounded-xl border border-neutral-800 bg-bg-panel/60 p-4 opacity-80 transition-opacity hover:opacity-100"
+    >
       <Icon className="h-6 w-6 text-neutral-400" strokeWidth={1.75} />
       <p className="text-xs font-bold uppercase tracking-wide text-neutral-400">{label}</p>
       <span className="flex items-center gap-1 rounded-full border border-neutral-700 bg-black/40 px-2 py-0.5 text-[10px] uppercase tracking-widest text-neutral-500">
         <Lock className="h-3 w-3" strokeWidth={2} />
         Soon
       </span>
-    </div>
+    </button>
   );
 }

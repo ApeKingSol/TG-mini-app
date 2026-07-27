@@ -448,3 +448,60 @@ export function isNeonSyphonClaimable(lastClaim: number | null, now: number): bo
   if (lastClaim === null) return true;
   return now - lastClaim >= NEON_SYPHON.COOLDOWN_MS;
 }
+
+/** One Airdrop quest — a one-time $NEON reward for hitting a specific, checkable milestone.
+ * Completion is derived (see isQuestComplete below), never stored directly, so it can never
+ * drift out of sync with the actual state it's checking; only *claiming* it is stored (see
+ * PlayerState.claimedQuests), since that's the one-time, irreversible part. */
+export interface QuestDefinition {
+  id: string;
+  title: string;
+  description: string;
+  neonReward: number;
+}
+
+export const QUESTS: readonly QuestDefinition[] = [
+  {
+    id: 'connect-wallet',
+    title: 'Connect TON Wallet',
+    description: 'Link a TON wallet from the Profile screen.',
+    neonReward: 10,
+  },
+  {
+    id: 'reach-tier-5',
+    title: 'Reach Tier 5 Car',
+    description: 'Trade in for a Tier 5 or higher car in the Garage.',
+    neonReward: 25,
+  },
+  {
+    id: 'win-10-races',
+    title: 'Win 10 Races',
+    description: "Win 10 races in Auto-Drag (Race vs Player or Syndicate Bot).",
+    neonReward: 50,
+  },
+] as const;
+
+/** Just the slice of PlayerState each quest's completion check actually needs — kept as its
+ * own small shape (rather than importing all of PlayerState here) so economy.ts stays a pure
+ * config/derivation module with no dependency on the store's own types. */
+export interface QuestProgress {
+  walletAddress: string | null;
+  carTier: number;
+  racesWon: number;
+}
+
+/** Whether a given quest's milestone has been reached — independent of whether it's already
+ * been claimed (see PlayerState.claimedQuests for that). Add a new `case` here whenever a quest
+ * is added to QUESTS above. */
+export function isQuestComplete(questId: string, progress: QuestProgress): boolean {
+  switch (questId) {
+    case 'connect-wallet':
+      return progress.walletAddress !== null;
+    case 'reach-tier-5':
+      return progress.carTier >= 5;
+    case 'win-10-races':
+      return progress.racesWon >= 10;
+    default:
+      return false;
+  }
+}

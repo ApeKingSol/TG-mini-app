@@ -42,6 +42,9 @@ const SIGNIFICANT_KEYS = [
   'dailyRewardStreak',
   'boostEndsAt',
   'lastNeonSyphonTime',
+  'walletAddress',
+  'racesWon',
+  'claimedQuests',
 ] as const satisfies readonly (keyof PlayerState)[];
 
 /** Surfaced to the Profile screen so sync problems are actually observable instead of a

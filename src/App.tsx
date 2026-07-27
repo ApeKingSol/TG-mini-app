@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { ProfileAvatarButton } from './components/ProfileAvatarButton';
+import { AirdropEntryButton } from './components/AirdropEntryButton';
 import { ScreenBackground } from './components/ScreenBackground';
 import { useGameLoop } from './hooks/useGameLoop';
 import { useTelegram } from './hooks/useTelegram';
@@ -12,6 +13,8 @@ import { JunkyardScreen } from './screens/JunkyardScreen';
 import { GarageScreen } from './screens/GarageScreen';
 import { RaceScreen } from './screens/RaceScreen';
 import { ProfileScreen } from './screens/ProfileScreen';
+import { AirdropScreen } from './screens/AirdropScreen';
+import { trackAppOpened } from './utils/analytics';
 
 function App() {
   // Drives passive Scrap generation in the background; store stays a pure state container.
@@ -20,10 +23,15 @@ function App() {
   const cloudSync = useCloudSync();
   const { isTelegram, userFirstName, userPhotoUrl } = useTelegram();
   const [activeScreen, setActiveScreen] = useState<ScreenId>('garage');
-  // The Profile screen lives outside the tab system (reached via the header button, not the
-  // bottom nav) — tracking it separately means returning from it lands back on whatever tab
-  // was active, instead of needing its own ScreenId in the nav.
+  // The Profile and Airdrop screens both live outside the tab system (reached via header
+  // buttons, not the bottom nav) — tracking them separately means returning from either lands
+  // back on whatever tab was active, instead of needing their own ScreenId in the nav.
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isAirdropOpen, setIsAirdropOpen] = useState(false);
+
+  useEffect(() => {
+    trackAppOpened();
+  }, []);
 
   return (
     <div className="flex min-h-screen flex-col bg-cyber-grid">
@@ -44,6 +52,7 @@ function App() {
              and being later in the DOM it painted on top, swallowing every tap even though
              the button itself was never broken. A real (non-auto) z-index wins regardless of
              DOM order or sibling filters. */}
+          <AirdropEntryButton onClick={() => setIsAirdropOpen(true)} />
           <ProfileAvatarButton photoUrl={userPhotoUrl} onClick={() => setIsProfileOpen(true)} />
           <p className="px-11 font-mono text-[9px] uppercase tracking-[0.2em] text-amber/70">
             Sys.Online // Uplink: Stable
@@ -69,6 +78,8 @@ function App() {
                 syncStatus={cloudSync.status}
                 onSyncNow={cloudSync.syncNow}
               />
+            ) : isAirdropOpen ? (
+              <AirdropScreen key="airdrop" onBack={() => setIsAirdropOpen(false)} />
             ) : (
               <>
                 {activeScreen === 'junkyard' && <JunkyardScreen key="junkyard" />}
@@ -80,7 +91,9 @@ function App() {
         </main>
       </div>
 
-      {!isProfileOpen && <BottomNav active={activeScreen} onChange={setActiveScreen} />}
+      {!isProfileOpen && !isAirdropOpen && (
+        <BottomNav active={activeScreen} onChange={setActiveScreen} />
+      )}
     </div>
   );
 }

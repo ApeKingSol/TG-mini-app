@@ -125,4 +125,18 @@ export interface PlayerState {
    * trickle), or null if this save has never claimed one. See NEON_SYPHON/
    * isNeonSyphonClaimable/getNeonSyphonReward in economy.ts. */
   lastNeonSyphonTime: number | null;
+  /** The connected TON wallet's user-friendly address (from @tonconnect/ui-react's
+   * useTonAddress), or null if none is connected. Kept in sync from ProfileScreen.tsx, not
+   * itself the source of truth for the connection (TonConnectUIProvider's own storage is) —
+   * this is just a mirror so the rest of the app (the "Connect TON Wallet" Airdrop quest,
+   * analytics) can read it without needing TonConnect's hooks directly. */
+  walletAddress: string | null;
+  /** Total races won across Auto-Drag (Race vs Player and Syndicate Bot both count) — drives
+   * the "Win 10 Races" Airdrop quest. Never decremented. */
+  racesWon: number;
+  /** ids (see QUESTS in economy.ts) of Airdrop quests whose one-time $NEON reward has already
+   * been claimed — a completed-but-unclaimed quest is still claimable exactly once; anything in
+   * this array never pays out again regardless of whether its underlying condition is still
+   * true. */
+  claimedQuests: string[];
 }

@@ -352,6 +352,7 @@ function AutoDragRace({ onExit }: AutoDragRaceProps) {
   const installedUpgrades = useGameStore((state) => state.installedUpgrades);
   const spendNeon = useGameStore((state) => state.spendNeon);
   const addNeon = useGameStore((state) => state.addNeon);
+  const recordRaceResult = useGameStore((state) => state.recordRaceResult);
 
   const stats = getCarStats(carTier, installedUpgrades);
   const playerCarImage = getCarTier(carTier).image;
@@ -645,6 +646,7 @@ function AutoDragRace({ onExit }: AutoDragRaceProps) {
         setWinner(finalWinner);
         setRaceState('finished');
         if (finalWinner === 'player') addNeon(netPayout, `Auto-Drag — Win (${raceMode})`);
+        recordRaceResult(finalWinner === 'player' ? 'win' : 'loss');
         return;
       }
 

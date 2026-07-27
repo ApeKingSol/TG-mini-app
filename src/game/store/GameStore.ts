@@ -12,10 +12,17 @@ import {
   NEON_TO_SCRAP_RATE,
   getNeonSyphonReward,
   isNeonSyphonClaimable,
+  QUESTS,
+  isQuestComplete,
 } from '../config/economy';
 import { getPartTier, rollPartPerk, type PartPerk } from '../config/parts';
 import { CAR_TIERS, getCarTier, getUpgradeRequirement } from '../config/carTiers';
 import type { CarState, NeonTransaction, Part, PlayerState, Upgrade } from '../types';
+import {
+  trackWalletConnected,
+  trackCarUpgraded,
+  trackRacePlayed,
+} from '../../utils/analytics';
 
 const LEGACY_STORAGE_KEY = 'cyber-garage-save';
 
@@ -154,6 +161,19 @@ interface GameActions {
    * isNeonSyphonClaimable), crediting getNeonSyphonReward(carTier) and resetting the cooldown.
    * Returns the amount granted so the UI can show it, or null if the cooldown hasn't elapsed. */
   claimNeonSyphon: () => number | null;
+  /** Mirrors the connected TON wallet's address (from ProfileScreen.tsx's useTonAddress), or
+   * clears it back to null on disconnect. Fires trackWalletConnected on every non-null address
+   * change (including switching wallets) — never on disconnect or on re-runs with the same
+   * address, so this can safely be called from a plain effect without its own debouncing. */
+  setWalletAddress: (address: string | null) => void;
+  /** Records one Auto-Drag race's outcome: increments racesWon on a win (driving the "Win 10
+   * Races" Airdrop quest), and reports trackRacePlayed either way. Call this once per resolved
+   * race, from wherever a race's winner is decided (see RaceScreen.tsx). */
+  recordRaceResult: (result: 'win' | 'loss') => void;
+  /** Claims one Airdrop quest's one-time $NEON reward. Returns false without crediting anything
+   * if the quest id is unknown, its milestone isn't actually met yet (see isQuestComplete), or
+   * it's already in claimedQuests. */
+  claimQuest: (questId: string) => boolean;
 }
 
 type GameStore = PlayerState & GameActions;
@@ -216,6 +236,9 @@ function createInitialPlayerState(): PlayerState {
     lastDailyRewardClaim: null,
     boostEndsAt: null,
     lastNeonSyphonTime: null,
+    walletAddress: null,
+    racesWon: 0,
+    claimedQuests: [],
   };
 }
 
@@ -531,13 +554,15 @@ export const useGameStore = create<GameStore>()(
         const { installedUpgrades, carTier } = get();
         if (installedUpgrades.length < getUpgradeRequirement(carTier)) return;
 
+        const newTier = carTier + 1;
         set((state) => ({
           installedUpgrades: [],
           partsPurchased: 0,
-          carTier: state.carTier + 1,
-          car: { ...state.car, name: getCarTier(carTier + 1).name },
+          carTier: newTier,
+          car: { ...state.car, name: getCarTier(newTier).name },
           scrapPerSecond: state.scrapPerSecond * (1 + ECONOMY.TRADE_IN_SCRAP_PER_SECOND_GROWTH),
         }));
+        trackCarUpgraded(newTier);
       },
 
       debugPreviewNextCar: () => {
@@ -663,6 +688,39 @@ export const useGameStore = create<GameStore>()(
           neonHistory: withNeonTransaction(state.neonHistory, 'Neon Syphon — Passive Extraction', amount),
         }));
         return amount;
+      },
+
+      setWalletAddress: (address) => {
+        const previous = get().walletAddress;
+        set({ walletAddress: address });
+        if (address !== null && address !== previous) trackWalletConnected(address);
+      },
+
+      recordRaceResult: (result) => {
+        if (result === 'win') {
+          set((state) => ({ racesWon: state.racesWon + 1 }));
+        }
+        trackRacePlayed(result);
+      },
+
+      claimQuest: (questId) => {
+        const { claimedQuests, walletAddress, carTier, racesWon } = get();
+        if (claimedQuests.includes(questId)) return false;
+
+        const quest = QUESTS.find((q) => q.id === questId);
+        if (!quest) return false;
+        if (!isQuestComplete(questId, { walletAddress, carTier, racesWon })) return false;
+
+        set((state) => ({
+          claimedQuests: [...state.claimedQuests, questId],
+          neon: state.neon + quest.neonReward,
+          neonHistory: withNeonTransaction(
+            state.neonHistory,
+            `Airdrop Quest — ${quest.title}`,
+            quest.neonReward,
+          ),
+        }));
+        return true;
       },
     }),
     {
