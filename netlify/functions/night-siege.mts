@@ -99,6 +99,51 @@ function isBossExpired(record: BossRecord, now: number): boolean {
   return record.currentHp > 0 && now > record.bossExpiresAt;
 }
 
+/** Ensures a valid (non-expired-while-alive) boss record exists for `syndicateId` and returns
+ * it — lazily creating one the very first time any member ever asks about it, or replacing one
+ * that's expired while still standing. Every write here is conditional (`onlyIfNew` for a
+ * brand-new record, `onlyIfMatch` the just-read etag for an expired-record replacement), so a
+ * read that transiently doesn't see an already-existing record can never clobber real,
+ * in-progress raid data with a brand new one.
+ *
+ * This replaces a previous version of handleGet that called `bosses.setJSON(syndicateId, fresh)`
+ * with no CAS guard at all whenever its own read looked missing/expired — on a brand-new
+ * Syndicate that's still settling (or under any transient read hiccup), that unconditional
+ * write could re-fire on every single poll, each time stamping a *new* `bossExpiresAt` 72h out
+ * from *that* moment — which is exactly what made the countdown look like it was perpetually
+ * resetting back to ~72:00:00 instead of counting down, and, since it's the same object, would
+ * have reset the boss's HP right along with it. */
+async function getOrCreateBoss(
+  syndicateId: string,
+  bosses: ReturnType<typeof getStore>,
+): Promise<BossRecord> {
+  for (let attempt = 0; attempt < MAX_WRITE_RETRIES; attempt++) {
+    const existing = await bosses.getWithMetadata(syndicateId, { type: 'json' });
+    const now = Date.now();
+
+    if (!existing) {
+      const fresh = createFreshBoss(syndicateId, now);
+      const result = await bosses.setJSON(syndicateId, fresh, { onlyIfNew: true });
+      if (result.modified) return fresh;
+      continue; // someone else created it between our read and write — retry, we'll see it now
+    }
+
+    const record = normalizeBossRecord(existing.data as BossRecord, now);
+    if (!isBossExpired(record, now)) return record;
+
+    const fresh = createFreshBoss(syndicateId, now);
+    const result = await bosses.setJSON(syndicateId, fresh, { onlyIfMatch: existing.etag });
+    if (result.modified) return fresh;
+    // etag mismatch — someone else already reset/attacked it since our read; retry against
+    // whatever they wrote.
+  }
+  // Every retry lost the race (highly unlikely) — fall back to a plain read rather than error
+  // out a read-only GET; the next poll will retry persistence if this still comes up empty.
+  const fallback = (await bosses.get(syndicateId, { type: 'json' })) as BossRecord | null;
+  const now = Date.now();
+  return fallback ? normalizeBossRecord(fallback, now) : createFreshBoss(syndicateId, now);
+}
+
 /** Every response goes through here specifically so no-cache headers can never be forgotten on
  * a new branch — see syndicates.mts's identical helper for the full reasoning (a cached "Convoy
  * still at X HP" GET response would be indistinguishable from real Blobs eventual-consistency
@@ -145,11 +190,11 @@ async function getNextAttackAvailableAt(
   return Number(record.lastAttackAt) + NIGHT_SIEGE.ATTACK_COOLDOWN_MS;
 }
 
-/** GET `?syndicateId=X` — the Convoy's current shared HP for that Syndicate, lazily spawning a
- * fresh full-HP boss the first time any member ever asks about it, or the moment an existing
- * one is found to have expired (still alive past its bossExpiresAt) — this is a best-effort,
- * non-CAS reset purely for the read path; the write-path handlers below (submit-damage, claim,
- * spawn-next) each re-check expiry against their own freshly-read etag before mutating. */
+/** GET `?syndicateId=X` — the Convoy's current shared HP for that Syndicate, via
+ * getOrCreateBoss (lazily spawning a fresh full-HP boss the first time any member ever asks
+ * about it, or the moment an existing one is found to have expired — both paths CAS-guarded,
+ * so this can never clobber an already-persisted boss just because this particular read raced
+ * with it). */
 async function handleGet(
   req: Request,
   bosses: ReturnType<typeof getStore>,
@@ -165,15 +210,7 @@ async function handleGet(
     return jsonResponse({ error: 'You are not a member of this Syndicate.' }, 403);
   }
 
-  const now = Date.now();
-  const raw = (await bosses.get(syndicateId, { type: 'json' })) as BossRecord | null;
-  let record = raw ? normalizeBossRecord(raw, now) : null;
-  if (!record || isBossExpired(record, now)) {
-    const fresh = createFreshBoss(syndicateId, now);
-    await bosses.setJSON(syndicateId, fresh);
-    record = fresh;
-  }
-
+  const record = await getOrCreateBoss(syndicateId, bosses);
   const nextAttackAvailableAt = await getNextAttackAvailableAt(user.id, cooldowns);
   return jsonResponse(toPublicStatus(record, user.id, nextAttackAvailableAt));
 }
