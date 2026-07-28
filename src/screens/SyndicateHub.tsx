@@ -23,16 +23,11 @@ import {
   promoteMember,
   type Syndicate,
 } from '../game/mock/syndicateApi';
-import { fetchConvoyStatus } from '../game/mock/siegeApi';
 import { NightSiege } from './NightSiege';
 
 const CREATE_COST_NEON = 1000;
 const NAME_MAX_LENGTH = 20;
 const TAG_MAX_LENGTH = 4;
-/** How often the roster's per-member damage column re-polls the shared boss status — a bit
- * less aggressive than NightSiege.tsx's own 5s HP-bar poll, since this is a secondary display
- * rather than the primary combat readout. */
-const DAMAGE_LOG_POLL_INTERVAL_MS = 8000;
 
 type SyndicateView = 'menu' | 'create' | 'join' | 'active';
 
@@ -424,24 +419,12 @@ function ActiveScreen({ syndicate, onLeft, onSyndicateUpdate }: ActiveScreenProp
   const [isLeaving, setIsLeaving] = useState(false);
   const [actioningId, setActioningId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  // Fed by NightSiege.tsx's own onDamageLogUpdate callback (it already polls the shared boss
+  // status every 5s for its own HP bar) rather than this component running a second, redundant
+  // poller against the same endpoint — fewer concurrent requests against the same boss record
+  // means less chance of the exact kind of read/write race that made the expiry countdown
+  // misbehave before.
   const [damageLog, setDamageLog] = useState<Record<string, number>>({});
-
-  // A second, independent poll of the same boss-status endpoint NightSiege.tsx already calls —
-  // this component only needs `damageLog` out of it (for the roster below), not the full combat
-  // UI, so it keeps its own small effect rather than lifting all of NightSiege's state up here.
-  useEffect(() => {
-    const pollDamageLog = () => {
-      fetchConvoyStatus(syndicate.id)
-        // `?? {}` guards against a boss record that predates damageLog — the backend now
-        // backfills this itself too, but the render below should never trust a network
-        // response's shape unconditionally.
-        .then((status) => setDamageLog(status.damageLog ?? {}))
-        .catch(() => {});
-    };
-    pollDamageLog();
-    const intervalId = window.setInterval(pollDamageLog, DAMAGE_LOG_POLL_INTERVAL_MS);
-    return () => window.clearInterval(intervalId);
-  }, [syndicate.id]);
 
   // `?? []` guards against a Syndicate created before Co-Leader roles existed — the backend
   // now backfills coLeaderIds itself too (see normalizeSyndicateRecord in syndicates.mts), but
@@ -546,7 +529,7 @@ function ActiveScreen({ syndicate, onLeft, onSyndicateUpdate }: ActiveScreenProp
         </p>
       )}
 
-      <NightSiege syndicateId={syndicate.id} />
+      <NightSiege syndicateId={syndicate.id} myRole={myRole} onDamageLogUpdate={setDamageLog} />
 
       <button
         type="button"

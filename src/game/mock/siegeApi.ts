@@ -14,10 +14,10 @@ export interface ConvoyStatus {
   bossId: string;
   maxHp: number;
   currentHp: number;
-  /** Whether *this* account has already claimed NIGHT_SIEGE.REWARD_NEON for this specific
-   * bossId — computed server-side from the boss record's own `claimedBy` list, the actual
-   * source of truth (see NightSiege.tsx's use of PlayerState.lastClaimedBossId for the fast
-   * local mirror this backs up). */
+  /** Whether *this* account has already claimed its tiered $NEON reward (see
+   * getNightSiegeReward in economy.ts) for this specific bossId — computed server-side from the
+   * boss record's own `claimedBy` list, the actual source of truth (see NightSiege.tsx's use of
+   * PlayerState.lastClaimedBossId for the fast local mirror this backs up). */
   alreadyClaimed: boolean;
   /** Unix ms timestamp this Convoy auto-resets at if it's still alive — see
    * NIGHT_SIEGE.BOSS_LIFETIME_MS in economy.ts. */
@@ -29,6 +29,10 @@ export interface ConvoyStatus {
   /** userId -> total damage dealt to this specific boss — a shared raid stat (same visibility
    * as a leaderboard), rendered next to each member's name in SyndicateHub.tsx's roster. */
   damageLog: Record<string, number>;
+  /** Whether a Leader or Co-Leader has landed the opening strike on this specific boss yet — a
+   * regular member's own attack is rejected server-side until this is true (see
+   * night-siege.mts's handleSubmitDamage); a Leader/Co-Leader's own strike sets it. */
+  isDeclared: boolean;
 }
 
 export interface ClaimResult {

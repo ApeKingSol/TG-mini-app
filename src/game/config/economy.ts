@@ -324,11 +324,32 @@ export const NIGHT_SIEGE = {
    * legitimate max-tier hit; it only exists to stop a tampered client claiming an impossibly
    * high carTier from doing unbounded damage in one call. */
   MAX_HIT_DAMAGE: 300_000,
-  /** Flat $NEON reward every current Syndicate member can claim, once each, after the shared
-   * boss's HP reaches 0 — see netlify/functions/night-siege.mts's `claimedBy` tracking for how
-   * "once each" is enforced server-side. */
-  REWARD_NEON: 100,
+  /** $NEON reward for the Leader once the shared boss's HP reaches 0 — see
+   * netlify/functions/night-siege.mts's `claimedBy` tracking for how "once per account" is
+   * enforced server-side, and getNightSiegeReward below for how a claimant's role picks which
+   * of these three tiers applies. Highest tier: the Leader carries the most accountability for
+   * organizing the raid. */
+  REWARD_NEON_LEADER: 250,
+  /** $NEON reward for a Co-Leader on the same kill. */
+  REWARD_NEON_CO_LEADER: 150,
+  /** $NEON reward for a regular member on the same kill — still a solid cut for
+   * participating, just not the top tier. */
+  REWARD_NEON_MEMBER: 75,
 } as const;
+
+/** A player's standing within their Syndicate — mirrors SyndicateHub.tsx's own `MyRole` type
+ * (kept as a separate, independently-defined 3-value union there rather than importing this,
+ * matching this codebase's convention of small local type duplication over a shared brittle
+ * common-types module) and night-siege.mts's own server-side copy of the same 3 strings. */
+export type SyndicateRole = 'leader' | 'co-leader' | 'member';
+
+/** The $NEON reward for a boss kill, tiered by the claimant's role within the Syndicate — see
+ * NIGHT_SIEGE.REWARD_NEON_LEADER/CO_LEADER/MEMBER's own doc comments for why these differ. */
+export function getNightSiegeReward(role: SyndicateRole): number {
+  if (role === 'leader') return NIGHT_SIEGE.REWARD_NEON_LEADER;
+  if (role === 'co-leader') return NIGHT_SIEGE.REWARD_NEON_CO_LEADER;
+  return NIGHT_SIEGE.REWARD_NEON_MEMBER;
+}
 
 /** Whether this player's attack cooldown has elapsed — true if they've never attacked, or
  * NIGHT_SIEGE.ATTACK_COOLDOWN_MS have passed since lastAttackTime. Pure function of
