@@ -139,4 +139,10 @@ export interface PlayerState {
    * this array never pays out again regardless of whether its underlying condition is still
    * true. */
   claimedQuests: string[];
+  /** The Night Siege bossId (see netlify/functions/night-siege.mts) whose flat
+   * NIGHT_SIEGE.REWARD_NEON payout this save has already claimed, or null if none yet. Only
+   * ever the *most recent* claimed boss — a fast local mirror of the server's authoritative
+   * `claimedBy` list for that boss, purely so the UI can show "Claimed" instantly without a
+   * round trip; the server is what actually prevents a double-claim, not this field. */
+  lastClaimedBossId: string | null;
 }

@@ -1,10 +1,20 @@
 import type { Context } from '@netlify/functions';
 import { getStore } from '@netlify/blobs';
-import { extractInitData, verifyInitData } from './_shared/verifyInitData';
+import { extractInitData, verifyInitData, type VerifiedTelegramUser } from './_shared/verifyInitData';
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const DEFAULT_MAX_MEMBERS = 50;
 const MAX_WRITE_RETRIES = 5;
+
+/** One roster entry as the frontend renders it (src/game/mock/syndicateApi.ts) — `isLeader`/
+ * `isCoLeader` are derived here, at read time, from `leaderId`/`coLeaderIds` rather than stored
+ * per-member, so they can never drift out of sync with the source of truth. */
+interface SyndicateMember {
+  id: string;
+  name: string;
+  isLeader: boolean;
+  isCoLeader: boolean;
+}
 
 /** The public shape the frontend already knows how to render (src/game/mock/syndicateApi.ts) —
  * `membersCount` is always derived from `memberIds.length` at read time, never stored
@@ -16,17 +26,25 @@ interface Syndicate {
   membersCount: number;
   maxMembers: number;
   leaderId: string;
+  coLeaderIds: string[];
+  members: SyndicateMember[];
 }
 
-/** The full record as actually stored — `memberIds` is the source of truth `membersCount` is
- * derived from; it never leaves this file. */
+/** The full record as actually stored — `memberIds`/`coLeaderIds` are the source of truth
+ * `membersCount`/`members[].isCoLeader` are derived from; it never leaves this file.
+ * `memberNames` is a simple id -> display name mirror, populated from each member's own
+ * verified initData the moment they create/join, purely so the roster UI has something
+ * readable to show — Blobs has no join across stores, so this is cheaper than fetching each
+ * member's own save just to read a name. */
 interface StoredSyndicate {
   id: string;
   name: string;
   tag: string;
   memberIds: string[];
+  memberNames: Record<string, string>;
   maxMembers: number;
   leaderId: string;
+  coLeaderIds: string[];
 }
 
 function toPublicSyndicate(record: StoredSyndicate): Syndicate {
@@ -37,6 +55,13 @@ function toPublicSyndicate(record: StoredSyndicate): Syndicate {
     membersCount: record.memberIds.length,
     maxMembers: record.maxMembers,
     leaderId: record.leaderId,
+    coLeaderIds: record.coLeaderIds,
+    members: record.memberIds.map((id) => ({
+      id,
+      name: record.memberNames[id] ?? `Runner #${id.slice(-4)}`,
+      isLeader: id === record.leaderId,
+      isCoLeader: record.coLeaderIds.includes(id),
+    })),
   };
 }
 
@@ -74,14 +99,16 @@ async function handleGet(req: Request, syndicates: ReturnType<typeof getStore>, 
     const syndicateId = await membership.get(membershipKey(user.id), { type: 'text' });
     if (!syndicateId) return jsonResponse({ syndicate: null });
 
-    const record = await syndicates.get(syndicateId, { type: 'json' });
-    if (!record) {
-      // The membership pointer outlived the Syndicate it pointed to — self-heal rather than
-      // get the caller permanently stuck believing they're in a Syndicate that's gone.
+    const record = (await syndicates.get(syndicateId, { type: 'json' })) as StoredSyndicate | null;
+    if (!record || !record.memberIds.includes(user.id)) {
+      // The membership pointer outlived the Syndicate it pointed to (deleted outright, or —
+      // now that kicking exists — this account was removed from it by someone else) —
+      // self-heal rather than leave the caller permanently stuck believing they're in a
+      // Syndicate they're no longer actually part of.
       await membership.delete(membershipKey(user.id));
       return jsonResponse({ syndicate: null });
     }
-    return jsonResponse({ syndicate: toPublicSyndicate(record as StoredSyndicate) });
+    return jsonResponse({ syndicate: toPublicSyndicate(record) });
   }
 
   const { blobs } = await syndicates.list();
@@ -107,10 +134,20 @@ interface LeaveBody {
   action: 'leave';
   initData?: unknown;
 }
-type PostBody = CreateBody | JoinBody | LeaveBody;
+interface PromoteBody {
+  action: 'promote';
+  initData?: unknown;
+  targetUserId?: unknown;
+}
+interface KickBody {
+  action: 'kick';
+  initData?: unknown;
+  targetUserId?: unknown;
+}
+type PostBody = CreateBody | JoinBody | LeaveBody | PromoteBody | KickBody;
 
 async function handleCreate(
-  user: { id: string },
+  user: VerifiedTelegramUser,
   body: CreateBody,
   syndicates: ReturnType<typeof getStore>,
   membership: ReturnType<typeof getStore>,
@@ -127,8 +164,10 @@ async function handleCreate(
     name,
     tag,
     memberIds: [user.id],
+    memberNames: { [user.id]: user.firstName },
     maxMembers: DEFAULT_MAX_MEMBERS,
     leaderId: user.id,
+    coLeaderIds: [],
   };
 
   const reserved = await membership.set(membershipKey(user.id), record.id, { onlyIfNew: true });
@@ -141,7 +180,7 @@ async function handleCreate(
 }
 
 async function handleJoin(
-  user: { id: string },
+  user: VerifiedTelegramUser,
   body: JoinBody,
   syndicates: ReturnType<typeof getStore>,
   membership: ReturnType<typeof getStore>,
@@ -176,7 +215,11 @@ async function handleJoin(
       return jsonResponse({ error: 'This Syndicate is full.' }, 409);
     }
 
-    const updated: StoredSyndicate = { ...record, memberIds: [...record.memberIds, user.id] };
+    const updated: StoredSyndicate = {
+      ...record,
+      memberIds: [...record.memberIds, user.id],
+      memberNames: { ...record.memberNames, [user.id]: user.firstName },
+    };
     const result = await syndicates.setJSON(syndicateId, updated, { onlyIfMatch: existing.etag });
     if (result.modified) return jsonResponse(toPublicSyndicate(updated));
     // etag mismatch — someone else wrote to this Syndicate between our read and write; retry.
@@ -186,30 +229,145 @@ async function handleJoin(
   return jsonResponse({ error: 'Could not join — please try again.' }, 409);
 }
 
+/** Removes `targetId` from a Syndicate's memberIds/coLeaderIds/memberNames, retrying on
+ * concurrent-write conflicts via etag — shared by handleLeave (removing yourself) and
+ * handleKick (removing someone else) so both paths apply the exact same auto-delete-when-
+ * empty rule. Returns the updated record on success, the literal string `'deleted'` if removing
+ * this member emptied the Syndicate and its record was deleted outright (so no ghost Syndicate
+ * with zero members lingers in the store/server-browser forever), or `null` if the Syndicate
+ * was already gone or every retry lost the race. */
+async function removeMember(
+  syndicateId: string,
+  targetId: string,
+  syndicates: ReturnType<typeof getStore>,
+): Promise<StoredSyndicate | 'deleted' | null> {
+  for (let attempt = 0; attempt < MAX_WRITE_RETRIES; attempt++) {
+    const existing = await syndicates.getWithMetadata(syndicateId, { type: 'json' });
+    if (!existing) return null;
+
+    const record = existing.data as StoredSyndicate;
+    const memberIds = record.memberIds.filter((id) => id !== targetId);
+
+    if (memberIds.length === 0) {
+      await syndicates.delete(syndicateId);
+      return 'deleted';
+    }
+
+    const coLeaderIds = record.coLeaderIds.filter((id) => id !== targetId);
+    const memberNames = { ...record.memberNames };
+    delete memberNames[targetId];
+
+    const updated: StoredSyndicate = { ...record, memberIds, coLeaderIds, memberNames };
+    const result = await syndicates.setJSON(syndicateId, updated, { onlyIfMatch: existing.etag });
+    if (result.modified) return updated;
+    // etag mismatch — retry against the freshest record.
+  }
+  return null;
+}
+
 async function handleLeave(
-  user: { id: string },
+  user: VerifiedTelegramUser,
   syndicates: ReturnType<typeof getStore>,
   membership: ReturnType<typeof getStore>,
 ): Promise<Response> {
   const syndicateId = await membership.get(membershipKey(user.id), { type: 'text' });
   if (!syndicateId) return jsonResponse({ ok: true }); // not in one — no-op, not an error
 
+  await removeMember(syndicateId, user.id, syndicates);
+  await membership.delete(membershipKey(user.id));
+  return jsonResponse({ ok: true });
+}
+
+async function handlePromote(
+  user: VerifiedTelegramUser,
+  body: PromoteBody,
+  syndicates: ReturnType<typeof getStore>,
+  membership: ReturnType<typeof getStore>,
+): Promise<Response> {
+  const targetUserId = typeof body.targetUserId === 'string' ? body.targetUserId : '';
+  if (!targetUserId) return jsonResponse({ error: 'targetUserId is required.' }, 400);
+  if (targetUserId === user.id) {
+    return jsonResponse({ error: 'You cannot promote yourself.' }, 400);
+  }
+
+  const syndicateId = await membership.get(membershipKey(user.id), { type: 'text' });
+  if (!syndicateId) return jsonResponse({ error: 'You are not in a Syndicate.' }, 400);
+
   for (let attempt = 0; attempt < MAX_WRITE_RETRIES; attempt++) {
     const existing = await syndicates.getWithMetadata(syndicateId, { type: 'json' });
-    if (!existing) break; // already gone — just clear the pointer below
+    if (!existing) return jsonResponse({ error: 'This Syndicate no longer exists.' }, 404);
 
     const record = existing.data as StoredSyndicate;
-    const updated: StoredSyndicate = {
-      ...record,
-      memberIds: record.memberIds.filter((id) => id !== user.id),
-    };
+    // Only the Leader can promote — a Co-Leader is a Deputy, not someone who can appoint
+    // more of themselves.
+    if (record.leaderId !== user.id) {
+      return jsonResponse({ error: 'Only the Leader can promote members.' }, 403);
+    }
+    if (!record.memberIds.includes(targetUserId)) {
+      return jsonResponse({ error: 'That player is not a member of this Syndicate.' }, 400);
+    }
+    if (record.coLeaderIds.includes(targetUserId)) {
+      return jsonResponse({ error: 'That player is already a Co-Leader.' }, 400);
+    }
+
+    const updated: StoredSyndicate = { ...record, coLeaderIds: [...record.coLeaderIds, targetUserId] };
     const result = await syndicates.setJSON(syndicateId, updated, { onlyIfMatch: existing.etag });
-    if (result.modified) break;
+    if (result.modified) return jsonResponse(toPublicSyndicate(updated));
     // etag mismatch — retry against the freshest record.
   }
 
-  await membership.delete(membershipKey(user.id));
-  return jsonResponse({ ok: true });
+  return jsonResponse({ error: 'Could not promote — please try again.' }, 409);
+}
+
+async function handleKick(
+  user: VerifiedTelegramUser,
+  body: KickBody,
+  syndicates: ReturnType<typeof getStore>,
+  membership: ReturnType<typeof getStore>,
+): Promise<Response> {
+  const targetUserId = typeof body.targetUserId === 'string' ? body.targetUserId : '';
+  if (!targetUserId) return jsonResponse({ error: 'targetUserId is required.' }, 400);
+  if (targetUserId === user.id) {
+    return jsonResponse({ error: 'You cannot kick yourself — use Leave instead.' }, 400);
+  }
+
+  const syndicateId = await membership.get(membershipKey(user.id), { type: 'text' });
+  if (!syndicateId) return jsonResponse({ error: 'You are not in a Syndicate.' }, 400);
+
+  // A plain (non-CAS) read purely to decide whether the actor is even allowed to kick this
+  // target — removeMember() below re-reads the record fresh (with its own CAS/etag retry
+  // loop) for the actual mutation, so a race between this check and the real write can never
+  // let a stale permission decision stick; worst case this whole request just needs a retry.
+  const current = (await syndicates.get(syndicateId, { type: 'json' })) as StoredSyndicate | null;
+  if (!current) return jsonResponse({ error: 'This Syndicate no longer exists.' }, 404);
+  if (!current.memberIds.includes(targetUserId)) {
+    return jsonResponse({ error: 'That player is not a member of this Syndicate.' }, 400);
+  }
+
+  const isLeader = current.leaderId === user.id;
+  const isCoLeader = current.coLeaderIds.includes(user.id);
+  if (!isLeader && !isCoLeader) {
+    return jsonResponse({ error: 'Only the Leader or a Co-Leader can kick members.' }, 403);
+  }
+  if (targetUserId === current.leaderId) {
+    return jsonResponse({ error: 'The Leader cannot be kicked.' }, 403);
+  }
+  // The Leader can kick anyone else, including a Co-Leader. A Co-Leader can only kick a
+  // regular member — not another Co-Leader, and (per the check above) never the Leader.
+  if (!isLeader && current.coLeaderIds.includes(targetUserId)) {
+    return jsonResponse({ error: 'A Co-Leader cannot kick another Co-Leader.' }, 403);
+  }
+
+  const result = await removeMember(syndicateId, targetUserId, syndicates);
+  if (result === null) return jsonResponse({ error: 'Could not kick — please try again.' }, 409);
+
+  // Clear the kicked player's own membership pointer too — otherwise their own next `?mine=1`
+  // check would still resolve via the self-heal path above, but only after one extra round
+  // trip; clearing it here is just as correct and saves that trip.
+  await membership.delete(membershipKey(targetUserId));
+
+  if (result === 'deleted') return jsonResponse({ ok: true, syndicate: null });
+  return jsonResponse({ ok: true, syndicate: toPublicSyndicate(result) });
 }
 
 async function handlePost(
@@ -235,8 +393,12 @@ async function handlePost(
       return handleJoin(user, payload as JoinBody, syndicates, membership);
     case 'leave':
       return handleLeave(user, syndicates, membership);
+    case 'promote':
+      return handlePromote(user, payload as PromoteBody, syndicates, membership);
+    case 'kick':
+      return handleKick(user, payload as KickBody, syndicates, membership);
     default:
-      return jsonResponse({ error: 'action must be one of: create, join, leave' }, 400);
+      return jsonResponse({ error: 'action must be one of: create, join, leave, promote, kick' }, 400);
   }
 }
 

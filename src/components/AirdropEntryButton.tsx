@@ -9,6 +9,10 @@ interface AirdropEntryButtonProps {
  * carefully-fixed 3-item layout (Scrapyard / Garage / The Streets) never has to change shape to
  * fit a 4th destination.
  *
+ * Icon + a small "AIRDROP" label stacked underneath, not an icon-only glyph — a bare rocket icon
+ * reads as "notifications" or "boost" just as easily as "airdrop" to a first-time player, and this
+ * is the single entry point into the whole $NEON quest/TGE system, worth spelling out.
+ *
  * z-[1001], not the plain z-10 this used to have: @tonconnect/ui-react's TonConnectButton
  * (rendered on ProfileScreen) mounts a shadow-DOM widget appended straight to document.body
  * (`#tc-widget-root`, outside our own React tree entirely) whose internal layers use z-index
@@ -25,9 +29,12 @@ export function AirdropEntryButton({ onClick }: AirdropEntryButtonProps) {
       type="button"
       onClick={onClick}
       aria-label="Airdrop & Quests"
-      className="panel-cut-sm absolute left-0 top-0 z-[1001] flex h-9 w-9 items-center justify-center border border-neon-magenta/50 bg-neon-magenta/10 text-neon-magenta"
+      className="panel-cut-sm absolute left-0 top-0 z-[1001] flex w-12 flex-col items-center gap-0.5 border border-neon-magenta/50 bg-neon-magenta/10 py-1.5 text-neon-magenta"
     >
-      <Rocket className="h-5 w-5" strokeWidth={1.75} />
+      <Rocket className="h-4 w-4" strokeWidth={1.75} />
+      <span className="font-mono text-[7px] font-bold uppercase tracking-wider leading-none">
+        Airdrop
+      </span>
     </button>
   );
 }

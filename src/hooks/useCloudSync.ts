@@ -45,6 +45,7 @@ const SIGNIFICANT_KEYS = [
   'walletAddress',
   'racesWon',
   'claimedQuests',
+  'lastClaimedBossId',
 ] as const satisfies readonly (keyof PlayerState)[];
 
 /** Surfaced to the Profile screen so sync problems are actually observable instead of a

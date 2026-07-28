@@ -306,6 +306,20 @@ export const NIGHT_SIEGE = {
    * don't feel like a metronome, same reasoning as Auto-Drag's segment weights. */
   DAMAGE_PER_TAP_MIN: 300,
   DAMAGE_PER_TAP_MAX: 700,
+  /** Full HP of a freshly-spawned Corporate Convoy — shared across the whole Syndicate, not
+   * per-player. Sized so a single member's one 30s window (worst case ~30 taps × 700 =
+   * 21,000) can never solo it; it genuinely takes the whole roster chipping in across
+   * multiple raids/visits. */
+  BOSS_MAX_HP: 10_000_000,
+  /** Flat $NEON reward every current Syndicate member can claim, once each, after the shared
+   * boss's HP reaches 0 — see netlify/functions/night-siege.mts's `claimedBy` tracking for how
+   * "once each" is enforced server-side. */
+  REWARD_NEON: 50,
+  /** Hard ceiling on a single submit-damage call's `damage` value, enforced server-side —
+   * generously above what COMBAT_DURATION_SECONDS/DAMAGE_PER_TAP_MAX could ever legitimately
+   * produce (30s at an inhuman 10 taps/sec would be ~300 taps × 700 = 210,000), so a tampered
+   * client can't blow past this and solo-kill the shared boss in one call. */
+  MAX_PLAUSIBLE_SESSION_DAMAGE: 300_000,
 } as const;
 
 /** One day's Daily Reward — always exactly one of Scrap or $NEON, never both, so the claim

@@ -232,6 +232,10 @@ function NeonSyphonCard() {
         </div>
       </div>
 
+      <p className="mt-3 font-mono text-[11px] uppercase tracking-wide text-neon-cyan/70">
+        Current: Tier {carTier} | Profit: {reward} NEON / 24h
+      </p>
+
       <motion.button
         type="button"
         onClick={handleClaim}

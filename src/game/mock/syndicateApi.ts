@@ -10,6 +10,16 @@ import { WebApp, isRunningInTelegram } from '../../lib/telegram';
  * unchanged from that version on purpose, so SyndicateHub.tsx didn't need to change at all.
  */
 
+/** One roster entry — `isLeader`/`isCoLeader` are derived server-side (see syndicates.mts's
+ * toPublicSyndicate) from the Syndicate's own leaderId/coLeaderIds, never stored per-member, so
+ * they can never disagree with those fields. */
+export interface SyndicateMember {
+  id: string;
+  name: string;
+  isLeader: boolean;
+  isCoLeader: boolean;
+}
+
 export interface Syndicate {
   id: string;
   name: string;
@@ -17,6 +27,12 @@ export interface Syndicate {
   membersCount: number;
   maxMembers: number;
   leaderId: string;
+  /** Deputy leaders — can kick regular members, but not promote anyone or kick the Leader or
+   * another Co-Leader. Promoted/demoted via promoteMember below (there's no demote yet). */
+  coLeaderIds: string[];
+  /** The full named roster, in the order members joined — backs SyndicateHub.tsx's member
+   * list and its role badges/Promote/Kick buttons. */
+  members: SyndicateMember[];
 }
 
 export interface Player {
@@ -129,4 +145,35 @@ export function leaveSyndicate(): Promise<void> {
   })
     .then((response) => parseJsonOrThrow<{ ok: true }>(response))
     .then(() => undefined);
+}
+
+/** Promotes a regular member to Co-Leader. Server-enforced: only the Leader can call this
+ * successfully — see netlify/functions/syndicates.mts's handlePromote for the exact rule and
+ * error messages (which this surfaces as-is, via parseJsonOrThrow, for SyndicateHub.tsx to
+ * display). */
+export function promoteMember(targetUserId: string): Promise<Syndicate> {
+  if (!isRunningInTelegram()) return requireTelegram();
+  return fetch(SYNDICATES_ENDPOINT, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ initData: WebApp.initData, action: 'promote', targetUserId }),
+    cache: 'no-store',
+  }).then((response) => parseJsonOrThrow<Syndicate>(response));
+}
+
+/** Kicks another player from the current player's Syndicate. Server-enforced permissions: the
+ * Leader can kick anyone but the Leader (i.e. themselves); a Co-Leader can only kick a regular
+ * member — see handleKick in syndicates.mts. Resolves to the Syndicate's post-kick state, or
+ * `null` in the edge case where kicking somehow emptied it (kicking someone else can never
+ * actually do this, since the kicker themselves always remains a member — the null case is
+ * only reachable in principle, not in practice). */
+export function kickMember(targetUserId: string): Promise<Syndicate | null> {
+  if (!isRunningInTelegram()) return requireTelegram();
+  return fetch(SYNDICATES_ENDPOINT, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ initData: WebApp.initData, action: 'kick', targetUserId }),
+    cache: 'no-store',
+  }).then((response) => parseJsonOrThrow<{ ok: true; syndicate: Syndicate | null }>(response))
+    .then((body) => body.syndicate);
 }

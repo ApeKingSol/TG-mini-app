@@ -31,6 +31,14 @@ export function AirdropScreen({ onBack }: AirdropScreenProps) {
   const claimedQuests = useGameStore((state) => state.claimedQuests);
   const claimQuest = useGameStore((state) => state.claimQuest);
 
+  const progress = { walletAddress, carTier, racesWon };
+  // "Complete" means the on-chain/in-game milestone is met, not that its small NEON bonus has
+  // been clicked-and-claimed yet — qualifying for the airdrop allocation is about having done
+  // the thing, independent of whether the player remembered to collect the reward for it.
+  const completedCount = QUESTS.filter((quest) => isQuestComplete(quest.id, progress)).length;
+  const totalCount = QUESTS.length;
+  const allQuestsComplete = completedCount === totalCount;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -66,16 +74,42 @@ export function AirdropScreen({ onBack }: AirdropScreenProps) {
         </p>
       </div>
 
+      <div className="flex items-center justify-between rounded-lg border border-neutral-800 bg-bg-panel/60 px-4 py-2.5">
+        <p className="font-mono text-[11px] uppercase tracking-wide text-neutral-400">
+          Quest Progress
+        </p>
+        <p className="font-display text-sm font-bold tabular-nums text-neon-cyan">
+          {completedCount}/{totalCount} Quests
+        </p>
+      </div>
+
       <div className="flex flex-col gap-3">
-        {QUESTS.map((quest) => (
-          <QuestCard
-            key={quest.id}
-            quest={quest}
-            isComplete={isQuestComplete(quest.id, { walletAddress, carTier, racesWon })}
-            isClaimed={claimedQuests.includes(quest.id)}
-            onClaim={() => claimQuest(quest.id)}
-          />
-        ))}
+        {allQuestsComplete ? (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+            className="rounded-2xl border-2 border-toxic-green bg-toxic-green/10 p-6 text-center shadow-[0_0_40px_rgba(57,255,20,0.4)]"
+          >
+            <p className="text-4xl">🎉</p>
+            <p className="mt-2 font-display text-lg font-black uppercase tracking-widest text-toxic-green drop-shadow-[0_0_20px_rgba(57,255,20,0.7)]">
+              Status: Qualified!
+            </p>
+            <p className="mt-1 text-xs font-medium text-toxic-green/80">
+              You are participating in the $NEON Airdrop.
+            </p>
+          </motion.div>
+        ) : (
+          QUESTS.map((quest) => (
+            <QuestCard
+              key={quest.id}
+              quest={quest}
+              isComplete={isQuestComplete(quest.id, progress)}
+              isClaimed={claimedQuests.includes(quest.id)}
+              onClaim={() => claimQuest(quest.id)}
+            />
+          ))
+        )}
         <InviteFriendsCard />
       </div>
     </motion.div>

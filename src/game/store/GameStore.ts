@@ -14,6 +14,7 @@ import {
   isNeonSyphonClaimable,
   QUESTS,
   isQuestComplete,
+  NIGHT_SIEGE,
 } from '../config/economy';
 import { getPartTier, rollPartPerk, type PartPerk } from '../config/parts';
 import { CAR_TIERS, getCarTier, getUpgradeRequirement } from '../config/carTiers';
@@ -174,6 +175,12 @@ interface GameActions {
    * if the quest id is unknown, its milestone isn't actually met yet (see isQuestComplete), or
    * it's already in claimedQuests. */
   claimQuest: (questId: string) => boolean;
+  /** Credits NIGHT_SIEGE.REWARD_NEON and records `bossId` into lastClaimedBossId. Call this
+   * only *after* netlify/functions/night-siege.mts's 'claim' action has already confirmed the
+   * boss is dead and this account hasn't claimed it yet — this action itself trusts its caller
+   * completely (same client-trusted-economy model as claimNeonSyphon/claimQuest), it does not
+   * re-verify anything server-side on its own. */
+  creditBossKillReward: (bossId: string) => void;
 }
 
 type GameStore = PlayerState & GameActions;
@@ -239,6 +246,7 @@ function createInitialPlayerState(): PlayerState {
     walletAddress: null,
     racesWon: 0,
     claimedQuests: [],
+    lastClaimedBossId: null,
   };
 }
 
@@ -721,6 +729,18 @@ export const useGameStore = create<GameStore>()(
           ),
         }));
         return true;
+      },
+
+      creditBossKillReward: (bossId) => {
+        set((state) => ({
+          lastClaimedBossId: bossId,
+          neon: state.neon + NIGHT_SIEGE.REWARD_NEON,
+          neonHistory: withNeonTransaction(
+            state.neonHistory,
+            'Night Siege — Boss Kill Reward',
+            NIGHT_SIEGE.REWARD_NEON,
+          ),
+        }));
       },
     }),
     {

@@ -7,9 +7,16 @@ import {
   type RefObject,
 } from 'react';
 import { motion } from 'framer-motion';
-import { ShieldAlert, Swords, Timer, Truck } from 'lucide-react';
+import { ShieldAlert, Swords, Timer, Trophy, Truck } from 'lucide-react';
 import { NIGHT_SIEGE } from '../game/config/economy';
-import { fetchConvoyStatus, submitDamage, type ConvoyStatus } from '../game/mock/siegeApi';
+import { useGameStore } from '../game/store/GameStore';
+import {
+  claimBossReward,
+  fetchConvoyStatus,
+  spawnNextRaid,
+  submitDamage,
+  type ConvoyStatus,
+} from '../game/mock/siegeApi';
 
 type SiegeState = 'idle' | 'combat' | 'results';
 
@@ -47,14 +54,31 @@ const SPARK_DURATION_MS = 250;
 /** The HP bar is drawn as this many discrete blocks rather than one smooth fill — a chunkier,
  * more "raid boss health bar" read than a plain gradient bar. */
 const HP_SEGMENT_COUNT = 20;
+/** How often the shared Convoy HP re-polls while sitting on the idle screen — so another
+ * Syndicate member's submitted damage (or a kill/claim/next-raid someone else triggered) shows
+ * up without needing to leave and re-enter the tab. Not polled during combat/results — this
+ * session's own damage is what's being staged there, not something a background refetch should
+ * clobber mid-flight. */
+const IDLE_POLL_INTERVAL_MS = 5000;
+
+interface NightSiegeProps {
+  /** Which Syndicate's shared Convoy to raid — the whole HP pool, damage submissions, and kill
+   * claims are scoped to this id (see netlify/functions/night-siege.mts, keyed by syndicateId).
+   * Always the current player's own Syndicate; SyndicateHub.tsx only ever mounts this once
+   * `mySyndicate` is known. */
+  syndicateId: string;
+}
 
 /** A Syndicate-only World Boss raid: no entry fee, no top-level "Hub" exit — this lives
  * permanently inside SyndicateHub once the player has a Syndicate, and the tab toggle above it
  * is the only way to leave. Every visit gets a free 30-second tap-damage window against the
- * Corporate Convoy; damage is reported to (mock, for now) the server, but nothing here credits
- * Scrap/Neon directly — a shared-kill raid's loot is a Syndicate-wide concern, not a per-tap
- * payout. */
-export function NightSiege() {
+ * Corporate Convoy; damage is submitted to a real, Syndicate-shared backend (see
+ * src/game/mock/siegeApi.ts), and once the shared HP actually reaches 0 every current member can
+ * claim a flat NIGHT_SIEGE.REWARD_NEON, exactly once each, for that kill. */
+export function NightSiege({ syndicateId }: NightSiegeProps) {
+  const lastClaimedBossId = useGameStore((state) => state.lastClaimedBossId);
+  const creditBossKillReward = useGameStore((state) => state.creditBossKillReward);
+
   const [siegeState, setSiegeState] = useState<SiegeState>('idle');
   const [convoyStatus, setConvoyStatus] = useState<ConvoyStatus | null>(null);
   const [bossImageFailed, setBossImageFailed] = useState(false);
@@ -67,6 +91,10 @@ export function NightSiege() {
   const [hitOrigin, setHitOrigin] = useState<HitOrigin>({ x: 50, y: 50 });
   const [reportDamage, setReportDamage] = useState(0);
 
+  const [isClaiming, setIsClaiming] = useState(false);
+  const [isSpawningNext, setIsSpawningNext] = useState(false);
+  const [claimError, setClaimError] = useState<string | null>(null);
+
   // Points at the boss's own shake wrapper (not the much larger tap-catching area around it) so
   // handleBossHit can measure the tap against the truck's actual rendered bounding box.
   const bossWrapperRef = useRef<HTMLDivElement>(null);
@@ -78,8 +106,23 @@ export function NightSiege() {
   const combatEndedRef = useRef(false);
 
   useEffect(() => {
-    fetchConvoyStatus().then(setConvoyStatus);
-  }, []);
+    fetchConvoyStatus(syndicateId)
+      .then(setConvoyStatus)
+      .catch(() => {});
+  }, [syndicateId]);
+
+  // Keeps the shared HP bar honest while sitting idle — another member's submitted damage, a
+  // kill, or someone else starting the next raid should all show up on their own, without
+  // needing to leave and re-enter the tab.
+  useEffect(() => {
+    if (siegeState !== 'idle') return;
+    const intervalId = window.setInterval(() => {
+      fetchConvoyStatus(syndicateId)
+        .then(setConvoyStatus)
+        .catch(() => {});
+    }, IDLE_POLL_INTERVAL_MS);
+    return () => window.clearInterval(intervalId);
+  }, [siegeState, syndicateId]);
 
   // Combat countdown — re-arms itself every second while in combat.
   useEffect(() => {
@@ -147,7 +190,13 @@ export function NightSiege() {
 
   const endCombat = async () => {
     const finalDamage = sessionDamageRef.current;
-    await submitDamage(finalDamage);
+    try {
+      const updated = await submitDamage(syndicateId, finalDamage);
+      setConvoyStatus(updated);
+    } catch {
+      // Best-effort — the shared HP bar catches up on the next idle poll even if this
+      // particular submit failed to reach the server (e.g. a dropped connection).
+    }
     setReportDamage(finalDamage);
     setSiegeState('results');
   };
@@ -160,11 +209,45 @@ export function NightSiege() {
     setSparks([]);
     setHitCount(0);
     setHitOrigin({ x: 50, y: 50 });
+    setClaimError(null);
+  };
+
+  const handleClaim = async () => {
+    if (!convoyStatus || isClaiming) return;
+    setClaimError(null);
+    setIsClaiming(true);
+    try {
+      const result = await claimBossReward(syndicateId);
+      creditBossKillReward(result.bossId);
+      setConvoyStatus((prev) => (prev ? { ...prev, alreadyClaimed: true } : prev));
+    } catch (err) {
+      setClaimError(err instanceof Error ? err.message.toUpperCase() : 'CLAIM FAILED');
+    } finally {
+      setIsClaiming(false);
+    }
+  };
+
+  const handleSpawnNext = async () => {
+    if (isSpawningNext) return;
+    setIsSpawningNext(true);
+    setClaimError(null);
+    try {
+      const fresh = await spawnNextRaid(syndicateId);
+      setConvoyStatus(fresh);
+    } catch {
+      // Best-effort — the next idle poll/remount catches up regardless.
+    } finally {
+      setIsSpawningNext(false);
+    }
   };
 
   const hpPercent = convoyStatus
     ? Math.max(0, Math.min(100, (convoyStatus.currentHp / convoyStatus.maxHp) * 100))
     : 0;
+  const isBossDefeated = convoyStatus !== null && convoyStatus.currentHp <= 0;
+  const alreadyClaimed =
+    convoyStatus !== null &&
+    (convoyStatus.alreadyClaimed || lastClaimedBossId === convoyStatus.bossId);
 
   return (
     <div className="flex flex-col gap-4">
@@ -174,7 +257,18 @@ export function NightSiege() {
 
       <ConvoyHpBar hpPercent={hpPercent} convoyStatus={convoyStatus} />
 
-      {siegeState === 'idle' && (
+      {siegeState === 'idle' && isBossDefeated && (
+        <BossDefeatedPanel
+          alreadyClaimed={alreadyClaimed}
+          isClaiming={isClaiming}
+          isSpawningNext={isSpawningNext}
+          claimError={claimError}
+          onClaim={handleClaim}
+          onSpawnNext={handleSpawnNext}
+        />
+      )}
+
+      {siegeState === 'idle' && !isBossDefeated && (
         <IdleScreen
           bossImageFailed={bossImageFailed}
           onBossImageError={() => setBossImageFailed(true)}
@@ -198,7 +292,17 @@ export function NightSiege() {
       )}
 
       {siegeState === 'results' && (
-        <ResultsScreen damage={reportDamage} onReturn={handleReturn} />
+        <ResultsScreen
+          damage={reportDamage}
+          onReturn={handleReturn}
+          isBossDefeated={isBossDefeated}
+          alreadyClaimed={alreadyClaimed}
+          isClaiming={isClaiming}
+          isSpawningNext={isSpawningNext}
+          claimError={claimError}
+          onClaim={handleClaim}
+          onSpawnNext={handleSpawnNext}
+        />
       )}
     </div>
   );
@@ -244,6 +348,83 @@ function ConvoyHpBar({ hpPercent, convoyStatus }: ConvoyHpBarProps) {
           : 'Establishing uplink...'}
       </p>
     </div>
+  );
+}
+
+interface BossDefeatedPanelProps {
+  alreadyClaimed: boolean;
+  isClaiming: boolean;
+  isSpawningNext: boolean;
+  claimError: string | null;
+  onClaim: () => void;
+  onSpawnNext: () => void;
+}
+
+/** Shown whenever the shared Convoy HP has actually reached 0 — either landed on directly (the
+ * idle screen, for a member who wasn't the one to land the final blow) or right after this
+ * session's own combat window ended the fight (see ResultsScreen). Every current member can
+ * claim NIGHT_SIEGE.REWARD_NEON exactly once for this kill (server-enforced — see
+ * night-siege.mts's handleClaim); "Start Next Raid" is a separate, explicit action so a member
+ * who hasn't had the chance to claim yet can't have that window closed out from under them by
+ * someone else moving on first. */
+function BossDefeatedPanel({
+  alreadyClaimed,
+  isClaiming,
+  isSpawningNext,
+  claimError,
+  onClaim,
+  onSpawnNext,
+}: BossDefeatedPanelProps) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.96 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.25 }}
+      className="flex flex-col items-center gap-3 rounded-2xl border-2 border-toxic-green bg-toxic-green/10 p-5 text-center shadow-[0_0_32px_rgba(57,255,20,0.35)]"
+    >
+      <Trophy
+        className="h-10 w-10 text-toxic-green drop-shadow-[0_0_16px_rgba(57,255,20,0.6)]"
+        strokeWidth={1.5}
+      />
+      <p className="font-display text-lg font-black uppercase tracking-widest text-toxic-green drop-shadow-[0_0_16px_rgba(57,255,20,0.5)]">
+        Convoy Defeated!
+      </p>
+      <p className="text-xs text-toxic-green/80">
+        The Syndicate brought down the Corporate Convoy. Every member can claim the kill reward.
+      </p>
+
+      {claimError && (
+        <p className="text-xs font-bold uppercase tracking-widest text-danger-red">{claimError}</p>
+      )}
+
+      <motion.button
+        type="button"
+        onClick={onClaim}
+        disabled={alreadyClaimed || isClaiming}
+        whileHover={!alreadyClaimed && !isClaiming ? { scale: 1.02 } : undefined}
+        whileTap={!alreadyClaimed && !isClaiming ? { scale: 0.97 } : undefined}
+        className={`w-full rounded-lg border-2 py-3 font-display text-sm font-black uppercase tracking-widest transition-colors disabled:cursor-not-allowed ${
+          alreadyClaimed
+            ? 'border-toxic-green/40 bg-toxic-green/5 text-toxic-green/70'
+            : 'border-toxic-green bg-toxic-green/15 text-toxic-green shadow-[0_0_16px_rgba(57,255,20,0.35)]'
+        }`}
+      >
+        {alreadyClaimed
+          ? 'Reward Claimed'
+          : isClaiming
+            ? 'Claiming...'
+            : `Claim ${NIGHT_SIEGE.REWARD_NEON} NEON`}
+      </motion.button>
+
+      <button
+        type="button"
+        onClick={onSpawnNext}
+        disabled={isSpawningNext}
+        className="text-[10px] uppercase tracking-widest text-neutral-500 underline decoration-dotted underline-offset-2 disabled:opacity-50"
+      >
+        {isSpawningNext ? 'Starting...' : 'Start Next Raid'}
+      </button>
+    </motion.div>
   );
 }
 
@@ -449,19 +630,39 @@ function CombatScreen({
 interface ResultsScreenProps {
   damage: number;
   onReturn: () => void;
+  isBossDefeated: boolean;
+  alreadyClaimed: boolean;
+  isClaiming: boolean;
+  isSpawningNext: boolean;
+  claimError: string | null;
+  onClaim: () => void;
+  onSpawnNext: () => void;
 }
 
 /** The results screen — a snapshot of exactly what was submitted at the moment combat ended, so
- * this never has to re-derive numbers from state that keeps changing after the fact. "Return"
- * resets straight back to idle (not out to some parent hub) — Night Siege has nowhere else to
- * go, since the Syndicates tab toggle is the only navigation above it. */
-function ResultsScreen({ damage, onReturn }: ResultsScreenProps) {
+ * this never has to re-derive numbers from state that keeps changing after the fact. If this
+ * session's own damage happened to bring the shared HP to 0, the BossDefeatedPanel renders right
+ * here too, so the player who landed the final blow doesn't have to tap "Return" first just to
+ * see the claim button. "Return" resets straight back to idle (not out to some parent hub) —
+ * Night Siege has nowhere else to go, since the Syndicates tab toggle is the only navigation
+ * above it. */
+function ResultsScreen({
+  damage,
+  onReturn,
+  isBossDefeated,
+  alreadyClaimed,
+  isClaiming,
+  isSpawningNext,
+  claimError,
+  onClaim,
+  onSpawnNext,
+}: ResultsScreenProps) {
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.96 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.25 }}
-      className="flex min-h-[45vh] flex-col items-center justify-center gap-5 rounded-2xl border border-danger-red/40 bg-black/60 p-6 text-center backdrop-blur-xl"
+      className="flex flex-col items-center justify-center gap-5 rounded-2xl border border-danger-red/40 bg-black/60 p-6 text-center backdrop-blur-xl"
     >
       <Swords
         className="h-14 w-14 text-danger-red drop-shadow-[0_0_20px_rgba(255,0,60,0.7)]"
@@ -478,6 +679,19 @@ function ResultsScreen({ damage, onReturn }: ResultsScreenProps) {
           {damage.toLocaleString()}
         </p>
       </div>
+
+      {isBossDefeated && (
+        <div className="w-full">
+          <BossDefeatedPanel
+            alreadyClaimed={alreadyClaimed}
+            isClaiming={isClaiming}
+            isSpawningNext={isSpawningNext}
+            claimError={claimError}
+            onClaim={onClaim}
+            onSpawnNext={onSpawnNext}
+          />
+        </div>
+      )}
 
       <motion.button
         type="button"

@@ -1,18 +1,20 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Loader2, Radio, ShieldCheck, Users } from 'lucide-react';
-import { useGameStore } from '../game/store/GameStore';
+import { ArrowLeft, Crown, Loader2, Radio, ShieldCheck, Star, Users } from 'lucide-react';
+import { useGameStore, getTelegramUserId } from '../game/store/GameStore';
 import {
   createSyndicate,
   fetchMySyndicate,
   fetchSyndicates,
   joinSyndicate,
+  kickMember,
   leaveSyndicate,
+  promoteMember,
   type Syndicate,
 } from '../game/mock/syndicateApi';
 import { NightSiege } from './NightSiege';
 
-const CREATE_COST_SCRAP = 1000;
+const CREATE_COST_NEON = 1000;
 const NAME_MAX_LENGTH = 20;
 const TAG_MAX_LENGTH = 4;
 
@@ -52,6 +54,10 @@ export function SyndicateHub() {
     setView('menu');
   };
 
+  const handleSyndicateUpdate = (syndicate: Syndicate) => {
+    setMySyndicate(syndicate);
+  };
+
   if (isRestoringMembership) {
     return (
       <div className="flex flex-col items-center gap-3 py-12">
@@ -73,7 +79,11 @@ export function SyndicateHub() {
       )}
       {view === 'join' && <JoinScreen onBack={() => setView('menu')} onJoined={handleJoined} />}
       {view === 'active' && mySyndicate && (
-        <ActiveScreen syndicate={mySyndicate} onLeft={handleLeft} />
+        <ActiveScreen
+          syndicate={mySyndicate}
+          onLeft={handleLeft}
+          onSyndicateUpdate={handleSyndicateUpdate}
+        />
       )}
     </div>
   );
@@ -109,7 +119,7 @@ function MenuScreen({ onSelectCreate, onSelectJoin }: MenuScreenProps) {
           Create Syndicate
         </span>
         <span className="text-[10px] uppercase tracking-widest text-amber/70">
-          Cost: {CREATE_COST_SCRAP.toLocaleString()} Scrap
+          Cost: {CREATE_COST_NEON.toLocaleString()} NEON
         </span>
       </motion.button>
 
@@ -136,21 +146,21 @@ interface CreateScreenProps {
   onCreated: (syndicate: Syndicate) => void;
 }
 
-/** The charter form — a terminal-styled name/tag entry gated on the player's actual Scrap
- * balance. Scrap is deducted here (via the game store), then createSyndicate persists the
+/** The charter form — a terminal-styled name/tag entry gated on the player's actual $NEON
+ * balance. $NEON is deducted here (via the game store), then createSyndicate persists the
  * Syndicate itself; if that call somehow fails after the deduction (e.g. a stale "already in a
- * Syndicate" race), the Scrap is refunded rather than silently lost. */
+ * Syndicate" race), the $NEON is refunded rather than silently lost. */
 function CreateScreen({ onBack, onCreated }: CreateScreenProps) {
-  const scrap = useGameStore((state) => state.scrap);
-  const spendScrap = useGameStore((state) => state.spendScrap);
-  const addScrap = useGameStore((state) => state.addScrap);
+  const neon = useGameStore((state) => state.neon);
+  const spendNeon = useGameStore((state) => state.spendNeon);
+  const addNeon = useGameStore((state) => state.addNeon);
 
   const [name, setName] = useState('');
   const [tag, setTag] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const canAfford = scrap >= CREATE_COST_SCRAP;
+  const canAfford = neon >= CREATE_COST_NEON;
   const isValid = name.trim().length > 0 && tag.trim().length > 0;
 
   const handleSubmit = async () => {
@@ -158,8 +168,8 @@ function CreateScreen({ onBack, onCreated }: CreateScreenProps) {
     setError(null);
     setIsSubmitting(true);
 
-    if (!spendScrap(CREATE_COST_SCRAP)) {
-      setError('INSUFFICIENT SCRAP');
+    if (!spendNeon(CREATE_COST_NEON, 'Syndicate Charter')) {
+      setError('INSUFFICIENT NEON');
       setIsSubmitting(false);
       return;
     }
@@ -168,7 +178,7 @@ function CreateScreen({ onBack, onCreated }: CreateScreenProps) {
       const syndicate = await createSyndicate(name, tag);
       onCreated(syndicate);
     } catch (err) {
-      addScrap(CREATE_COST_SCRAP);
+      addNeon(CREATE_COST_NEON, 'Syndicate Charter Refund');
       setError(err instanceof Error ? err.message.toUpperCase() : 'CHARTER FAILED');
       setIsSubmitting(false);
     }
@@ -228,14 +238,14 @@ function CreateScreen({ onBack, onCreated }: CreateScreenProps) {
         <span className="text-[10px] uppercase tracking-widest text-neutral-500">
           Charter Cost
         </span>
-        <span className="font-display text-lg font-bold tabular-nums text-scrap">
-          {CREATE_COST_SCRAP.toLocaleString()} Scrap
+        <span className="font-display text-lg font-bold tabular-nums text-neon-magenta">
+          {CREATE_COST_NEON.toLocaleString()} NEON
         </span>
       </div>
 
       {!canAfford && (
         <p className="mt-2 text-center text-xs font-bold uppercase tracking-widest text-danger-red">
-          Insufficient Scrap
+          Insufficient NEON
         </p>
       )}
       {error && (
@@ -385,19 +395,67 @@ function SyndicateRow({ syndicate, isJoining, disabled, onJoin }: SyndicateRowPr
 interface ActiveScreenProps {
   syndicate: Syndicate;
   onLeft: () => void;
+  onSyndicateUpdate: (syndicate: Syndicate) => void;
 }
 
-/** The dashboard — the player's Syndicate up top, Night Siege underneath so members can attack
- * the Convoy without leaving the tab, and a deliberately understated Leave control at the very
- * bottom (this isn't an action to invite mis-taps on). */
-function ActiveScreen({ syndicate, onLeft }: ActiveScreenProps) {
+type MyRole = 'leader' | 'co-leader' | 'member';
+
+/** The dashboard — the player's Syndicate up top, the member roster (with role-gated
+ * Promote/Kick), Night Siege underneath so members can attack the Convoy without leaving the
+ * tab, and a deliberately understated Leave control at the very bottom (this isn't an action to
+ * invite mis-taps on). */
+function ActiveScreen({ syndicate, onLeft, onSyndicateUpdate }: ActiveScreenProps) {
+  const myId = getTelegramUserId();
   const [isLeaving, setIsLeaving] = useState(false);
+  const [actioningId, setActioningId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const myRole: MyRole =
+    myId !== null && myId === syndicate.leaderId
+      ? 'leader'
+      : myId !== null && syndicate.coLeaderIds.includes(myId)
+        ? 'co-leader'
+        : 'member';
 
   const handleLeave = async () => {
     if (isLeaving) return;
     setIsLeaving(true);
     await leaveSyndicate();
     onLeft();
+  };
+
+  const handlePromote = async (targetUserId: string) => {
+    if (actioningId) return;
+    setActionError(null);
+    setActioningId(targetUserId);
+    try {
+      const updated = await promoteMember(targetUserId);
+      onSyndicateUpdate(updated);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message.toUpperCase() : 'PROMOTE FAILED');
+    } finally {
+      setActioningId(null);
+    }
+  };
+
+  const handleKick = async (targetUserId: string) => {
+    if (actioningId) return;
+    setActionError(null);
+    setActioningId(targetUserId);
+    try {
+      const updated = await kickMember(targetUserId);
+      if (updated) {
+        onSyndicateUpdate(updated);
+      } else {
+        // Not reachable in practice (kicking someone else can never empty a Syndicate — the
+        // kicker themselves always remains a member), but handled for completeness.
+        onLeft();
+      }
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message.toUpperCase() : 'KICK FAILED');
+    } finally {
+      setActioningId(null);
+    }
   };
 
   return (
@@ -422,7 +480,21 @@ function ActiveScreen({ syndicate, onLeft }: ActiveScreenProps) {
         </div>
       </div>
 
-      <NightSiege />
+      <MemberRosterCard
+        syndicate={syndicate}
+        myId={myId}
+        myRole={myRole}
+        actioningId={actioningId}
+        onPromote={handlePromote}
+        onKick={handleKick}
+      />
+      {actionError && (
+        <p className="text-center text-xs font-bold uppercase tracking-widest text-danger-red">
+          {actionError}
+        </p>
+      )}
+
+      <NightSiege syndicateId={syndicate.id} />
 
       <button
         type="button"
@@ -432,6 +504,100 @@ function ActiveScreen({ syndicate, onLeft }: ActiveScreenProps) {
       >
         {isLeaving ? 'Leaving...' : 'Leave Syndicate'}
       </button>
+    </div>
+  );
+}
+
+interface MemberRosterCardProps {
+  syndicate: Syndicate;
+  myId: string | null;
+  myRole: MyRole;
+  /** The member id currently mid-Promote/Kick, or null — disables every row's action buttons
+   * while set, so a slow request can't be double-fired by a second tap. */
+  actioningId: string | null;
+  onPromote: (targetUserId: string) => void;
+  onKick: (targetUserId: string) => void;
+}
+
+/** The named roster — every member, their role badge, and (role-gated, per
+ * netlify/functions/syndicates.mts's exact permission rules) Promote/Kick buttons. The Leader
+ * can promote a regular member to Co-Leader or kick anyone but themselves; a Co-Leader can only
+ * kick a regular member (never the Leader, never another Co-Leader, and never promote anyone);
+ * a regular member sees badges only, no action buttons at all. */
+function MemberRosterCard({
+  syndicate,
+  myId,
+  myRole,
+  actioningId,
+  onPromote,
+  onKick,
+}: MemberRosterCardProps) {
+  return (
+    <div className="rounded-2xl border border-neutral-800 bg-white/5 p-4 backdrop-blur-xl">
+      <div className="flex items-center gap-1.5 text-neutral-400">
+        <Users className="h-3.5 w-3.5" strokeWidth={2} />
+        <p className="font-display text-xs font-bold uppercase tracking-wide">Roster</p>
+      </div>
+
+      <div className="mt-3 flex flex-col gap-2">
+        {syndicate.members.map((member) => {
+          const isSelf = member.id === myId;
+          const canPromote = myRole === 'leader' && !isSelf && !member.isLeader && !member.isCoLeader;
+          const canKick =
+            !isSelf &&
+            !member.isLeader &&
+            (myRole === 'leader' || (myRole === 'co-leader' && !member.isCoLeader));
+          const isBusy = actioningId === member.id;
+
+          return (
+            <div
+              key={member.id}
+              className="flex items-center gap-2 rounded-lg border border-neutral-800 bg-black/20 px-3 py-2"
+            >
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-mono text-xs text-neutral-200">
+                  {member.name}
+                  {isSelf ? ' (You)' : ''}
+                </p>
+                {(member.isLeader || member.isCoLeader) && (
+                  <div
+                    className={`mt-0.5 flex items-center gap-1 text-[9px] font-bold uppercase tracking-widest ${
+                      member.isLeader ? 'text-amber' : 'text-neon-cyan'
+                    }`}
+                  >
+                    {member.isLeader ? (
+                      <Crown className="h-2.5 w-2.5" strokeWidth={2.5} />
+                    ) : (
+                      <Star className="h-2.5 w-2.5" strokeWidth={2.5} />
+                    )}
+                    {member.isLeader ? 'Leader' : 'Co-Leader'}
+                  </div>
+                )}
+              </div>
+              {canPromote && (
+                <button
+                  type="button"
+                  onClick={() => onPromote(member.id)}
+                  disabled={isBusy}
+                  className="shrink-0 rounded border border-neon-cyan/50 bg-neon-cyan/10 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-neon-cyan transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {isBusy ? '...' : 'Promote'}
+                </button>
+              )}
+              {canKick && (
+                <button
+                  type="button"
+                  onClick={() => onKick(member.id)}
+                  disabled={isBusy}
+                  className="shrink-0 rounded border border-danger-red/50 bg-danger-red/10 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-danger-red transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {isBusy ? '...' : 'Kick'}
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
