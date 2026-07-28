@@ -211,9 +211,9 @@ function CreateScreen({ onBack, onCreated }: CreateScreenProps) {
         <button
           type="button"
           onClick={onBack}
-          className="flex items-center gap-1 text-xs text-neutral-500"
+          className="flex items-center gap-1 text-xs font-bold text-neutral-300"
         >
-          <ArrowLeft className="h-3.5 w-3.5" strokeWidth={2} />
+          <ArrowLeft className="h-3.5 w-3.5" strokeWidth={2.5} />
           Back
         </button>
         <p className="font-display text-sm font-bold uppercase tracking-wide text-neon-cyan">
@@ -327,9 +327,9 @@ function JoinScreen({ onBack, onJoined }: JoinScreenProps) {
         <button
           type="button"
           onClick={onBack}
-          className="flex items-center gap-1 text-xs text-neutral-500"
+          className="flex items-center gap-1 text-xs font-bold text-neutral-300"
         >
-          <ArrowLeft className="h-3.5 w-3.5" strokeWidth={2} />
+          <ArrowLeft className="h-3.5 w-3.5" strokeWidth={2.5} />
           Back
         </button>
         <div className="flex items-center gap-1.5 text-neon-cyan">
@@ -432,7 +432,10 @@ function ActiveScreen({ syndicate, onLeft, onSyndicateUpdate }: ActiveScreenProp
   useEffect(() => {
     const pollDamageLog = () => {
       fetchConvoyStatus(syndicate.id)
-        .then((status) => setDamageLog(status.damageLog))
+        // `?? {}` guards against a boss record that predates damageLog — the backend now
+        // backfills this itself too, but the render below should never trust a network
+        // response's shape unconditionally.
+        .then((status) => setDamageLog(status.damageLog ?? {}))
         .catch(() => {});
     };
     pollDamageLog();
@@ -440,10 +443,13 @@ function ActiveScreen({ syndicate, onLeft, onSyndicateUpdate }: ActiveScreenProp
     return () => window.clearInterval(intervalId);
   }, [syndicate.id]);
 
+  // `?? []` guards against a Syndicate created before Co-Leader roles existed — the backend
+  // now backfills coLeaderIds itself too (see normalizeSyndicateRecord in syndicates.mts), but
+  // this render should never trust a network response's shape unconditionally either.
   const myRole: MyRole =
     myId !== null && myId === syndicate.leaderId
       ? 'leader'
-      : myId !== null && syndicate.coLeaderIds.includes(myId)
+      : myId !== null && (syndicate.coLeaderIds ?? []).includes(myId)
         ? 'co-leader'
         : 'member';
 
@@ -620,7 +626,10 @@ function MemberRosterCard({
             className="overflow-hidden"
           >
             <div className="flex flex-col gap-2 px-4 pb-4">
-              {syndicate.members.map((member) => {
+              {/* `?? []`/`?? {}` guard against a Syndicate created before named rosters existed,
+                 or a boss whose damageLog hasn't been fetched yet — this render must never
+                 crash regardless of what shape a legacy record or an in-flight fetch hands it. */}
+              {(syndicate.members ?? []).map((member) => {
                 const isSelf = member.id === myId;
                 const canPromote =
                   myRole === 'leader' && !isSelf && !member.isLeader && !member.isCoLeader;
@@ -630,7 +639,7 @@ function MemberRosterCard({
                   !member.isLeader &&
                   (myRole === 'leader' || (myRole === 'co-leader' && !member.isCoLeader));
                 const isBusy = actioningId === member.id;
-                const damage = damageLog[member.id] ?? 0;
+                const damage = (damageLog ?? {})[member.id] ?? 0;
 
                 return (
                   <div

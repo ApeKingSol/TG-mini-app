@@ -47,7 +47,27 @@ interface StoredSyndicate {
   coLeaderIds: string[];
 }
 
+/** Backfills fields that didn't exist in older schema versions of this record (a Syndicate
+ * created before Co-Leader roles/named rosters were added, back when StoredSyndicate was just
+ * `{id, name, tag, memberIds, maxMembers, leaderId}`) with safe defaults, so a record written
+ * by an earlier deploy can never crash a handler that calls `.includes()`/property-access on a
+ * field that simply doesn't exist on it yet. Called immediately after every read from the
+ * `syndicates` store, before the record is used anywhere. */
+function normalizeSyndicateRecord(record: StoredSyndicate): StoredSyndicate {
+  return {
+    ...record,
+    coLeaderIds: record.coLeaderIds ?? [],
+    memberNames: record.memberNames ?? {},
+  };
+}
+
+/** `record.coLeaderIds`/`memberNames` are read defensively here too (not just via
+ * normalizeSyndicateRecord at every call site) — cheap insurance against a future call site
+ * that forgets to normalize first, so this function specifically can never throw on a legacy
+ * record no matter what calls it. */
 function toPublicSyndicate(record: StoredSyndicate): Syndicate {
+  const coLeaderIds = record.coLeaderIds ?? [];
+  const memberNames = record.memberNames ?? {};
   return {
     id: record.id,
     name: record.name,
@@ -55,12 +75,12 @@ function toPublicSyndicate(record: StoredSyndicate): Syndicate {
     membersCount: record.memberIds.length,
     maxMembers: record.maxMembers,
     leaderId: record.leaderId,
-    coLeaderIds: record.coLeaderIds,
+    coLeaderIds,
     members: record.memberIds.map((id) => ({
       id,
-      name: record.memberNames[id] ?? `Runner #${id.slice(-4)}`,
+      name: memberNames[id] ?? `Runner #${id.slice(-4)}`,
       isLeader: id === record.leaderId,
-      isCoLeader: record.coLeaderIds.includes(id),
+      isCoLeader: coLeaderIds.includes(id),
     })),
   };
 }
@@ -250,7 +270,7 @@ async function removeMember(
     const existing = await syndicates.getWithMetadata(syndicateId, { type: 'json' });
     if (!existing) return null;
 
-    const record = existing.data as StoredSyndicate;
+    const record = normalizeSyndicateRecord(existing.data as StoredSyndicate);
     const memberIds = record.memberIds.filter((id) => id !== targetId);
 
     if (memberIds.length === 0) {
@@ -302,7 +322,7 @@ async function handlePromote(
     const existing = await syndicates.getWithMetadata(syndicateId, { type: 'json' });
     if (!existing) return jsonResponse({ error: 'This Syndicate no longer exists.' }, 404);
 
-    const record = existing.data as StoredSyndicate;
+    const record = normalizeSyndicateRecord(existing.data as StoredSyndicate);
     // Only the Leader can promote — a Co-Leader is a Deputy, not someone who can appoint
     // more of themselves.
     if (record.leaderId !== user.id) {
@@ -340,7 +360,7 @@ async function handleDemote(
     const existing = await syndicates.getWithMetadata(syndicateId, { type: 'json' });
     if (!existing) return jsonResponse({ error: 'This Syndicate no longer exists.' }, 404);
 
-    const record = existing.data as StoredSyndicate;
+    const record = normalizeSyndicateRecord(existing.data as StoredSyndicate);
     // Only the Leader can demote — a Co-Leader can't strip another Co-Leader's status any
     // more than they can promote one, per the same "Co-Leader is a Deputy, not an appointer"
     // rule as handlePromote above.
@@ -382,8 +402,9 @@ async function handleKick(
   // target — removeMember() below re-reads the record fresh (with its own CAS/etag retry
   // loop) for the actual mutation, so a race between this check and the real write can never
   // let a stale permission decision stick; worst case this whole request just needs a retry.
-  const current = (await syndicates.get(syndicateId, { type: 'json' })) as StoredSyndicate | null;
-  if (!current) return jsonResponse({ error: 'This Syndicate no longer exists.' }, 404);
+  const rawCurrent = (await syndicates.get(syndicateId, { type: 'json' })) as StoredSyndicate | null;
+  if (!rawCurrent) return jsonResponse({ error: 'This Syndicate no longer exists.' }, 404);
+  const current = normalizeSyndicateRecord(rawCurrent);
   if (!current.memberIds.includes(targetUserId)) {
     return jsonResponse({ error: 'That player is not a member of this Syndicate.' }, 400);
   }

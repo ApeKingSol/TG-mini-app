@@ -743,9 +743,9 @@ function AutoDragRace({ onExit }: AutoDragRaceProps) {
         <button
           type="button"
           onClick={onExit}
-          className="flex items-center gap-1 text-xs text-neutral-500"
+          className="flex items-center gap-1 text-xs font-bold text-neutral-300"
         >
-          <ArrowLeft className="h-3.5 w-3.5" strokeWidth={2} />
+          <ArrowLeft className="h-3.5 w-3.5" strokeWidth={2.5} />
           Hub
         </button>
         <p className="font-display text-sm font-bold uppercase tracking-wide text-neon-magenta">

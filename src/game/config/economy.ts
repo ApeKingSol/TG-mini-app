@@ -334,9 +334,17 @@ export const NIGHT_SIEGE = {
  * NIGHT_SIEGE.ATTACK_COOLDOWN_MS have passed since lastAttackTime. Pure function of
  * (lastAttack, now), same shape as isNeonSyphonClaimable/isDailyRewardClaimable, so both the
  * live countdown UI and (server-side, against its own record) the actual gate derive the same
- * answer from the same rule. */
+ * answer from the same rule.
+ *
+ * Treats anything that isn't a real, finite number (not just `null`) as "never attacked" —
+ * `lastAttackTime` is typed as `number | null`, but a save written before this field existed,
+ * or a malformed/legacy record, can hand this an `undefined` or otherwise non-numeric value at
+ * runtime despite what the type says. `undefined - now` (or similar) would silently evaluate to
+ * `NaN`, and every comparison against `NaN` is `false` — which previously meant a legacy value
+ * here made this permanently return `false` (attack locked forever) instead of the intended
+ * "no record yet, so go ahead" behavior. */
 export function isBossAttackAvailable(lastAttackTime: number | null, now: number): boolean {
-  if (lastAttackTime === null) return true;
+  if (lastAttackTime === null || !Number.isFinite(lastAttackTime)) return true;
   return now - lastAttackTime >= NIGHT_SIEGE.ATTACK_COOLDOWN_MS;
 }
 

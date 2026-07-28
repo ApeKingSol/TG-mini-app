@@ -100,9 +100,9 @@ export function ProfileScreen({ onBack, syncStatus, onSyncNow }: ProfileScreenPr
         <button
           type="button"
           onClick={onBack}
-          className="flex items-center gap-1 text-xs text-neutral-500"
+          className="flex items-center gap-1 text-xs font-bold text-neutral-300"
         >
-          <ArrowLeft className="h-3.5 w-3.5" strokeWidth={2} />
+          <ArrowLeft className="h-3.5 w-3.5" strokeWidth={2.5} />
           Back
         </button>
         <p className="flex-1 text-center font-display text-sm font-bold uppercase tracking-wide text-neon-cyan">

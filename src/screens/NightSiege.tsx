@@ -33,9 +33,15 @@ interface NightSiegeProps {
 /** Zero-pads and formats a countdown as HH:MM:SS — both the 8h attack cooldown and the 72h boss
  * lifetime can run well past a minute, so unlike a mini-game timer this always needs the hours
  * place. Mirrors RaceScreen.tsx's formatSyphonCountdown; kept as its own local copy rather than
- * a shared util, matching this codebase's existing per-screen convention for small formatters. */
+ * a shared util, matching this codebase's existing per-screen convention for small formatters.
+ *
+ * Clamps a non-finite `ms` (NaN/Infinity — e.g. from a legacy boss record missing
+ * `bossExpiresAt`, or any other bad input that slipped past the call site's own guards) down to
+ * 0 rather than letting it propagate into "NaN:NaN:NaN" on screen — a last-resort safety net on
+ * top of the checks callers already do. */
 function formatCountdown(ms: number): string {
-  const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+  const safeMs = Number.isFinite(ms) ? ms : 0;
+  const totalSeconds = Math.max(0, Math.ceil(safeMs / 1000));
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
@@ -103,11 +109,16 @@ export function NightSiege({ syndicateId }: NightSiegeProps) {
     convoyStatus !== null &&
     (convoyStatus.alreadyClaimed || lastClaimedBossId === convoyStatus.bossId);
 
-  const canAttack = isBossAttackAvailable(lastBossAttackTime, now) && !isBossDefeated;
-  const msUntilNextAttack =
-    lastBossAttackTime === null
-      ? 0
-      : NIGHT_SIEGE.ATTACK_COOLDOWN_MS - (now - lastBossAttackTime);
+  // isBossAttackAvailable itself treats anything that isn't a real, finite number (not just
+  // `null`) as "never attacked, go ahead" — so canAttackByCooldown being false guarantees
+  // lastBossAttackTime is a genuine finite timestamp below, and the Number()/Math.max wrapping
+  // here is a second, redundant safety net on top of that for the same "never show NaN, never
+  // lock forever on bad data" reason.
+  const canAttackByCooldown = isBossAttackAvailable(lastBossAttackTime, now);
+  const canAttack = canAttackByCooldown && !isBossDefeated;
+  const msUntilNextAttack = canAttackByCooldown
+    ? 0
+    : Math.max(0, NIGHT_SIEGE.ATTACK_COOLDOWN_MS - (now - Number(lastBossAttackTime)));
   const projectedDamage = getNightSiegeDamage(carTier);
 
   const handleAttack = async () => {
@@ -161,7 +172,13 @@ export function NightSiege({ syndicateId }: NightSiegeProps) {
   const hpPercent = convoyStatus
     ? Math.max(0, Math.min(100, (convoyStatus.currentHp / convoyStatus.maxHp) * 100))
     : 0;
-  const msUntilExpiry = convoyStatus ? convoyStatus.bossExpiresAt - now : 0;
+  // A legacy boss record predating bossExpiresAt would otherwise leave this NaN — night-siege.mts
+  // now backfills a fresh expiry for exactly that case, but this stays defensive on the client
+  // too rather than trusting the server response's shape unconditionally.
+  const msUntilExpiry =
+    convoyStatus && Number.isFinite(convoyStatus.bossExpiresAt)
+      ? convoyStatus.bossExpiresAt - now
+      : 0;
 
   return (
     <div className="flex flex-col gap-4">

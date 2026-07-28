@@ -39,6 +39,10 @@ interface PublicBossStatus {
   damageLog: Record<string, number>;
 }
 
+/** `record.claimedBy`/`damageLog` are read defensively here too (not just via
+ * normalizeBossRecord at every call site) — cheap insurance against a future call site that
+ * forgets to normalize first, so this function specifically can never throw on a legacy
+ * record no matter what calls it. */
 function toPublicStatus(
   record: BossRecord,
   requesterId: string,
@@ -48,10 +52,10 @@ function toPublicStatus(
     bossId: record.bossId,
     maxHp: record.maxHp,
     currentHp: record.currentHp,
-    alreadyClaimed: record.claimedBy.includes(requesterId),
+    alreadyClaimed: (record.claimedBy ?? []).includes(requesterId),
     bossExpiresAt: record.bossExpiresAt,
     nextAttackAvailableAt,
-    damageLog: record.damageLog,
+    damageLog: record.damageLog ?? {},
   };
 }
 
@@ -64,6 +68,26 @@ function createFreshBoss(syndicateId: string, now: number): BossRecord {
     claimedBy: [],
     damageLog: {},
     bossExpiresAt: now + NIGHT_SIEGE.BOSS_LIFETIME_MS,
+  };
+}
+
+/** Backfills fields that didn't exist in older schema versions of this record (a boss created
+ * before damageLog/bossExpiresAt were added to the shape) with safe defaults, so a record
+ * written by an earlier deploy can never crash a handler or send a client a value (like
+ * `undefined` where a number is expected) that renders as "NaN:NaN:NaN". A missing
+ * `bossExpiresAt` gets a fresh full lifetime *from now* rather than being treated as already
+ * expired — treating it as expired would silently wipe an in-progress raid's HP/damage for
+ * free the instant this deploy shipped, which is worse than just giving it a fair countdown.
+ * Called immediately after every read from the `night-siege` store, before the record is used
+ * anywhere. */
+function normalizeBossRecord(record: BossRecord, now: number): BossRecord {
+  return {
+    ...record,
+    claimedBy: record.claimedBy ?? [],
+    damageLog: record.damageLog ?? {},
+    bossExpiresAt: Number.isFinite(record.bossExpiresAt)
+      ? record.bossExpiresAt
+      : now + NIGHT_SIEGE.BOSS_LIFETIME_MS,
   };
 }
 
@@ -117,8 +141,8 @@ async function getNextAttackAvailableAt(
   cooldowns: ReturnType<typeof getStore>,
 ): Promise<number | null> {
   const record = (await cooldowns.get(userId, { type: 'json' })) as AttackCooldownRecord | null;
-  if (!record) return null;
-  return record.lastAttackAt + NIGHT_SIEGE.ATTACK_COOLDOWN_MS;
+  if (!record || !Number.isFinite(Number(record.lastAttackAt))) return null;
+  return Number(record.lastAttackAt) + NIGHT_SIEGE.ATTACK_COOLDOWN_MS;
 }
 
 /** GET `?syndicateId=X` — the Convoy's current shared HP for that Syndicate, lazily spawning a
@@ -142,7 +166,8 @@ async function handleGet(
   }
 
   const now = Date.now();
-  let record = (await bosses.get(syndicateId, { type: 'json' })) as BossRecord | null;
+  const raw = (await bosses.get(syndicateId, { type: 'json' })) as BossRecord | null;
+  let record = raw ? normalizeBossRecord(raw, now) : null;
   if (!record || isBossExpired(record, now)) {
     const fresh = createFreshBoss(syndicateId, now);
     await bosses.setJSON(syndicateId, fresh);
@@ -227,10 +252,9 @@ async function handleSubmitDamage(
 
   for (let attempt = 0; attempt < MAX_WRITE_RETRIES; attempt++) {
     const existing = await bosses.getWithMetadata(syndicateId, { type: 'json' });
+    const normalized = existing ? normalizeBossRecord(existing.data as BossRecord, now) : null;
     const record: BossRecord =
-      existing && !isBossExpired(existing.data as BossRecord, now)
-        ? (existing.data as BossRecord)
-        : createFreshBoss(syndicateId, now);
+      normalized && !isBossExpired(normalized, now) ? normalized : createFreshBoss(syndicateId, now);
 
     const updated: BossRecord = {
       ...record,
@@ -313,8 +337,8 @@ async function handleClaim(
     const existing = await bosses.getWithMetadata(syndicateId, { type: 'json' });
     if (!existing) return jsonResponse({ error: 'No Convoy raid found for this Syndicate.' }, 404);
 
-    const record = existing.data as BossRecord;
     const now = Date.now();
+    const record = normalizeBossRecord(existing.data as BossRecord, now);
 
     if (isBossExpired(record, now)) {
       const fresh = createFreshBoss(syndicateId, now);
@@ -383,7 +407,7 @@ async function handleSpawnNext(
       continue; // someone else created it first — retry against whatever they wrote
     }
 
-    const record = existing.data as BossRecord;
+    const record = normalizeBossRecord(existing.data as BossRecord, now);
     if (record.currentHp > 0 && !isBossExpired(record, now)) {
       // Still alive and not expired — someone else already reset/spawned, or it was never
       // actually defeated; report the current one instead of erroring, so a stale tap from a
