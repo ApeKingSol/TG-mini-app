@@ -176,10 +176,7 @@ export function GarageScreen() {
       transition={{ duration: 0.2 }}
       className="flex flex-col gap-4 pt-4"
     >
-      <div className="flex w-full items-center justify-between">
-        <p className="font-mono text-xs uppercase tracking-widest text-neutral-500">
-          [ Garage ]
-        </p>
+      <div className="flex w-full items-center justify-end">
         <div className="flex items-center gap-2">
           <motion.button
             type="button"

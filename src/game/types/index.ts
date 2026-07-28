@@ -145,4 +145,10 @@ export interface PlayerState {
    * `claimedBy` list for that boss, purely so the UI can show "Claimed" instantly without a
    * round trip; the server is what actually prevents a double-claim, not this field. */
   lastClaimedBossId: string | null;
+  /** Unix ms timestamp of this account's last Night Siege attack, or null if it has never
+   * attacked — mirrors lastNeonSyphonTime's shape/purpose (see NIGHT_SIEGE.ATTACK_COOLDOWN_MS/
+   * isBossAttackAvailable in economy.ts). A fast local mirror for the countdown UI; the
+   * server's own `night-siege-attack-cooldown` record (night-siege.mts) is what actually
+   * enforces the gate, same dual-track pattern as lastClaimedBossId/claimedBy above. */
+  lastBossAttackTime: number | null;
 }

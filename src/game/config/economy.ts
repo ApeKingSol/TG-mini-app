@@ -294,33 +294,59 @@ export const SMUGGLERS_RUN = {
 
 /** Tuning for Night Siege: a Syndicate-only cooperative World Boss raid (see
  * src/screens/SyndicateHub.tsx — it's gated behind clan membership, not a Race Hub mode card).
- * No entry fee: every member gets one free 30-second tap-damage window per raid against the
- * same Corporate Convoy, and session damage is submitted to (mock, for now) the server for the
- * shared kill — see src/game/mock/siegeApi.ts for the placeholder network shape this will
- * eventually replace with a real live-HP raid boss. A shared kill's loot is a Syndicate-wide
- * concern, not a per-tap Scrap/Neon payout, so there's deliberately no reward-per-damage rate
- * here. */
+ * No entry fee, no tap mini-game: each member gets one deterministic strike against the shared
+ * Corporate Convoy every ATTACK_COOLDOWN_MS, sized by their own car tier (see
+ * getNightSiegeDamage below) — see src/game/mock/siegeApi.ts for the real network shape this
+ * is submitted through. A shared kill's loot is a Syndicate-wide concern, not a per-hit
+ * Scrap/Neon payout, so there's deliberately no reward-per-damage rate here. */
 export const NIGHT_SIEGE = {
-  COMBAT_DURATION_SECONDS: 30,
-  /** Each tap deals a random amount in this range — random so the floating damage numbers
-   * don't feel like a metronome, same reasoning as Auto-Drag's segment weights. */
-  DAMAGE_PER_TAP_MIN: 300,
-  DAMAGE_PER_TAP_MAX: 700,
-  /** Full HP of a freshly-spawned Corporate Convoy — shared across the whole Syndicate, not
-   * per-player. Sized so a single member's one 30s window (worst case ~30 taps × 700 =
-   * 21,000) can never solo it; it genuinely takes the whole roster chipping in across
-   * multiple raids/visits. */
+  /** Full HP of a freshly-spawned (or reset) Corporate Convoy — shared across the whole
+   * Syndicate, not per-player; it genuinely takes the whole roster chipping in across
+   * multiple 8h cooldown windows. */
   BOSS_MAX_HP: 10_000_000,
+  /** How long a single Convoy lives before it auto-resets if it's still standing — see
+   * bossExpiresAt in netlify/functions/night-siege.mts. A boss that times out without being
+   * killed grants nobody the reward; its HP, damage log, and claim list are wiped and a fresh
+   * 72h window starts immediately. */
+  BOSS_LIFETIME_MS: 72 * 60 * 60 * 1000,
+  /** Each player can land at most one strike every this many ms — tracked per-player
+   * (independent of which specific boss instance happens to be up; the cooldown survives a
+   * kill, an auto-reset, or someone starting the next raid). See lastBossAttackTime in
+   * PlayerState for the fast local mirror, and the server's own `night-siege-attack-cooldown`
+   * Blobs store (night-siege.mts) for the actual enforced gate. */
+  ATTACK_COOLDOWN_MS: 8 * 60 * 60 * 1000,
+  /** Each point of car tier adds this much damage to a single strike — deterministic, not
+   * random, so a player's contribution is exactly and only a function of how strong their car
+   * is (see getNightSiegeDamage below). */
+  DAMAGE_PER_TIER: 15_000,
+  /** Hard ceiling on a single strike's damage, enforced server-side — exactly matches
+   * CAR_TIERS.length * DAMAGE_PER_TIER (20 × 15,000), so it never actually clamps a
+   * legitimate max-tier hit; it only exists to stop a tampered client claiming an impossibly
+   * high carTier from doing unbounded damage in one call. */
+  MAX_HIT_DAMAGE: 300_000,
   /** Flat $NEON reward every current Syndicate member can claim, once each, after the shared
    * boss's HP reaches 0 — see netlify/functions/night-siege.mts's `claimedBy` tracking for how
    * "once each" is enforced server-side. */
-  REWARD_NEON: 50,
-  /** Hard ceiling on a single submit-damage call's `damage` value, enforced server-side —
-   * generously above what COMBAT_DURATION_SECONDS/DAMAGE_PER_TAP_MAX could ever legitimately
-   * produce (30s at an inhuman 10 taps/sec would be ~300 taps × 700 = 210,000), so a tampered
-   * client can't blow past this and solo-kill the shared boss in one call. */
-  MAX_PLAUSIBLE_SESSION_DAMAGE: 300_000,
+  REWARD_NEON: 100,
 } as const;
+
+/** Whether this player's attack cooldown has elapsed — true if they've never attacked, or
+ * NIGHT_SIEGE.ATTACK_COOLDOWN_MS have passed since lastAttackTime. Pure function of
+ * (lastAttack, now), same shape as isNeonSyphonClaimable/isDailyRewardClaimable, so both the
+ * live countdown UI and (server-side, against its own record) the actual gate derive the same
+ * answer from the same rule. */
+export function isBossAttackAvailable(lastAttackTime: number | null, now: number): boolean {
+  if (lastAttackTime === null) return true;
+  return now - lastAttackTime >= NIGHT_SIEGE.ATTACK_COOLDOWN_MS;
+}
+
+/** The deterministic damage a single Night Siege strike deals, purely a function of the
+ * attacker's car tier — shared by the client (for the pre-attack preview and the post-attack
+ * floating number) and the server (the actual authoritative computation in night-siege.mts),
+ * so the number a player sees is always exactly the number that lands. */
+export function getNightSiegeDamage(carTier: number): number {
+  return Math.min(carTier * NIGHT_SIEGE.DAMAGE_PER_TIER, NIGHT_SIEGE.MAX_HIT_DAMAGE);
+}
 
 /** One day's Daily Reward — always exactly one of Scrap or $NEON, never both, so the claim
  * toast/UI never has to handle a split payout. */

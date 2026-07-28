@@ -139,12 +139,17 @@ interface PromoteBody {
   initData?: unknown;
   targetUserId?: unknown;
 }
+interface DemoteBody {
+  action: 'demote';
+  initData?: unknown;
+  targetUserId?: unknown;
+}
 interface KickBody {
   action: 'kick';
   initData?: unknown;
   targetUserId?: unknown;
 }
-type PostBody = CreateBody | JoinBody | LeaveBody | PromoteBody | KickBody;
+type PostBody = CreateBody | JoinBody | LeaveBody | PromoteBody | DemoteBody | KickBody;
 
 async function handleCreate(
   user: VerifiedTelegramUser,
@@ -319,6 +324,45 @@ async function handlePromote(
   return jsonResponse({ error: 'Could not promote — please try again.' }, 409);
 }
 
+async function handleDemote(
+  user: VerifiedTelegramUser,
+  body: DemoteBody,
+  syndicates: ReturnType<typeof getStore>,
+  membership: ReturnType<typeof getStore>,
+): Promise<Response> {
+  const targetUserId = typeof body.targetUserId === 'string' ? body.targetUserId : '';
+  if (!targetUserId) return jsonResponse({ error: 'targetUserId is required.' }, 400);
+
+  const syndicateId = await membership.get(membershipKey(user.id), { type: 'text' });
+  if (!syndicateId) return jsonResponse({ error: 'You are not in a Syndicate.' }, 400);
+
+  for (let attempt = 0; attempt < MAX_WRITE_RETRIES; attempt++) {
+    const existing = await syndicates.getWithMetadata(syndicateId, { type: 'json' });
+    if (!existing) return jsonResponse({ error: 'This Syndicate no longer exists.' }, 404);
+
+    const record = existing.data as StoredSyndicate;
+    // Only the Leader can demote — a Co-Leader can't strip another Co-Leader's status any
+    // more than they can promote one, per the same "Co-Leader is a Deputy, not an appointer"
+    // rule as handlePromote above.
+    if (record.leaderId !== user.id) {
+      return jsonResponse({ error: 'Only the Leader can demote Co-Leaders.' }, 403);
+    }
+    if (!record.coLeaderIds.includes(targetUserId)) {
+      return jsonResponse({ error: 'That player is not a Co-Leader.' }, 400);
+    }
+
+    const updated: StoredSyndicate = {
+      ...record,
+      coLeaderIds: record.coLeaderIds.filter((id) => id !== targetUserId),
+    };
+    const result = await syndicates.setJSON(syndicateId, updated, { onlyIfMatch: existing.etag });
+    if (result.modified) return jsonResponse(toPublicSyndicate(updated));
+    // etag mismatch — retry against the freshest record.
+  }
+
+  return jsonResponse({ error: 'Could not demote — please try again.' }, 409);
+}
+
 async function handleKick(
   user: VerifiedTelegramUser,
   body: KickBody,
@@ -395,10 +439,15 @@ async function handlePost(
       return handleLeave(user, syndicates, membership);
     case 'promote':
       return handlePromote(user, payload as PromoteBody, syndicates, membership);
+    case 'demote':
+      return handleDemote(user, payload as DemoteBody, syndicates, membership);
     case 'kick':
       return handleKick(user, payload as KickBody, syndicates, membership);
     default:
-      return jsonResponse({ error: 'action must be one of: create, join, leave, promote, kick' }, 400);
+      return jsonResponse(
+        { error: 'action must be one of: create, join, leave, promote, demote, kick' },
+        400,
+      );
   }
 }
 

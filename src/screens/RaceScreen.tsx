@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Gauge, Lock, Package, Radio, type LucideIcon } from 'lucide-react';
-import { useGameStore } from '../game/store/GameStore';
+import { ArrowLeft, Award, Gauge, Lock, Package, Radio, type LucideIcon } from 'lucide-react';
+import { useGameStore, getTelegramUserId } from '../game/store/GameStore';
 import {
   AUTO_DRAG,
   getCarStats,
   NEON_SYPHON,
   getNeonSyphonReward,
   isNeonSyphonClaimable,
+  isOverclockActive,
 } from '../game/config/economy';
 import { getCarTier, getLeagueForTier } from '../game/config/carTiers';
 import {
@@ -17,6 +18,7 @@ import {
   subscribeToMatchResult,
   type OpenChallenge,
 } from '../game/mock/matchmaking';
+import { fetchMySyndicate, type Syndicate } from '../game/mock/syndicateApi';
 import { PlayerLobby, type LobbyView } from './PlayerLobby';
 import { SmugglersRun } from './SmugglersRun';
 import { SyndicateHub } from './SyndicateHub';
@@ -70,18 +72,9 @@ function TheStreetsHub({
   onSelectAutoDrag,
   onSelectSmugglersRun,
 }: TheStreetsHubProps) {
-  const neon = useGameStore((state) => state.neon);
-
   return (
     <div className="flex flex-col gap-4">
-      <div className="rounded-xl border border-neon-magenta/40 bg-neon-magenta/10 p-4 text-center">
-        <p className="text-xs uppercase tracking-widest text-neon-magenta/80">
-          Syndicate Balance
-        </p>
-        <p className="mt-1 font-display text-3xl font-bold tabular-nums text-neon-magenta drop-shadow-[0_0_10px_rgba(255,46,230,0.5)]">
-          {neon} NEON
-        </p>
-      </div>
+      <StreetCredPanel />
 
       <div className="grid grid-cols-2 gap-2 rounded-xl border border-neutral-800 bg-black/20 p-1">
         <button
@@ -133,6 +126,81 @@ function TheStreetsHub({
       )}
 
       {activeTab === 'syndicates' && <SyndicateHub />}
+    </div>
+  );
+}
+
+/** Replaces the old flat "Syndicate Balance" readout (that's what CurrencyBar's NEON tile
+ * already shows, right at the top of the whole app — repeating it here was pure duplication)
+ * with the actually-useful context a player wants at a glance before picking a mode: which
+ * League their current car tier puts them in, whether they're riding solo or repping a
+ * Syndicate (and in what role), and whether an Overclock boost is currently ticking. */
+function StreetCredPanel() {
+  const carTier = useGameStore((state) => state.carTier);
+  const boostEndsAt = useGameStore((state) => state.boostEndsAt);
+  const myId = getTelegramUserId();
+
+  const [now, setNow] = useState(() => Date.now());
+  const [mySyndicate, setMySyndicate] = useState<Syndicate | null>(null);
+  const [isLoadingSyndicate, setIsLoadingSyndicate] = useState(true);
+
+  // Needed for both the Overclock countdown and (indirectly) freshness of "is the boost still
+  // active" — nothing else on this panel ticks every second while sitting idle.
+  useEffect(() => {
+    const interval = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    fetchMySyndicate()
+      .then(setMySyndicate)
+      .finally(() => setIsLoadingSyndicate(false));
+  }, []);
+
+  const league = getLeagueForTier(carTier);
+  const overclockActive = isOverclockActive(boostEndsAt, now);
+  const overclockMsRemaining = boostEndsAt !== null ? Math.max(0, boostEndsAt - now) : 0;
+
+  const syndicateLabel = (() => {
+    if (isLoadingSyndicate) return '...';
+    if (!mySyndicate) return 'Lone Wolf';
+    const isLeader = myId !== null && myId === mySyndicate.leaderId;
+    const isCoLeader = myId !== null && mySyndicate.coLeaderIds.includes(myId);
+    const role = isLeader ? 'Leader' : isCoLeader ? 'Co-Leader' : 'Member';
+    return `${role} — [${mySyndicate.tag}] ${mySyndicate.name}`;
+  })();
+
+  return (
+    <div className="rounded-xl border border-neon-magenta/40 bg-neon-magenta/10 p-4">
+      <div className="flex items-center gap-1.5 text-neon-magenta">
+        <Award className="h-4 w-4" strokeWidth={2} />
+        <p className="font-display text-xs font-bold uppercase tracking-widest">Street Cred</p>
+      </div>
+
+      <div className="mt-3 flex items-center justify-between">
+        <span className="text-[10px] uppercase tracking-widest text-neutral-500">League</span>
+        <span className="font-display text-sm font-bold text-neon-magenta">{league.name}</span>
+      </div>
+      <div className="mt-1.5 flex items-center justify-between gap-3">
+        <span className="shrink-0 text-[10px] uppercase tracking-widest text-neutral-500">
+          Syndicate
+        </span>
+        <span className="truncate font-display text-sm font-bold text-neon-magenta">
+          {syndicateLabel}
+        </span>
+      </div>
+
+      <div className="mt-3 border-t border-neon-magenta/20 pt-2 text-center">
+        {overclockActive ? (
+          <p className="font-mono text-xs font-bold uppercase tracking-widest text-amber drop-shadow-[0_0_8px_rgba(255,149,0,0.6)]">
+            Overclock: {formatSyphonCountdown(overclockMsRemaining)}
+          </p>
+        ) : (
+          <p className="font-mono text-xs uppercase tracking-widest text-neutral-600">
+            System Normal
+          </p>
+        )}
+      </div>
     </div>
   );
 }

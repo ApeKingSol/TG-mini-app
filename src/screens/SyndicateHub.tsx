@@ -1,9 +1,20 @@
 import { useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
-import { ArrowLeft, Crown, Loader2, Radio, ShieldCheck, Star, Users } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  ArrowLeft,
+  ChevronDown,
+  Crown,
+  Loader2,
+  Radio,
+  ShieldCheck,
+  Star,
+  Swords,
+  Users,
+} from 'lucide-react';
 import { useGameStore, getTelegramUserId } from '../game/store/GameStore';
 import {
   createSyndicate,
+  demoteMember,
   fetchMySyndicate,
   fetchSyndicates,
   joinSyndicate,
@@ -12,11 +23,16 @@ import {
   promoteMember,
   type Syndicate,
 } from '../game/mock/syndicateApi';
+import { fetchConvoyStatus } from '../game/mock/siegeApi';
 import { NightSiege } from './NightSiege';
 
 const CREATE_COST_NEON = 1000;
 const NAME_MAX_LENGTH = 20;
 const TAG_MAX_LENGTH = 4;
+/** How often the roster's per-member damage column re-polls the shared boss status — a bit
+ * less aggressive than NightSiege.tsx's own 5s HP-bar poll, since this is a secondary display
+ * rather than the primary combat readout. */
+const DAMAGE_LOG_POLL_INTERVAL_MS = 8000;
 
 type SyndicateView = 'menu' | 'create' | 'join' | 'active';
 
@@ -273,8 +289,7 @@ interface JoinScreenProps {
   onJoined: (syndicate: Syndicate) => void;
 }
 
-/** The server browser — every Syndicate that exists (on this device, per syndicateApi.ts's
- * localStorage scope), scrollable, each row joinable unless full. */
+/** The server browser — every Syndicate that exists, scrollable, each row joinable unless full. */
 function JoinScreen({ onBack, onJoined }: JoinScreenProps) {
   const [syndicates, setSyndicates] = useState<Syndicate[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -400,15 +415,30 @@ interface ActiveScreenProps {
 
 type MyRole = 'leader' | 'co-leader' | 'member';
 
-/** The dashboard — the player's Syndicate up top, the member roster (with role-gated
- * Promote/Kick), Night Siege underneath so members can attack the Convoy without leaving the
- * tab, and a deliberately understated Leave control at the very bottom (this isn't an action to
- * invite mis-taps on). */
+/** The dashboard — the player's Syndicate up top, the collapsible member roster (with role-gated
+ * Promote/Demote/Kick and each member's damage to the current boss), Night Siege underneath so
+ * members can attack the Convoy without leaving the tab, and a deliberately understated Leave
+ * control at the very bottom (this isn't an action to invite mis-taps on). */
 function ActiveScreen({ syndicate, onLeft, onSyndicateUpdate }: ActiveScreenProps) {
   const myId = getTelegramUserId();
   const [isLeaving, setIsLeaving] = useState(false);
   const [actioningId, setActioningId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [damageLog, setDamageLog] = useState<Record<string, number>>({});
+
+  // A second, independent poll of the same boss-status endpoint NightSiege.tsx already calls —
+  // this component only needs `damageLog` out of it (for the roster below), not the full combat
+  // UI, so it keeps its own small effect rather than lifting all of NightSiege's state up here.
+  useEffect(() => {
+    const pollDamageLog = () => {
+      fetchConvoyStatus(syndicate.id)
+        .then((status) => setDamageLog(status.damageLog))
+        .catch(() => {});
+    };
+    pollDamageLog();
+    const intervalId = window.setInterval(pollDamageLog, DAMAGE_LOG_POLL_INTERVAL_MS);
+    return () => window.clearInterval(intervalId);
+  }, [syndicate.id]);
 
   const myRole: MyRole =
     myId !== null && myId === syndicate.leaderId
@@ -433,6 +463,20 @@ function ActiveScreen({ syndicate, onLeft, onSyndicateUpdate }: ActiveScreenProp
       onSyndicateUpdate(updated);
     } catch (err) {
       setActionError(err instanceof Error ? err.message.toUpperCase() : 'PROMOTE FAILED');
+    } finally {
+      setActioningId(null);
+    }
+  };
+
+  const handleDemote = async (targetUserId: string) => {
+    if (actioningId) return;
+    setActionError(null);
+    setActioningId(targetUserId);
+    try {
+      const updated = await demoteMember(targetUserId);
+      onSyndicateUpdate(updated);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message.toUpperCase() : 'DEMOTE FAILED');
     } finally {
       setActioningId(null);
     }
@@ -485,7 +529,9 @@ function ActiveScreen({ syndicate, onLeft, onSyndicateUpdate }: ActiveScreenProp
         myId={myId}
         myRole={myRole}
         actioningId={actioningId}
+        damageLog={damageLog}
         onPromote={handlePromote}
+        onDemote={handleDemote}
         onKick={handleKick}
       />
       {actionError && (
@@ -512,92 +558,148 @@ interface MemberRosterCardProps {
   syndicate: Syndicate;
   myId: string | null;
   myRole: MyRole;
-  /** The member id currently mid-Promote/Kick, or null — disables every row's action buttons
-   * while set, so a slow request can't be double-fired by a second tap. */
+  /** The member id currently mid-Promote/Demote/Kick, or null — disables every row's action
+   * buttons while set, so a slow request can't be double-fired by a second tap. */
   actioningId: string | null;
+  /** userId -> total damage dealt to the CURRENT Night Siege boss (see
+   * netlify/functions/night-siege.mts's damageLog) — rendered next to each member's name. */
+  damageLog: Record<string, number>;
   onPromote: (targetUserId: string) => void;
+  onDemote: (targetUserId: string) => void;
   onKick: (targetUserId: string) => void;
 }
 
-/** The named roster — every member, their role badge, and (role-gated, per
- * netlify/functions/syndicates.mts's exact permission rules) Promote/Kick buttons. The Leader
- * can promote a regular member to Co-Leader or kick anyone but themselves; a Co-Leader can only
- * kick a regular member (never the Leader, never another Co-Leader, and never promote anyone);
- * a regular member sees badges only, no action buttons at all. */
+/** The named roster — collapsed by default (a full member list has no business permanently
+ * eating screen space above Night Siege, the thing players actually came here to do), each row
+ * showing a role badge, this raid's damage dealt, and (role-gated, per
+ * netlify/functions/syndicates.mts's exact permission rules) Promote/Demote/Kick buttons. The
+ * Leader can promote a regular member to Co-Leader, demote a Co-Leader back down, or kick anyone
+ * but themselves; a Co-Leader can only kick a regular member (never the Leader, never another
+ * Co-Leader, and never promote/demote anyone); a regular member sees badges and damage only, no
+ * action buttons at all. */
 function MemberRosterCard({
   syndicate,
   myId,
   myRole,
   actioningId,
+  damageLog,
   onPromote,
+  onDemote,
   onKick,
 }: MemberRosterCardProps) {
+  const [isOpen, setIsOpen] = useState(false);
+
   return (
-    <div className="rounded-2xl border border-neutral-800 bg-white/5 p-4 backdrop-blur-xl">
-      <div className="flex items-center gap-1.5 text-neutral-400">
-        <Users className="h-3.5 w-3.5" strokeWidth={2} />
-        <p className="font-display text-xs font-bold uppercase tracking-wide">Roster</p>
-      </div>
+    <div className="rounded-2xl border border-neutral-800 bg-white/5 backdrop-blur-xl">
+      <button
+        type="button"
+        onClick={() => setIsOpen((open) => !open)}
+        className="flex w-full items-center justify-between p-4"
+      >
+        <div className="flex items-center gap-1.5 text-neutral-400">
+          <Users className="h-3.5 w-3.5" strokeWidth={2} />
+          <p className="font-display text-xs font-bold uppercase tracking-wide">
+            Roster ({syndicate.membersCount})
+          </p>
+        </div>
+        <ChevronDown
+          className={`h-4 w-4 text-neutral-500 transition-transform duration-200 ${
+            isOpen ? 'rotate-180' : ''
+          }`}
+          strokeWidth={2}
+        />
+      </button>
 
-      <div className="mt-3 flex flex-col gap-2">
-        {syndicate.members.map((member) => {
-          const isSelf = member.id === myId;
-          const canPromote = myRole === 'leader' && !isSelf && !member.isLeader && !member.isCoLeader;
-          const canKick =
-            !isSelf &&
-            !member.isLeader &&
-            (myRole === 'leader' || (myRole === 'co-leader' && !member.isCoLeader));
-          const isBusy = actioningId === member.id;
+      <AnimatePresence initial={false}>
+        {isOpen && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: 'easeInOut' }}
+            className="overflow-hidden"
+          >
+            <div className="flex flex-col gap-2 px-4 pb-4">
+              {syndicate.members.map((member) => {
+                const isSelf = member.id === myId;
+                const canPromote =
+                  myRole === 'leader' && !isSelf && !member.isLeader && !member.isCoLeader;
+                const canDemote = myRole === 'leader' && !isSelf && member.isCoLeader;
+                const canKick =
+                  !isSelf &&
+                  !member.isLeader &&
+                  (myRole === 'leader' || (myRole === 'co-leader' && !member.isCoLeader));
+                const isBusy = actioningId === member.id;
+                const damage = damageLog[member.id] ?? 0;
 
-          return (
-            <div
-              key={member.id}
-              className="flex items-center gap-2 rounded-lg border border-neutral-800 bg-black/20 px-3 py-2"
-            >
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-mono text-xs text-neutral-200">
-                  {member.name}
-                  {isSelf ? ' (You)' : ''}
-                </p>
-                {(member.isLeader || member.isCoLeader) && (
+                return (
                   <div
-                    className={`mt-0.5 flex items-center gap-1 text-[9px] font-bold uppercase tracking-widest ${
-                      member.isLeader ? 'text-amber' : 'text-neon-cyan'
-                    }`}
+                    key={member.id}
+                    className="flex items-center gap-2 rounded-lg border border-neutral-800 bg-black/20 px-3 py-2"
                   >
-                    {member.isLeader ? (
-                      <Crown className="h-2.5 w-2.5" strokeWidth={2.5} />
-                    ) : (
-                      <Star className="h-2.5 w-2.5" strokeWidth={2.5} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-mono text-xs text-neutral-200">
+                        {member.name}
+                        {isSelf ? ' (You)' : ''}
+                      </p>
+                      <div className="mt-0.5 flex items-center gap-2">
+                        {(member.isLeader || member.isCoLeader) && (
+                          <div
+                            className={`flex items-center gap-1 text-[9px] font-bold uppercase tracking-widest ${
+                              member.isLeader ? 'text-amber' : 'text-neon-cyan'
+                            }`}
+                          >
+                            {member.isLeader ? (
+                              <Crown className="h-2.5 w-2.5" strokeWidth={2.5} />
+                            ) : (
+                              <Star className="h-2.5 w-2.5" strokeWidth={2.5} />
+                            )}
+                            {member.isLeader ? 'Leader' : 'Co-Leader'}
+                          </div>
+                        )}
+                        <div className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-widest text-danger-red/80">
+                          <Swords className="h-2.5 w-2.5" strokeWidth={2.5} />
+                          {damage.toLocaleString()} dmg
+                        </div>
+                      </div>
+                    </div>
+                    {canPromote && (
+                      <button
+                        type="button"
+                        onClick={() => onPromote(member.id)}
+                        disabled={isBusy}
+                        className="shrink-0 rounded border border-neon-cyan/50 bg-neon-cyan/10 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-neon-cyan transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {isBusy ? '...' : 'Promote'}
+                      </button>
                     )}
-                    {member.isLeader ? 'Leader' : 'Co-Leader'}
+                    {canDemote && (
+                      <button
+                        type="button"
+                        onClick={() => onDemote(member.id)}
+                        disabled={isBusy}
+                        className="shrink-0 rounded border border-amber/50 bg-amber/10 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-amber transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {isBusy ? '...' : 'Demote'}
+                      </button>
+                    )}
+                    {canKick && (
+                      <button
+                        type="button"
+                        onClick={() => onKick(member.id)}
+                        disabled={isBusy}
+                        className="shrink-0 rounded border border-danger-red/50 bg-danger-red/10 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-danger-red transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {isBusy ? '...' : 'Kick'}
+                      </button>
+                    )}
                   </div>
-                )}
-              </div>
-              {canPromote && (
-                <button
-                  type="button"
-                  onClick={() => onPromote(member.id)}
-                  disabled={isBusy}
-                  className="shrink-0 rounded border border-neon-cyan/50 bg-neon-cyan/10 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-neon-cyan transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  {isBusy ? '...' : 'Promote'}
-                </button>
-              )}
-              {canKick && (
-                <button
-                  type="button"
-                  onClick={() => onKick(member.id)}
-                  disabled={isBusy}
-                  className="shrink-0 rounded border border-danger-red/50 bg-danger-red/10 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-danger-red transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  {isBusy ? '...' : 'Kick'}
-                </button>
-              )}
+                );
+              })}
             </div>
-          );
-        })}
-      </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

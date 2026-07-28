@@ -181,6 +181,11 @@ interface GameActions {
    * completely (same client-trusted-economy model as claimNeonSyphon/claimQuest), it does not
    * re-verify anything server-side on its own. */
   creditBossKillReward: (bossId: string) => void;
+  /** Records `timestamp` into lastBossAttackTime, driving the local 8h cooldown countdown.
+   * Call this only *after* netlify/functions/night-siege.mts's 'submit-damage' action has
+   * already accepted the attack — same fast-local-mirror pattern as creditBossKillReward, the
+   * server's own cooldown record is what actually enforces the gate. */
+  recordBossAttack: (timestamp: number) => void;
 }
 
 type GameStore = PlayerState & GameActions;
@@ -247,6 +252,7 @@ function createInitialPlayerState(): PlayerState {
     racesWon: 0,
     claimedQuests: [],
     lastClaimedBossId: null,
+    lastBossAttackTime: null,
   };
 }
 
@@ -742,6 +748,8 @@ export const useGameStore = create<GameStore>()(
           ),
         }));
       },
+
+      recordBossAttack: (timestamp) => set({ lastBossAttackTime: timestamp }),
     }),
     {
       name: STORAGE_KEY,

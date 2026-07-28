@@ -161,6 +161,20 @@ export function promoteMember(targetUserId: string): Promise<Syndicate> {
   }).then((response) => parseJsonOrThrow<Syndicate>(response));
 }
 
+/** Strips a Co-Leader back down to a regular member. Server-enforced: only the Leader can call
+ * this successfully — see netlify/functions/syndicates.mts's handleDemote. There is no
+ * corresponding action for a Co-Leader to demote themselves; they'd use leaveSyndicate for
+ * that instead. */
+export function demoteMember(targetUserId: string): Promise<Syndicate> {
+  if (!isRunningInTelegram()) return requireTelegram();
+  return fetch(SYNDICATES_ENDPOINT, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ initData: WebApp.initData, action: 'demote', targetUserId }),
+    cache: 'no-store',
+  }).then((response) => parseJsonOrThrow<Syndicate>(response));
+}
+
 /** Kicks another player from the current player's Syndicate. Server-enforced permissions: the
  * Leader can kick anyone but the Leader (i.e. themselves); a Co-Leader can only kick a regular
  * member — see handleKick in syndicates.mts. Resolves to the Syndicate's post-kick state, or

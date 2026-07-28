@@ -1,51 +1,78 @@
 import type { Context } from '@netlify/functions';
 import { getStore } from '@netlify/blobs';
 import { extractInitData, verifyInitData, type VerifiedTelegramUser } from './_shared/verifyInitData';
-import { ECONOMY, NIGHT_SIEGE } from '../../src/game/config/economy';
+import { ECONOMY, NIGHT_SIEGE, isBossAttackAvailable, getNightSiegeDamage } from '../../src/game/config/economy';
+import { CAR_TIERS } from '../../src/game/config/carTiers';
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const MAX_WRITE_RETRIES = 5;
 
 /** One Corporate Convoy raid, shared across an entire Syndicate — keyed by syndicateId, so every
- * member reads/writes the exact same HP pool rather than each seeing their own copy. `claimedBy`
- * is the server's authoritative record of who has already collected NIGHT_SIEGE.REWARD_NEON for
- * this specific kill; it's what actually prevents a double-claim (see handleClaim below), not
- * anything the client remembers locally. */
+ * member reads/writes the exact same HP pool rather than each seeing their own copy.
+ * `claimedBy` is the server's authoritative record of who has already collected
+ * NIGHT_SIEGE.REWARD_NEON for this specific kill (see handleClaim). `damageLog` is a running
+ * userId -> total-damage-dealt-to-this-boss map, purely for the Syndicate roster's per-member
+ * display (see SyndicateHub.tsx) — it carries no reward logic of its own. `bossExpiresAt` is
+ * when this boss auto-resets if it's still standing (see isBossExpired/NIGHT_SIEGE.BOSS_LIFETIME_MS). */
 interface BossRecord {
   bossId: string;
   syndicateId: string;
   maxHp: number;
   currentHp: number;
   claimedBy: string[];
+  damageLog: Record<string, number>;
+  bossExpiresAt: number;
 }
 
 /** What the frontend (src/game/mock/siegeApi.ts) actually needs — `alreadyClaimed` is computed
- * per-requester from the full `claimedBy` list at read time, so this never leaks the rest of the
- * Syndicate's claim status to someone who doesn't need it. */
+ * per-requester from the full `claimedBy` list at read time, and `nextAttackAvailableAt` is
+ * computed per-requester from the separate attack-cooldown store, so neither leaks anything
+ * about other members beyond what `damageLog` itself already exposes (a shared raid stat, same
+ * visibility as a leaderboard). */
 interface PublicBossStatus {
   bossId: string;
   maxHp: number;
   currentHp: number;
   alreadyClaimed: boolean;
+  bossExpiresAt: number;
+  nextAttackAvailableAt: number | null;
+  damageLog: Record<string, number>;
 }
 
-function toPublicStatus(record: BossRecord, requesterId: string): PublicBossStatus {
+function toPublicStatus(
+  record: BossRecord,
+  requesterId: string,
+  nextAttackAvailableAt: number | null,
+): PublicBossStatus {
   return {
     bossId: record.bossId,
     maxHp: record.maxHp,
     currentHp: record.currentHp,
     alreadyClaimed: record.claimedBy.includes(requesterId),
+    bossExpiresAt: record.bossExpiresAt,
+    nextAttackAvailableAt,
+    damageLog: record.damageLog,
   };
 }
 
-function createFreshBoss(syndicateId: string): BossRecord {
+function createFreshBoss(syndicateId: string, now: number): BossRecord {
   return {
     bossId: crypto.randomUUID(),
     syndicateId,
     maxHp: NIGHT_SIEGE.BOSS_MAX_HP,
     currentHp: NIGHT_SIEGE.BOSS_MAX_HP,
     claimedBy: [],
+    damageLog: {},
+    bossExpiresAt: now + NIGHT_SIEGE.BOSS_LIFETIME_MS,
   };
+}
+
+/** True only for a boss that's still alive past its own lifetime — a *defeated* boss
+ * (currentHp <= 0) never expires on its own; it just sits claimable until a member explicitly
+ * starts the next raid (see handleSpawnNext). Only an undefeated boss auto-resets, per the
+ * "72 hours pass and HP > 0" rule. */
+function isBossExpired(record: BossRecord, now: number): boolean {
+  return record.currentHp > 0 && now > record.bossExpiresAt;
 }
 
 /** Every response goes through here specifically so no-cache headers can never be forgotten on
@@ -77,12 +104,33 @@ async function verifyMembership(
   return mySyndicateId === syndicateId;
 }
 
+interface AttackCooldownRecord {
+  lastAttackAt: number;
+}
+
+/** The requester's own next-eligible-attack timestamp, or null if they've never attacked —
+ * derived from the same `night-siege-attack-cooldown` store handleSubmitDamage's reservation
+ * writes to, so GET/claim/spawn-next responses can show an accurate countdown without the
+ * client having to have just attacked to know it. */
+async function getNextAttackAvailableAt(
+  userId: string,
+  cooldowns: ReturnType<typeof getStore>,
+): Promise<number | null> {
+  const record = (await cooldowns.get(userId, { type: 'json' })) as AttackCooldownRecord | null;
+  if (!record) return null;
+  return record.lastAttackAt + NIGHT_SIEGE.ATTACK_COOLDOWN_MS;
+}
+
 /** GET `?syndicateId=X` — the Convoy's current shared HP for that Syndicate, lazily spawning a
- * fresh full-HP boss the first time any member ever asks about it. */
+ * fresh full-HP boss the first time any member ever asks about it, or the moment an existing
+ * one is found to have expired (still alive past its bossExpiresAt) — this is a best-effort,
+ * non-CAS reset purely for the read path; the write-path handlers below (submit-damage, claim,
+ * spawn-next) each re-check expiry against their own freshly-read etag before mutating. */
 async function handleGet(
   req: Request,
   bosses: ReturnType<typeof getStore>,
   membership: ReturnType<typeof getStore>,
+  cooldowns: ReturnType<typeof getStore>,
 ): Promise<Response> {
   const user = verifyInitData(req.headers.get('x-telegram-init-data') ?? '', BOT_TOKEN);
   if (!user) return jsonResponse({ error: 'invalid or missing Telegram initData' }, 401);
@@ -93,19 +141,23 @@ async function handleGet(
     return jsonResponse({ error: 'You are not a member of this Syndicate.' }, 403);
   }
 
-  const existing = (await bosses.get(syndicateId, { type: 'json' })) as BossRecord | null;
-  if (existing) return jsonResponse(toPublicStatus(existing, user.id));
+  const now = Date.now();
+  let record = (await bosses.get(syndicateId, { type: 'json' })) as BossRecord | null;
+  if (!record || isBossExpired(record, now)) {
+    const fresh = createFreshBoss(syndicateId, now);
+    await bosses.setJSON(syndicateId, fresh);
+    record = fresh;
+  }
 
-  const fresh = createFreshBoss(syndicateId);
-  await bosses.setJSON(syndicateId, fresh);
-  return jsonResponse(toPublicStatus(fresh, user.id));
+  const nextAttackAvailableAt = await getNextAttackAvailableAt(user.id, cooldowns);
+  return jsonResponse(toPublicStatus(record, user.id, nextAttackAvailableAt));
 }
 
 interface SubmitDamageBody {
   action: 'submit-damage';
   initData?: unknown;
   syndicateId?: unknown;
-  damage?: unknown;
+  carTier?: unknown;
 }
 interface ClaimBody {
   action: 'claim';
@@ -119,38 +171,82 @@ interface SpawnNextBody {
 }
 type PostBody = SubmitDamageBody | ClaimBody | SpawnNextBody;
 
-/** Adds one player's end-of-combat-window damage to the shared HP pool, clamped at
- * NIGHT_SIEGE.MAX_PLAUSIBLE_SESSION_DAMAGE so a tampered client can't blow past what one real
- * 30-second tap window could ever legitimately produce and solo-kill the boss in a single call. */
+/** Adds one player's single deterministic strike to the shared HP pool, gated by an 8h
+ * per-player cooldown enforced via a CAS'd reservation in the `night-siege-attack-cooldown`
+ * store (reserved *before* the boss is touched, so two near-simultaneous calls from the same
+ * account can't both land a hit) — damage itself is `getNightSiegeDamage(carTier)`, entirely
+ * server-computed from the submitted carTier rather than trusted as a raw client-supplied
+ * damage number, though carTier itself is not cross-checked against the account's real save
+ * (consistent with this project's established client-trusted-economy model — see
+ * PART_BUY_COST_MULTIPLIER-adjacent trust notes throughout GameStore.ts). */
 async function handleSubmitDamage(
   user: VerifiedTelegramUser,
   body: SubmitDamageBody,
   bosses: ReturnType<typeof getStore>,
   membership: ReturnType<typeof getStore>,
+  cooldowns: ReturnType<typeof getStore>,
 ): Promise<Response> {
   const syndicateId = typeof body.syndicateId === 'string' ? body.syndicateId : '';
-  const damage = typeof body.damage === 'number' ? body.damage : NaN;
+  const rawCarTier = typeof body.carTier === 'number' ? body.carTier : NaN;
   if (!syndicateId) return jsonResponse({ error: 'syndicateId is required.' }, 400);
-  if (!Number.isFinite(damage) || damage <= 0) {
-    return jsonResponse({ error: 'damage must be a positive number.' }, 400);
+  if (!Number.isFinite(rawCarTier) || rawCarTier < 1) {
+    return jsonResponse({ error: 'carTier must be a positive number.' }, 400);
   }
   if (!(await verifyMembership(user, syndicateId, membership))) {
     return jsonResponse({ error: 'You are not a member of this Syndicate.' }, 403);
   }
 
-  const clampedDamage = Math.min(damage, NIGHT_SIEGE.MAX_PLAUSIBLE_SESSION_DAMAGE);
+  const carTier = Math.min(Math.floor(rawCarTier), CAR_TIERS.length);
+  const now = Date.now();
+
+  const cooldownExisting = await cooldowns.getWithMetadata(user.id, { type: 'json' });
+  const lastAttackAt = cooldownExisting
+    ? (cooldownExisting.data as AttackCooldownRecord).lastAttackAt
+    : null;
+  if (!isBossAttackAvailable(lastAttackAt, now)) {
+    return jsonResponse(
+      {
+        error: 'Attack cooldown has not elapsed yet.',
+        nextAttackAvailableAt: lastAttackAt! + NIGHT_SIEGE.ATTACK_COOLDOWN_MS,
+      },
+      429,
+    );
+  }
+
+  // Reserve the attack slot before touching the boss at all — CAS'd against whatever cooldown
+  // record currently exists, so a double-tap or two open tabs can't both pass the check above
+  // and both land a hit.
+  const reserved: { modified: boolean } = cooldownExisting
+    ? await cooldowns.setJSON(user.id, { lastAttackAt: now }, { onlyIfMatch: cooldownExisting.etag })
+    : await cooldowns.setJSON(user.id, { lastAttackAt: now }, { onlyIfNew: true });
+  if (!reserved.modified) {
+    return jsonResponse({ error: 'Could not register this attack — please try again.' }, 409);
+  }
+
+  const damage = getNightSiegeDamage(carTier);
 
   for (let attempt = 0; attempt < MAX_WRITE_RETRIES; attempt++) {
     const existing = await bosses.getWithMetadata(syndicateId, { type: 'json' });
-    const record: BossRecord = existing ? (existing.data as BossRecord) : createFreshBoss(syndicateId);
-    const updated: BossRecord = { ...record, currentHp: Math.max(0, record.currentHp - clampedDamage) };
+    const record: BossRecord =
+      existing && !isBossExpired(existing.data as BossRecord, now)
+        ? (existing.data as BossRecord)
+        : createFreshBoss(syndicateId, now);
+
+    const updated: BossRecord = {
+      ...record,
+      currentHp: Math.max(0, record.currentHp - damage),
+      damageLog: { ...record.damageLog, [user.id]: (record.damageLog[user.id] ?? 0) + damage },
+    };
 
     const result = existing
       ? await bosses.setJSON(syndicateId, updated, { onlyIfMatch: existing.etag })
       : await bosses.setJSON(syndicateId, updated, { onlyIfNew: true });
-    if (result.modified) return jsonResponse(toPublicStatus(updated, user.id));
-    // Conflicting concurrent write (another member's own submit-damage/claim/spawn-next landed
-    // first) — retry against the freshest record.
+    if (result.modified) {
+      return jsonResponse(toPublicStatus(updated, user.id, now + NIGHT_SIEGE.ATTACK_COOLDOWN_MS));
+    }
+    // Conflicting concurrent write (another member's own attack/claim/spawn-next landed first)
+    // — retry against the freshest record. The attack reservation above already happened, so
+    // this retry loop only concerns the boss record itself, not the cooldown gate.
   }
 
   return jsonResponse({ error: 'Could not submit damage — please try again.' }, 409);
@@ -197,7 +293,9 @@ async function creditNeonReward(userId: string, bossId: string): Promise<void> {
 /** Claims the flat NIGHT_SIEGE.REWARD_NEON payout for the Convoy's current kill — only once the
  * shared HP has actually reached 0, and only once per member per boss (enforced by CAS-adding
  * `user.id` into that boss's own `claimedBy`, so two near-simultaneous claim calls from the same
- * player can't both succeed). */
+ * player can't both succeed). A boss found to have expired (see isBossExpired) is reset here
+ * too — that's the "3-day time limit" rule applying even if the first caller to notice is
+ * trying to *claim* rather than attack or poll GET. */
 async function handleClaim(
   user: VerifiedTelegramUser,
   body: ClaimBody,
@@ -216,6 +314,19 @@ async function handleClaim(
     if (!existing) return jsonResponse({ error: 'No Convoy raid found for this Syndicate.' }, 404);
 
     const record = existing.data as BossRecord;
+    const now = Date.now();
+
+    if (isBossExpired(record, now)) {
+      const fresh = createFreshBoss(syndicateId, now);
+      const result = await bosses.setJSON(syndicateId, fresh, { onlyIfMatch: existing.etag });
+      if (result.modified) {
+        return jsonResponse(
+          { error: 'The Convoy escaped before the final blow — a new raid has begun.' },
+          400,
+        );
+      }
+      continue; // etag mismatch — retry against the freshest record.
+    }
     if (record.currentHp > 0) {
       return jsonResponse({ error: 'The Convoy is still standing.' }, 400);
     }
@@ -240,15 +351,17 @@ async function handleClaim(
   return jsonResponse({ claimed: true, bossId: claimedBossId, rewardNeon: NIGHT_SIEGE.REWARD_NEON });
 }
 
-/** Starts a fresh raid (new bossId, full HP, empty claimedBy) once the current one is defeated —
- * any member can trigger it, deliberately not automatic on the next GET after a kill, so a member
- * who hasn't yet had the chance to see "Boss Defeated" and claim their reward can't have that
- * window closed out from under them by someone else's page reload. */
+/** Starts a fresh raid (new bossId, full HP, empty claimedBy/damageLog) once the current one is
+ * defeated (or found to have expired while still alive) — any member can trigger it,
+ * deliberately not automatic on the next GET after a kill, so a member who hasn't yet had the
+ * chance to see "Boss Defeated" and claim their reward can't have that window closed out from
+ * under them by someone else's page reload. */
 async function handleSpawnNext(
   user: VerifiedTelegramUser,
   body: SpawnNextBody,
   bosses: ReturnType<typeof getStore>,
   membership: ReturnType<typeof getStore>,
+  cooldowns: ReturnType<typeof getStore>,
 ): Promise<Response> {
   const syndicateId = typeof body.syndicateId === 'string' ? body.syndicateId : '';
   if (!syndicateId) return jsonResponse({ error: 'syndicateId is required.' }, 400);
@@ -258,25 +371,33 @@ async function handleSpawnNext(
 
   for (let attempt = 0; attempt < MAX_WRITE_RETRIES; attempt++) {
     const existing = await bosses.getWithMetadata(syndicateId, { type: 'json' });
+    const now = Date.now();
 
     if (!existing) {
-      const fresh = createFreshBoss(syndicateId);
+      const fresh = createFreshBoss(syndicateId, now);
       const result = await bosses.setJSON(syndicateId, fresh, { onlyIfNew: true });
-      if (result.modified) return jsonResponse(toPublicStatus(fresh, user.id));
+      if (result.modified) {
+        const nextAttackAvailableAt = await getNextAttackAvailableAt(user.id, cooldowns);
+        return jsonResponse(toPublicStatus(fresh, user.id, nextAttackAvailableAt));
+      }
       continue; // someone else created it first — retry against whatever they wrote
     }
 
     const record = existing.data as BossRecord;
-    if (record.currentHp > 0) {
-      // Someone else already started a fresh raid (or this one was never actually defeated) —
-      // report the current one instead of erroring, so a stale tap from a client that hasn't
-      // re-polled yet still lands on something sane.
-      return jsonResponse(toPublicStatus(record, user.id));
+    if (record.currentHp > 0 && !isBossExpired(record, now)) {
+      // Still alive and not expired — someone else already reset/spawned, or it was never
+      // actually defeated; report the current one instead of erroring, so a stale tap from a
+      // client that hasn't re-polled yet still lands on something sane.
+      const nextAttackAvailableAt = await getNextAttackAvailableAt(user.id, cooldowns);
+      return jsonResponse(toPublicStatus(record, user.id, nextAttackAvailableAt));
     }
 
-    const fresh = createFreshBoss(syndicateId);
+    const fresh = createFreshBoss(syndicateId, now);
     const result = await bosses.setJSON(syndicateId, fresh, { onlyIfMatch: existing.etag });
-    if (result.modified) return jsonResponse(toPublicStatus(fresh, user.id));
+    if (result.modified) {
+      const nextAttackAvailableAt = await getNextAttackAvailableAt(user.id, cooldowns);
+      return jsonResponse(toPublicStatus(fresh, user.id, nextAttackAvailableAt));
+    }
     // etag mismatch — retry against the freshest record.
   }
 
@@ -287,6 +408,7 @@ async function handlePost(
   req: Request,
   bosses: ReturnType<typeof getStore>,
   membership: ReturnType<typeof getStore>,
+  cooldowns: ReturnType<typeof getStore>,
 ): Promise<Response> {
   let body: unknown;
   try {
@@ -301,11 +423,11 @@ async function handlePost(
 
   switch (payload?.action) {
     case 'submit-damage':
-      return handleSubmitDamage(user, payload as SubmitDamageBody, bosses, membership);
+      return handleSubmitDamage(user, payload as SubmitDamageBody, bosses, membership, cooldowns);
     case 'claim':
       return handleClaim(user, payload as ClaimBody, bosses, membership);
     case 'spawn-next':
-      return handleSpawnNext(user, payload as SpawnNextBody, bosses, membership);
+      return handleSpawnNext(user, payload as SpawnNextBody, bosses, membership, cooldowns);
     default:
       return jsonResponse({ error: 'action must be one of: submit-damage, claim, spawn-next' }, 400);
   }
@@ -318,9 +440,10 @@ export default async (req: Request, _context: Context) => {
   // eventual-consistency lag since it's re-polled every 2s anyway.
   const bosses = getStore({ name: 'night-siege', consistency: 'strong' });
   const membership = getStore({ name: 'syndicate-membership', consistency: 'strong' });
+  const cooldowns = getStore({ name: 'night-siege-attack-cooldown', consistency: 'strong' });
 
-  if (req.method === 'GET') return handleGet(req, bosses, membership);
-  if (req.method === 'POST') return handlePost(req, bosses, membership);
+  if (req.method === 'GET') return handleGet(req, bosses, membership, cooldowns);
+  if (req.method === 'POST') return handlePost(req, bosses, membership, cooldowns);
   return new Response('Method Not Allowed', { status: 405 });
 };
 

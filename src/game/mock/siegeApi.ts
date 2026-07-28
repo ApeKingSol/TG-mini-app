@@ -5,8 +5,9 @@ import { WebApp, isRunningInTelegram } from '../../lib/telegram';
  * by Syndicate id, membership verified against the same `syndicate-membership` store
  * syndicates.mts writes to), the same real cross-device backend pattern as syndicateApi.ts and
  * useCloudSync.ts. The Corporate Convoy's HP is genuinely shared across every member's device —
- * one player's submitted damage is visible to the rest of the Syndicate on their next poll, and
- * the boss kill's reward can only ever be claimed once per member, enforced server-side.
+ * one player's submitted damage is visible to the rest of the Syndicate on their next poll, the
+ * per-player 8h attack cooldown and the boss's own 72h expiry are both enforced server-side, and
+ * a kill's reward can only ever be claimed once per member.
  */
 
 export interface ConvoyStatus {
@@ -18,6 +19,16 @@ export interface ConvoyStatus {
    * source of truth (see NightSiege.tsx's use of PlayerState.lastClaimedBossId for the fast
    * local mirror this backs up). */
   alreadyClaimed: boolean;
+  /** Unix ms timestamp this Convoy auto-resets at if it's still alive — see
+   * NIGHT_SIEGE.BOSS_LIFETIME_MS in economy.ts. */
+  bossExpiresAt: number;
+  /** Unix ms timestamp *this* account can next attack, or null if it's never attacked — the
+   * server's own authoritative view of the same cooldown PlayerState.lastBossAttackTime mirrors
+   * locally. */
+  nextAttackAvailableAt: number | null;
+  /** userId -> total damage dealt to this specific boss — a shared raid stat (same visibility
+   * as a leaderboard), rendered next to each member's name in SyndicateHub.tsx's roster. */
+  damageLog: Record<string, number>;
 }
 
 export interface ClaimResult {
@@ -33,8 +44,8 @@ interface ErrorBody {
 }
 
 /** Every real endpoint call funnels through here so the "explain what went wrong" behavior is
- * consistent whether the failure was a validation error, a 401/403, or a malformed response —
- * same helper as syndicateApi.ts. */
+ * consistent whether the failure was a validation error, a 401/403/429, or a malformed response
+ * — same helper as syndicateApi.ts. */
 async function parseJsonOrThrow<T>(response: Response): Promise<T> {
   let body: unknown;
   try {
@@ -60,9 +71,9 @@ function requireTelegram(): Promise<never> {
 }
 
 /** Fetches the Convoy's current shared HP for a given Syndicate — lazily spawns a fresh
- * full-HP boss server-side the first time any member ever asks about it. `_t` busts any GET
- * cache a WebView/proxy might apply on its own initiative, same reasoning as
- * syndicateApi.ts's fetchSyndicates. */
+ * full-HP boss server-side the first time any member ever asks about it (or the moment an
+ * existing one is found to have expired). `_t` busts any GET cache a WebView/proxy might apply
+ * on its own initiative, same reasoning as syndicateApi.ts's fetchSyndicates. */
 export function fetchConvoyStatus(syndicateId: string): Promise<ConvoyStatus> {
   if (!isRunningInTelegram()) return requireTelegram();
   return fetch(
@@ -71,21 +82,18 @@ export function fetchConvoyStatus(syndicateId: string): Promise<ConvoyStatus> {
   ).then((response) => parseJsonOrThrow<ConvoyStatus>(response));
 }
 
-/** Submits this player's session damage at the end of their 30-second combat window, adding it
- * to the Syndicate-shared HP pool. The server clamps this to a plausible ceiling for one combat
- * window (NIGHT_SIEGE.MAX_PLAUSIBLE_SESSION_DAMAGE) rather than trusting it outright — see
- * night-siege.mts's handleSubmitDamage. Resolves to the Convoy's post-damage status. */
-export function submitDamage(syndicateId: string, damageAmount: number): Promise<ConvoyStatus> {
+/** Submits this player's single Night Siege strike, adding it to the Syndicate-shared HP pool.
+ * The server computes the actual damage from `carTier` itself (see
+ * night-siege.mts's handleSubmitDamage / economy.ts's getNightSiegeDamage) rather than trusting
+ * a client-supplied damage number, and enforces the 8h per-player cooldown server-side — this
+ * rejects (429) if that cooldown hasn't elapsed, regardless of what the local
+ * lastBossAttackTime mirror thinks. Resolves to the Convoy's post-strike status. */
+export function submitDamage(syndicateId: string, carTier: number): Promise<ConvoyStatus> {
   if (!isRunningInTelegram()) return requireTelegram();
   return fetch(NIGHT_SIEGE_ENDPOINT, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      initData: WebApp.initData,
-      action: 'submit-damage',
-      syndicateId,
-      damage: damageAmount,
-    }),
+    body: JSON.stringify({ initData: WebApp.initData, action: 'submit-damage', syndicateId, carTier }),
     cache: 'no-store',
   }).then((response) => parseJsonOrThrow<ConvoyStatus>(response));
 }

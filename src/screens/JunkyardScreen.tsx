@@ -112,10 +112,6 @@ export function JunkyardScreen() {
       transition={{ duration: 0.2 }}
       className="flex flex-col items-center gap-6 pt-8 text-center"
     >
-      <p className="w-full max-w-xs text-left text-xs uppercase tracking-widest text-neutral-500">
-        Junkyard
-      </p>
-
       <div ref={tapAreaRef} className="relative flex items-center justify-center">
         {/* Pulsating glow behind the pile, hinting this junk is worth something — sized and
            intensified to match the bigger, brighter pile image above it. */}
