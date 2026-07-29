@@ -54,6 +54,18 @@ const SIGNIFICANT_KEYS = [
 export interface CloudSyncStatus {
   /** False outside an actual Telegram client — there's no initData to sync with there. */
   enabled: boolean;
+  /** True once the very first pull attempt has *settled* (succeeded or failed) — or
+   * immediately, outside an actual Telegram client, where there's no initData to sync with and
+   * so no cycle to wait for either. App.tsx gates rendering the main UI (Header, BottomNav,
+   * every screen) behind this, so no component can fire an authenticated API call (Stars,
+   * matchmaking, Syndicates, ...) before this account's cloud state has at least been checked
+   * once — that race is what let a completely new account's very first launch hit those
+   * endpoints before anything was ready, while a reload (landing after this had already
+   * settled once) worked fine. Deliberately keyed off *settling*, not off success specifically:
+   * gating on success alone would leave the app stuck on the loading screen forever if the very
+   * first pull hit a transient network error, which is a worse failure mode than the race this
+   * fixes. */
+  isInitialized: boolean;
   lastPullAt: number | null;
   lastPullOk: boolean | null;
   lastPushAt: number | null;
@@ -66,6 +78,7 @@ export interface CloudSyncStatus {
 
 const initialStatus: CloudSyncStatus = {
   enabled: false,
+  isInitialized: false,
   lastPullAt: null,
   lastPullOk: null,
   lastPushAt: null,
@@ -134,7 +147,10 @@ export function useCloudSync(): { status: CloudSyncStatus; syncNow: () => void }
   const pushIfChangedRef = useRef<(reliable: boolean) => void>(() => {});
 
   useEffect(() => {
-    if (!isRunningInTelegram()) return;
+    if (!isRunningInTelegram()) {
+      setStatus((s) => ({ ...s, isInitialized: true }));
+      return;
+    }
     setStatus((s) => ({ ...s, enabled: true }));
     const initData = WebApp.initData;
     let cancelled = false;
@@ -145,6 +161,7 @@ export function useCloudSync(): { status: CloudSyncStatus; syncNow: () => void }
           if (cancelled) return;
           setStatus((s) => ({
             ...s,
+            isInitialized: true,
             lastPullAt: Date.now(),
             lastPullOk: true,
             lastError: null,
@@ -166,6 +183,7 @@ export function useCloudSync(): { status: CloudSyncStatus; syncNow: () => void }
           if (cancelled) return;
           setStatus((s) => ({
             ...s,
+            isInitialized: true,
             lastPullAt: Date.now(),
             lastPullOk: false,
             lastError: err instanceof Error ? err.message : String(err),

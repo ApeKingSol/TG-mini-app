@@ -294,36 +294,43 @@ export const SMUGGLERS_RUN = {
 
 /** Tuning for Night Siege: a Syndicate-only cooperative World Boss raid (see
  * src/screens/SyndicateHub.tsx — it's gated behind clan membership, not a Race Hub mode card).
- * No entry fee, no tap mini-game: each member gets one deterministic strike against the shared
- * Corporate Convoy every ATTACK_COOLDOWN_MS, sized by their own car tier (see
- * getNightSiegeDamage below) — see src/game/mock/siegeApi.ts for the real network shape this
- * is submitted through. A shared kill's loot is a Syndicate-wide concern, not a per-hit
- * Scrap/Neon payout, so there's deliberately no reward-per-damage rate here. */
+ * A raid has to be explicitly started by the Leader or a Co-Leader (see NIGHT_SIEGE_ROLES/
+ * night-siege.mts's 'start-raid' action) — there's no boss to hit at all until then. Once one's
+ * up, any member can spend an 8h cooldown window on a TAP_PHASE_SECONDS-long tapping session:
+ * every tap deals TAP_DAMAGE_PER_TIER × their car tier, and the *total* accumulated across the
+ * whole session is submitted to the server in one batch at the end (see
+ * src/game/mock/siegeApi.ts) rather than one request per tap. A shared kill's loot is a
+ * Syndicate-wide concern, not a per-tap Scrap/Neon payout, so there's deliberately no
+ * reward-per-damage rate here. */
 export const NIGHT_SIEGE = {
-  /** Full HP of a freshly-spawned (or reset) Corporate Convoy — shared across the whole
-   * Syndicate, not per-player; it genuinely takes the whole roster chipping in across
-   * multiple 8h cooldown windows. */
+  /** Full HP of a freshly-spawned Corporate Convoy — shared across the whole Syndicate, not
+   * per-player; it genuinely takes the whole roster chipping in across multiple 8h cooldown
+   * windows. */
   BOSS_MAX_HP: 10_000_000,
-  /** How long a single Convoy lives before it auto-resets if it's still standing — see
+  /** How long a single Convoy lives before it auto-expires if it's still standing — see
    * bossExpiresAt in netlify/functions/night-siege.mts. A boss that times out without being
-   * killed grants nobody the reward; its HP, damage log, and claim list are wiped and a fresh
-   * 72h window starts immediately. */
+   * killed grants nobody the reward; a Leader/Co-Leader has to explicitly start a fresh raid
+   * afterward, same as after a kill — there's no automatic respawn. */
   BOSS_LIFETIME_MS: 72 * 60 * 60 * 1000,
-  /** Each player can land at most one strike every this many ms — tracked per-player
+  /** Each player can start at most one tapping session every this many ms — tracked per-player
    * (independent of which specific boss instance happens to be up; the cooldown survives a
-   * kill, an auto-reset, or someone starting the next raid). See lastBossAttackTime in
-   * PlayerState for the fast local mirror, and the server's own `night-siege-attack-cooldown`
-   * Blobs store (night-siege.mts) for the actual enforced gate. */
+   * kill, an expiry, or a Leader starting the next raid), and only actually reserved once that
+   * session's total damage is submitted at the end — see lastBossAttackTime in PlayerState for
+   * the fast local mirror, and the server's own `night-siege-attack-cooldown` Blobs store
+   * (night-siege.mts) for the actual enforced gate. */
   ATTACK_COOLDOWN_MS: 8 * 60 * 60 * 1000,
-  /** Each point of car tier adds this much damage to a single strike — deterministic, not
-   * random, so a player's contribution is exactly and only a function of how strong their car
-   * is (see getNightSiegeDamage below). */
-  DAMAGE_PER_TIER: 15_000,
-  /** Hard ceiling on a single strike's damage, enforced server-side — exactly matches
-   * CAR_TIERS.length * DAMAGE_PER_TIER (20 × 15,000), so it never actually clamps a
-   * legitimate max-tier hit; it only exists to stop a tampered client claiming an impossibly
-   * high carTier from doing unbounded damage in one call. */
-  MAX_HIT_DAMAGE: 300_000,
+  /** How long a single tapping session lasts, from the moment "Attack" is pressed to the
+   * moment the accumulated damage is submitted. */
+  TAP_PHASE_SECONDS: 15,
+  /** Each tap deals this much damage per point of the tapper's car tier — deterministic per
+   * tap (not random), so every tap during a session is worth exactly the same amount; only the
+   * *number* of taps landed varies. */
+  TAP_DAMAGE_PER_TIER: 50,
+  /** Hard ceiling on how many taps a single session's submitted total could plausibly
+   * represent, enforced server-side (see getMaxNightSiegeSessionDamage below) — generous for
+   * genuinely fast tapping (90 taps in TAP_PHASE_SECONDS is 6 taps/sec) while still bounding
+   * what a tampered client can claim it landed. */
+  MAX_TAPS_PER_SESSION: 90,
   /** $NEON reward for the Leader once the shared boss's HP reaches 0 — see
    * netlify/functions/night-siege.mts's `claimedBy` tracking for how "once per account" is
    * enforced server-side, and getNightSiegeReward below for how a claimant's role picks which
@@ -369,12 +376,20 @@ export function isBossAttackAvailable(lastAttackTime: number | null, now: number
   return now - lastAttackTime >= NIGHT_SIEGE.ATTACK_COOLDOWN_MS;
 }
 
-/** The deterministic damage a single Night Siege strike deals, purely a function of the
- * attacker's car tier — shared by the client (for the pre-attack preview and the post-attack
- * floating number) and the server (the actual authoritative computation in night-siege.mts),
- * so the number a player sees is always exactly the number that lands. */
-export function getNightSiegeDamage(carTier: number): number {
-  return Math.min(carTier * NIGHT_SIEGE.DAMAGE_PER_TIER, NIGHT_SIEGE.MAX_HIT_DAMAGE);
+/** The deterministic damage a single tap deals during a Night Siege session, purely a function
+ * of the tapper's car tier — used client-side both to add to the running session total on
+ * every tap and to show "each tap deals X" before the session starts. */
+export function getNightSiegeTapDamage(carTier: number): number {
+  return carTier * NIGHT_SIEGE.TAP_DAMAGE_PER_TIER;
+}
+
+/** The highest `totalSessionDamage` a given car tier could plausibly submit — one tap's damage
+ * times the max taps a TAP_PHASE_SECONDS session could realistically land. The server clamps
+ * every submission to this (see night-siege.mts's handleSubmitDamage) rather than trusting a
+ * client-reported total outright, without recomputing the total itself from scratch — this
+ * project's established client-trusted-economy model, just with a sanity ceiling. */
+export function getMaxNightSiegeSessionDamage(carTier: number): number {
+  return getNightSiegeTapDamage(carTier) * NIGHT_SIEGE.MAX_TAPS_PER_SESSION;
 }
 
 /** One day's Daily Reward — always exactly one of Scrap or $NEON, never both, so the claim

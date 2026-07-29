@@ -38,6 +38,18 @@ function App() {
     trackAppOpened();
   }, []);
 
+  // First-Launch Race Condition fix: nothing below this point may render while
+  // cloudSync.status.isInitialized is still false — Header, BottomNav, and every screen are
+  // exactly what could otherwise fire a Stars purchase, a matchmaking call, or a Syndicate
+  // action before this account's cloud state has been checked even once, which is what made a
+  // completely new account's very first launch fail at all three while a reload (landing after
+  // that first check had already settled) worked fine. useGameLoop/useCloudSync/useTelegram
+  // themselves still have to run unconditionally above this, per the rules of hooks — only the
+  // JSX they'd otherwise feed is held back.
+  if (!cloudSync.status.isInitialized) {
+    return <UplinkingScreen />;
+  }
+
   return (
     <div className="flex min-h-screen flex-col bg-cyber-grid">
       <ScreenBackground activeScreen={activeScreen} />
@@ -99,6 +111,26 @@ function App() {
       {activeOverlay === null && (
         <BottomNav active={activeScreen} onChange={setActiveScreen} />
       )}
+    </div>
+  );
+}
+
+/** Shown in place of the entire app — no Header, no BottomNav, no screens — until
+ * useCloudSync's very first pull attempt has settled (or immediately outside Telegram, where
+ * there's nothing to sync). See App()'s isInitialized check above for why this exists: it's the
+ * whole fix for the first-launch race where a brand-new account's earliest taps could fire an
+ * authenticated API call before the app had confirmed anything about this account's cloud
+ * state. */
+function UplinkingScreen() {
+  return (
+    <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-cyber-grid px-6 text-center">
+      <div className="h-10 w-10 animate-spin rounded-full border-2 border-neon-cyan border-t-transparent shadow-[0_0_20px_rgba(0,240,255,0.5)]" />
+      <p className="font-display text-sm font-bold uppercase tracking-[0.3em] text-neon-cyan drop-shadow-[0_0_10px_rgba(0,240,255,0.6)]">
+        Uplinking...
+      </p>
+      <p className="font-mono text-[10px] uppercase tracking-widest text-neutral-600">
+        Syncing with the Grid
+      </p>
     </div>
   );
 }
