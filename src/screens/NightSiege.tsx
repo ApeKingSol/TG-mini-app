@@ -84,6 +84,11 @@ export function NightSiege({ syndicateId, myRole, onDamageLogUpdate }: NightSieg
   const [convoyStatus, setConvoyStatus] = useState<ConvoyStatus | null>(null);
   const [bossImageFailed, setBossImageFailed] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  // Set whenever a fetch of the shared boss status fails outright (network error, a 401 from a
+  // misconfigured backend, ...) — previously silent (a bare `.catch(() => {})`), which left the
+  // HP bar reading "Establishing uplink..." forever with zero indication of why, indistinguishable
+  // from a slow-but-working connection. Cleared the moment any fetch succeeds.
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const [isAttacking, setIsAttacking] = useState(false);
   const [attackError, setAttackError] = useState<string | null>(null);
@@ -108,14 +113,17 @@ export function NightSiege({ syndicateId, myRole, onDamageLogUpdate }: NightSieg
   // endpoint — fewer concurrent requests against the same boss record means less chance of the
   // exact kind of read/write race that made the expiry countdown misbehave before.
   const applyConvoyStatus = (status: ConvoyStatus) => {
+    setLoadError(null);
     setConvoyStatus(status);
     onDamageLogUpdate?.(status.damageLog ?? {});
   };
 
+  const handleFetchError = (err: unknown) => {
+    setLoadError(err instanceof Error ? err.message.toUpperCase() : 'COULD NOT REACH NIGHT SIEGE');
+  };
+
   useEffect(() => {
-    fetchConvoyStatus(syndicateId)
-      .then(applyConvoyStatus)
-      .catch(() => {});
+    fetchConvoyStatus(syndicateId).then(applyConvoyStatus).catch(handleFetchError);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [syndicateId]);
 
@@ -124,9 +132,7 @@ export function NightSiege({ syndicateId, myRole, onDamageLogUpdate }: NightSieg
   // leave and re-enter the tab.
   useEffect(() => {
     const intervalId = window.setInterval(() => {
-      fetchConvoyStatus(syndicateId)
-        .then(applyConvoyStatus)
-        .catch(() => {});
+      fetchConvoyStatus(syndicateId).then(applyConvoyStatus).catch(handleFetchError);
     }, IDLE_POLL_INTERVAL_MS);
     return () => window.clearInterval(intervalId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -221,7 +227,12 @@ export function NightSiege({ syndicateId, myRole, onDamageLogUpdate }: NightSieg
         Night Siege
       </p>
 
-      <ConvoyHpBar hpPercent={hpPercent} convoyStatus={convoyStatus} msUntilExpiry={msUntilExpiry} />
+      <ConvoyHpBar
+        hpPercent={hpPercent}
+        convoyStatus={convoyStatus}
+        msUntilExpiry={msUntilExpiry}
+        loadError={loadError}
+      />
 
       {isBossDefeated ? (
         <BossDefeatedPanel
@@ -263,13 +274,16 @@ interface ConvoyHpBarProps {
   hpPercent: number;
   convoyStatus: ConvoyStatus | null;
   msUntilExpiry: number;
+  /** Set when the last fetch failed outright — shown instead of "Establishing uplink...",
+   * which otherwise looks identical whether the connection is just slow or genuinely broken. */
+  loadError: string | null;
 }
 
 /** The Convoy's shared HP — a raid-wide total every Syndicate member's damage chips away at,
  * not anything this session alone moves. Drawn as discrete segments rather than one smooth
  * bar for a chunkier "boss health bar" read. Shows a countdown to the boss's own 72h expiry
  * while it's still alive, so the Syndicate can see the raid is actually time-limited. */
-function ConvoyHpBar({ hpPercent, convoyStatus, msUntilExpiry }: ConvoyHpBarProps) {
+function ConvoyHpBar({ hpPercent, convoyStatus, msUntilExpiry, loadError }: ConvoyHpBarProps) {
   const filledSegments = Math.round((hpPercent / 100) * HP_SEGMENT_COUNT);
   const isDefeated = convoyStatus !== null && convoyStatus.currentHp <= 0;
 
@@ -296,10 +310,16 @@ function ConvoyHpBar({ hpPercent, convoyStatus, msUntilExpiry }: ConvoyHpBarProp
         ))}
       </div>
 
-      <p className="mt-2 text-center text-[10px] tabular-nums text-neutral-600">
+      <p
+        className={`mt-2 text-center text-[10px] tabular-nums ${
+          !convoyStatus && loadError ? 'font-bold uppercase tracking-widest text-danger-red' : 'text-neutral-600'
+        }`}
+      >
         {convoyStatus
           ? `${convoyStatus.currentHp.toLocaleString()} / ${convoyStatus.maxHp.toLocaleString()} HP`
-          : 'Establishing uplink...'}
+          : loadError
+            ? loadError
+            : 'Establishing uplink...'}
       </p>
 
       {convoyStatus && !isDefeated && (

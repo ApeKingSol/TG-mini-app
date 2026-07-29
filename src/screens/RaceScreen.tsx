@@ -446,6 +446,7 @@ function AutoDragRace({ onExit }: AutoDragRaceProps) {
   const [lobbyView, setLobbyView] = useState<LobbyView>('browse');
   const [openChallenges, setOpenChallenges] = useState<OpenChallenge[]>([]);
   const [isFetching, setIsFetching] = useState(false);
+  const [lobbyError, setLobbyError] = useState<string | null>(null);
   const [acceptingMatchId, setAcceptingMatchId] = useState<string | null>(null);
   const [hostBetAmount, setHostBetAmount] = useState<number>(AUTO_DRAG.BET_TIERS[0]);
   const cancelHostRef = useRef<(() => void) | null>(null);
@@ -593,8 +594,18 @@ function AutoDragRace({ onExit }: AutoDragRaceProps) {
   // --- Race vs Player lobby handlers (mock matchmaking) ---
   const refreshLobbyMatches = () => {
     setIsFetching(true);
+    setLobbyError(null);
     fetchLobbyMatches(league.id)
       .then((challenges) => setOpenChallenges(challenges))
+      .catch((err: unknown) => {
+        // Previously silent (no .catch at all) — a failed fetch just left openChallenges at
+        // whatever it already was, which reads identically to "no one's racing right now"
+        // even when the real cause is a broken/misconfigured backend (e.g. a missing
+        // TELEGRAM_BOT_TOKEN making every authenticated call 401). Surfacing the actual error
+        // here is what would have made that kind of misconfiguration diagnosable from the UI
+        // itself instead of needing a screenshot-hunting session.
+        setLobbyError(err instanceof Error ? err.message.toUpperCase() : 'COULD NOT REACH LOBBY');
+      })
       .finally(() => setIsFetching(false));
   };
 
@@ -873,6 +884,7 @@ function AutoDragRace({ onExit }: AutoDragRaceProps) {
               lobbyView={lobbyView}
               openChallenges={openChallenges}
               isFetching={isFetching}
+              loadError={lobbyError}
               acceptingMatchId={acceptingMatchId}
               hostBetAmount={hostBetAmount}
               hostCanAfford={hostCanAfford}

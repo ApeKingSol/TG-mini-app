@@ -40,12 +40,21 @@ export function SyndicateHub() {
   const [view, setView] = useState<SyndicateView>('menu');
   const [mySyndicate, setMySyndicate] = useState<Syndicate | null>(null);
   const [isRestoringMembership, setIsRestoringMembership] = useState(true);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchMySyndicate()
       .then((syndicate) => {
         setMySyndicate(syndicate);
         setView(syndicate ? 'active' : 'menu');
+      })
+      .catch((err: unknown) => {
+        // Previously silent (no .catch at all) — a failed check here landed on the exact same
+        // "No Syndicate Detected" menu a genuinely-solo player sees, which is indistinguishable
+        // from a real member being wrongly told they have no Syndicate because the backend
+        // request never actually succeeded (e.g. a misconfigured TELEGRAM_BOT_TOKEN making
+        // every authenticated call 401).
+        setRestoreError(err instanceof Error ? err.message.toUpperCase() : 'COULD NOT REACH SERVER');
       })
       .finally(() => setIsRestoringMembership(false));
   }, []);
@@ -83,7 +92,11 @@ export function SyndicateHub() {
   return (
     <div className="flex flex-col gap-4">
       {view === 'menu' && (
-        <MenuScreen onSelectCreate={() => setView('create')} onSelectJoin={() => setView('join')} />
+        <MenuScreen
+          onSelectCreate={() => setView('create')}
+          onSelectJoin={() => setView('join')}
+          loadError={restoreError}
+        />
       )}
       {view === 'create' && (
         <CreateScreen onBack={() => setView('menu')} onCreated={handleCreated} />
@@ -103,11 +116,26 @@ export function SyndicateHub() {
 interface MenuScreenProps {
   onSelectCreate: () => void;
   onSelectJoin: () => void;
+  /** Set when the initial "does this player already have a Syndicate" check failed outright —
+   * shown above the panel below rather than replacing it, since "No Syndicate Detected" might
+   * still be accurate; this just makes clear the answer wasn't actually confirmed. */
+  loadError: string | null;
 }
 
-function MenuScreen({ onSelectCreate, onSelectJoin }: MenuScreenProps) {
+function MenuScreen({ onSelectCreate, onSelectJoin, loadError }: MenuScreenProps) {
   return (
     <div className="flex flex-col gap-4">
+      {loadError && (
+        <div className="rounded-xl border border-danger-red/40 bg-danger-red/10 p-3 text-center">
+          <p className="text-xs font-bold uppercase tracking-widest text-danger-red">
+            {loadError}
+          </p>
+          <p className="mt-1 text-[10px] text-danger-red/70">
+            Could not confirm your Syndicate membership — the panel below may be wrong.
+          </p>
+        </div>
+      )}
+
       <div className="rounded-2xl border border-amber/30 bg-white/5 p-5 text-center backdrop-blur-xl">
         <Users className="mx-auto h-8 w-8 text-amber" strokeWidth={1.5} />
         <p className="mt-2 font-display text-lg font-bold uppercase tracking-wide text-amber">
@@ -295,6 +323,13 @@ function JoinScreen({ onBack, onJoined }: JoinScreenProps) {
     setIsLoading(true);
     fetchSyndicates()
       .then(setSyndicates)
+      .catch((err: unknown) => {
+        // Previously silent (no .catch at all) — a failed fetch left `syndicates` at its
+        // initial `[]`, which renders identically to "the server browser is genuinely empty"
+        // below even when the real cause is a broken/misconfigured backend (e.g. a missing
+        // TELEGRAM_BOT_TOKEN making every authenticated call 401 instead of returning a list).
+        setError(err instanceof Error ? err.message.toUpperCase() : 'COULD NOT REACH SERVER');
+      })
       .finally(() => setIsLoading(false));
   }, []);
 
@@ -346,7 +381,7 @@ function JoinScreen({ onBack, onJoined }: JoinScreenProps) {
         {isLoading && (
           <p className="py-8 text-center text-xs text-neutral-600">Scanning the network...</p>
         )}
-        {!isLoading && syndicates.length === 0 && (
+        {!isLoading && !error && syndicates.length === 0 && (
           <p className="py-8 text-center text-xs text-neutral-600">
             No Syndicates found. Be the first to charter one.
           </p>

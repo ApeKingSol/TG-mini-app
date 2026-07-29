@@ -11,6 +11,11 @@ export interface PlayerLobbyProps {
   lobbyView: LobbyView;
   openChallenges: OpenChallenge[];
   isFetching: boolean;
+  /** Set when the last fetch of open challenges failed outright (network error, a 401 from a
+   * misconfigured backend, ...) — shown in place of the misleading "no racers right now"
+   * message, which otherwise reads identically whether the league is genuinely empty or the
+   * request never actually succeeded. */
+  loadError: string | null;
   acceptingMatchId: string | null;
   hostBetAmount: number;
   hostCanAfford: boolean;
@@ -34,6 +39,7 @@ export function PlayerLobby({
   lobbyView,
   openChallenges,
   isFetching,
+  loadError,
   acceptingMatchId,
   hostBetAmount,
   hostCanAfford,
@@ -132,7 +138,12 @@ export function PlayerLobby({
                   </p>
                 </div>
               )}
-              {!isFetching && openChallenges.length === 0 && (
+              {!isFetching && loadError && openChallenges.length === 0 && (
+                <p className="py-6 text-center text-xs font-bold uppercase tracking-widest text-danger-red">
+                  {loadError}
+                </p>
+              )}
+              {!isFetching && !loadError && openChallenges.length === 0 && (
                 <p className="py-6 text-center text-xs text-neutral-600">
                   No racers in your league right now. Host a race!
                 </p>
