@@ -65,6 +65,28 @@ function migrateLegacySave(storageKey: string) {
 const STORAGE_KEY = getStorageKey();
 migrateLegacySave(STORAGE_KEY);
 
+/** Whether this device already had *something* persisted for this account before this
+ * session's store hydration ran — read directly off localStorage, before `persist`'s own
+ * hydrate call has a chance to touch it. False on a genuinely fresh install, but also false
+ * whenever Telegram has wiped the WebView's storage overnight, which is exactly the scenario
+ * that caused a real data-wipe incident: a wiped-storage load falls back to
+ * createInitialPlayerState()'s all-default state, whose `lastSaved: Date.now()` gets stamped
+ * to "now" — making a completely empty local state look *newer* than a perfectly legitimate
+ * but older cloud save under a naive last-write-wins timestamp comparison. useCloudSync reads
+ * this flag to know its very first pull can't trust that comparison: there is nothing genuine
+ * in local state yet for a timestamp to protect, so the cloud save must win outright. */
+export const hadLocalSaveAtLoad = (() => {
+  try {
+    return localStorage.getItem(STORAGE_KEY) !== null;
+  } catch {
+    // localStorage can throw in privacy modes / disabled storage. Fail closed (treat as "had
+    // a save") so a storage read error can never be misread as "definitely a wipe" and cause
+    // a cloud save to be adopted over local state that might, for all this code can tell, be
+    // perfectly fine.
+    return true;
+  }
+})();
+
 /** This device's persisted `lastSaved`, captured the moment it's rehydrated — *before*
  * applyOfflineProgress() re-stamps `lastSaved` to "now" on every single app open. useCloudSync
  * compares this frozen value (not the live store's `lastSaved`, which is now effectively
