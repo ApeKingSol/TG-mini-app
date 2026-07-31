@@ -6,6 +6,11 @@ const AUTO_DISMISS_MS = 4000;
 
 export function OfflineEarningsToast() {
   const offlineEarnings = useGameStore((state) => state.offlineEarnings);
+  // Whether the time away actually hit the AFK cap (ECONOMY.MAX_OFFLINE_SECONDS) — a snapshot
+  // computed once by applyOfflineProgress() at the exact moment offlineEarnings was set, so
+  // reading it here (while this toast is showing) reflects that same offline period, not
+  // anything that's happened since. See PlayerState.lastOfflineCapacityRatio's doc comment.
+  const lastOfflineCapacityRatio = useGameStore((state) => state.lastOfflineCapacityRatio);
   const dismiss = useGameStore((state) => state.dismissOfflineEarnings);
 
   useEffect(() => {
@@ -31,6 +36,11 @@ export function OfflineEarningsToast() {
             +{Math.floor(offlineEarnings).toLocaleString()} Scrap earned while
             away
           </p>
+          {lastOfflineCapacityRatio >= 1 && (
+            <p className="mt-1 text-[11px] font-semibold text-amber">
+              This is the max you can earn AFK — come back sooner next time!
+            </p>
+          )}
         </motion.div>
       )}
     </AnimatePresence>

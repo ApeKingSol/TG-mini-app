@@ -40,22 +40,37 @@ function requireTelegram(): Promise<never> {
   return Promise.reject(new Error('Open this from Telegram to use the Referral System.'));
 }
 
-/** Tells the backend this account just crossed REFERRAL.MILESTONE_CAR_TIER, so it can credit
- * this account's own unclaimedNeon/unclaimedScrap server-side (mirroring the instant local
- * credit GameStore.ts's tradeInCar already applied — this is what makes it survive a reinstall
- * or show up on another device) and, if this account was itself linked to an inviter via
- * registerReferralIfNewPlayer below, credit that inviter's pools too. Fire-and-forget from the
- * caller's perspective (see tradeInCar's `.catch(() => {})`) — the local credit already
- * happened, so a failure here just delays the cross-device mirror/inviter payout until a retry,
- * never loses this account's own reward. */
-export function notifyReferralMilestone(carTier: number): Promise<void> {
+export interface MilestoneCreditResult {
+  /** True only if this account was actually linked to an inviter (see
+   * registerReferralIfNewPlayer below) — reaching the tier with no inviter on record credits
+   * nothing on either side. */
+  credited: boolean;
+  neonCredited: number;
+  scrapCredited: number;
+}
+
+/** Tells the backend this account just crossed REFERRAL.MILESTONE_CAR_TIER. The backend decides
+ * whether this account was actually invited (only an invited player's own Tier-5 crossing pays
+ * out, on both sides — see referrals.mts's handleMilestoneReached) and reports back exactly what
+ * it credited; the caller (GameStore.ts's tradeInCar) applies exactly that reported amount to
+ * local state via creditReferralMilestoneReward, never an optimistic guess made before knowing
+ * whether this account was even referred at all. */
+export function notifyReferralMilestone(carTier: number): Promise<MilestoneCreditResult> {
   if (!isRunningInTelegram()) return requireTelegram();
   return fetch(REFERRALS_ENDPOINT, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ initData: WebApp.initData, action: 'milestone-reached', carTier }),
     cache: 'no-store',
-  }).then((response) => parseJsonOrThrow<{ ok: true }>(response).then(() => undefined));
+  }).then((response) =>
+    parseJsonOrThrow<{ ok: true; credited: boolean; neonCredited: number; scrapCredited: number }>(
+      response,
+    ).then((body) => ({
+      credited: body.credited,
+      neonCredited: body.neonCredited,
+      scrapCredited: body.scrapCredited,
+    })),
+  );
 }
 
 /** Asks the backend to link this account to whoever's `ref_<id>` start_param it launched

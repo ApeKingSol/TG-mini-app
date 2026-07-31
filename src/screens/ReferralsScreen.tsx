@@ -6,10 +6,8 @@ import { REFERRAL } from '../game/config/economy';
 import { fetchReferralsData, submitReferralClaim } from '../game/mock/referralsApi';
 import { WebApp } from '../lib/telegram';
 
-/** Your bot's @username (no leading @, no https://t.me/ prefix) — REQUIRED for the referral
- * link below to actually resolve to your Mini App. Replace this before shipping; left as a
- * placeholder here since it isn't something derivable from anywhere else in this codebase. */
-const BOT_USERNAME = 'YourBotUsername';
+/** The bot this Mini App is served from — no leading @, no https://t.me/ prefix. */
+const BOT_USERNAME = 'garage_mechanic_bot';
 
 function buildReferralLink(userId: string): string {
   return `https://t.me/${BOT_USERNAME}/app?startapp=ref_${userId}`;
@@ -114,28 +112,46 @@ export function ReferralsScreen({ onBack }: ReferralsScreenProps) {
         <span className="w-10" aria-hidden="true" />
       </div>
 
-      <div className="rounded-xl border border-amber/40 bg-amber/10 p-4 text-center">
+      <motion.div
+        animate={{
+          boxShadow: [
+            '0 0 14px 2px rgba(255,149,0,0.35)',
+            '0 0 30px 6px rgba(255,149,0,0.6)',
+            '0 0 14px 2px rgba(255,149,0,0.35)',
+          ],
+        }}
+        transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut' }}
+        className="panel-cut relative overflow-hidden border-2 border-amber bg-amber/10 p-4 text-center"
+      >
         <div className="flex items-center justify-center gap-1.5 text-amber">
           <Users className="h-4 w-4" strokeWidth={2} />
           <p className="font-display text-sm font-bold uppercase tracking-widest drop-shadow-[0_0_10px_rgba(255,149,0,0.5)]">
             Referral Program
           </p>
         </div>
-        <p className="mt-1.5 text-xs leading-relaxed text-amber/80">
-          Invite friends. When they reach Tier 5, BOTH of you unlock a{' '}
-          <span className="font-bold text-amber">
-            {REFERRAL.MILESTONE_NEON_REWARD} NEON &amp; {REFERRAL.MILESTONE_SCRAP_REWARD.toLocaleString()}{' '}
-            Scrap
-          </span>{' '}
-          bonus!
+        <p className="mt-1 text-xs leading-relaxed text-amber/80">
+          Invite friends. When they reach Tier 5, BOTH of you unlock a bonus!
         </p>
-      </div>
+
+        <div className="mt-3 flex items-center justify-center gap-5">
+          <div className="text-center">
+            <p className="font-display text-3xl font-black tabular-nums text-amber drop-shadow-[0_0_16px_rgba(255,149,0,0.85)]">
+              +{REFERRAL.MILESTONE_NEON_REWARD}
+            </p>
+            <p className="font-mono text-[10px] uppercase tracking-widest text-amber/70">NEON</p>
+          </div>
+          <div className="h-10 w-px bg-amber/30" />
+          <div className="text-center">
+            <p className="font-display text-3xl font-black tabular-nums text-amber drop-shadow-[0_0_16px_rgba(255,149,0,0.85)]">
+              +{REFERRAL.MILESTONE_SCRAP_REWARD.toLocaleString()}
+            </p>
+            <p className="font-mono text-[10px] uppercase tracking-widest text-amber/70">SCRAP</p>
+          </div>
+        </div>
+      </motion.div>
 
       {/* The Vault */}
       <div className="panel-cut relative overflow-hidden border-2 border-toxic-green/60 bg-toxic-green/10 p-5">
-        <span className="pointer-events-none absolute right-2 top-1 select-none font-mono text-[8px] uppercase tracking-widest text-toxic-green/50">
-          Vault.01
-        </span>
         <p className="text-center font-mono text-[10px] uppercase tracking-widest text-toxic-green/70">
           Available to Claim
         </p>
@@ -194,14 +210,15 @@ export function ReferralsScreen({ onBack }: ReferralsScreenProps) {
         {claimError && <p className="mt-2 text-center text-xs font-medium text-red-400">{claimError}</p>}
       </div>
 
-      {/* Progress toward the Airdrop's "Invite 3 Friends" quest */}
+      {/* Invites have no cap — only 3 are actually required for the Airdrop's "Invite 3
+         Friends" quest (see AirdropScreen.tsx), so this is a plain running count, not a
+         fraction that would look broken past 3. */}
       <div className="flex items-center justify-between rounded-lg border border-neutral-800 bg-bg-panel/60 px-4 py-2.5">
         <p className="font-mono text-[11px] uppercase tracking-wide text-neutral-400">
           Friends at Tier 5
         </p>
         <p className="font-display text-sm font-bold tabular-nums text-neon-cyan">
-          {Math.min(validReferralsCount, REFERRAL.QUEST_REQUIRED_VALID_REFERRALS)}/
-          {REFERRAL.QUEST_REQUIRED_VALID_REFERRALS}
+          {validReferralsCount}
         </p>
       </div>
 

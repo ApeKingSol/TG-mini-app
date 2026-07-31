@@ -215,6 +215,13 @@ interface GameActions {
    * "Join or Create a Syndicate" Airdrop quest has a synchronous field to check without this
    * store needing to know anything else about Syndicates. */
   setSyndicateId: (syndicateId: string | null) => void;
+  /** Adds `neonCredited`/`scrapCredited` to the Referral System's unclaimed pools — call only
+   * with the amounts netlify/functions/referrals.mts's milestone-reached action actually
+   * reports back after tradeInCar reaches REFERRAL.MILESTONE_CAR_TIER, never optimistically:
+   * whether this account gets anything at all (and how much) depends entirely on whether it was
+   * actually invited by someone, which only the backend's referral-links record knows. Both
+   * amounts are 0 for an organic, unreferred Tier-5 crossing, in which case this is a safe no-op. */
+  creditReferralMilestoneReward: (neonCredited: number, scrapCredited: number) => void;
   /** Moves exactly `neonClaimed`/`scrapClaimed` from the Referral System's unclaimed pools into
    * the real neon/scrap balances and zeroes both pools — call only with the amounts
    * netlify/functions/referrals.mts's claim-rewards action reports as *actually* claimed, never
@@ -621,31 +628,23 @@ export const useGameStore = create<GameStore>()(
         if (installedUpgrades.length < getUpgradeRequirement(carTier)) return;
 
         const newTier = carTier + 1;
-        const hitsReferralMilestone = newTier === REFERRAL.MILESTONE_CAR_TIER;
         set((state) => ({
           installedUpgrades: [],
           partsPurchased: 0,
           carTier: newTier,
           car: { ...state.car, name: getCarTier(newTier).name },
           scrapPerSecond: state.scrapPerSecond * (1 + ECONOMY.TRADE_IN_SCRAP_PER_SECOND_GROWTH),
-          // Every account that reaches this tier gets its own half of the Referral System's
-          // milestone bonus unconditionally (see REFERRAL's doc comment in economy.ts) —
-          // credited straight to the unclaimed pool, not the real balance, per the "manual
-          // claim" mechanic. Whether an *inviter* also gets credited (and whether this even
-          // counts toward anyone's "Invite 3 Friends" quest) is decided server-side, since only
-          // the backend's referral-links record actually knows if this account was invited.
-          ...(hitsReferralMilestone && {
-            unclaimedNeon: state.unclaimedNeon + REFERRAL.MILESTONE_NEON_REWARD,
-            unclaimedScrap: state.unclaimedScrap + REFERRAL.MILESTONE_SCRAP_REWARD,
-          }),
         }));
         trackCarUpgraded(newTier);
-        if (hitsReferralMilestone) {
-          // Fire-and-forget, silently in the background — the local credit above already
-          // happened, so a network failure here just means this device's own reward mirror to
-          // the cross-device save (and any inviter crediting) is delayed until a retry, not
-          // lost; there's nothing useful to surface to the player if this fails.
-          notifyReferralMilestone(newTier).catch(() => {});
+        if (newTier === REFERRAL.MILESTONE_CAR_TIER) {
+          // Silently in the background — but no optimistic local credit here: whether this
+          // account gets anything at all depends entirely on whether it was actually invited by
+          // someone (see referrals.mts's handleMilestoneReached), which only the backend's
+          // referral-links record knows. creditReferralMilestoneReward applies exactly whatever
+          // the server reports back, including "nothing" for an organic, unreferred Tier-5.
+          notifyReferralMilestone(newTier)
+            .then((result) => get().creditReferralMilestoneReward(result.neonCredited, result.scrapCredited))
+            .catch(() => {});
         }
       },
 
@@ -838,6 +837,14 @@ export const useGameStore = create<GameStore>()(
       recordBossAttack: (timestamp) => set({ lastBossAttackTime: timestamp }),
 
       setSyndicateId: (syndicateId) => set({ syndicateId }),
+
+      creditReferralMilestoneReward: (neonCredited, scrapCredited) => {
+        if (neonCredited <= 0 && scrapCredited <= 0) return;
+        set((state) => ({
+          unclaimedNeon: state.unclaimedNeon + neonCredited,
+          unclaimedScrap: state.unclaimedScrap + scrapCredited,
+        }));
+      },
 
       claimReferralRewards: (neonClaimed, scrapClaimed) => {
         if (neonClaimed <= 0 && scrapClaimed <= 0) return;

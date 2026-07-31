@@ -165,25 +165,25 @@ async function handleRegister(
   return jsonResponse({ ok: true, linked: result.modified });
 }
 
-/** Credits this account's own Tier-5 milestone bonus — mirroring the instant local credit
- * GameStore.ts's tradeInCar already applied client-side, so this is what makes it survive a
- * reinstall or show up on a second device, same "best-effort mirror" role as night-siege.mts's
- * creditNeonReward — and, only if this account was itself linked to an inviter via
- * handleRegister above, credits that inviter's own pools too and bumps their
- * validReferralsCount. Every account that reaches the tier gets its own credit regardless of
- * whether it was ever invited by anyone; only the *inviter*-side credit and quest-progress tally
- * are conditional on a link existing, per REFERRAL's own doc comment in economy.ts.
+/** Credits the Tier-5 milestone bonus to *both* sides of a genuine referral — this account's
+ * own unclaimedNeon/unclaimedScrap and, via the `referral-links` record handleRegister above
+ * created, its inviter's matching pools plus one bump to their validReferralsCount. An account
+ * that reaches this tier *without* ever having been linked to an inviter gets nothing from this
+ * system at all: the reward is specifically for "an invited player reached Tier 5," not a
+ * general Tier-5 completion bonus, so there is no invitee-side credit to hand out when there is
+ * no inviter on the other end of it either.
  *
- * Guarded by a one-shot CAS lock (`referralMilestones`, `onlyIfNew`) claimed *after* confirming
- * the reported tier actually clears the bar — never before, so a premature or buggy call can't
- * permanently burn this account's one shot at the reward before it's genuinely earned. The
- * reported `carTier` is trusted from the caller the same way claimNeonSyphon/claimQuest/
- * creditBossKillReward already trust their own callers elsewhere in this codebase (this
- * project's established client-trusted-economy model), rather than re-deriving it from this
- * account's own separately-synced `game-saves` record: that record is written by this same
- * device's own useCloudSync push, which is not guaranteed to have landed yet at the exact moment
- * tradeInCar fires this call, and re-checking against it here would risk rejecting a completely
- * legitimate milestone purely due to that ordinary sync-lag race. */
+ * The one-shot idempotency lock (`referralMilestones`, `onlyIfNew`) is claimed only *after*
+ * both the reported tier and the referral link have been confirmed — never before — so a
+ * premature/buggy call, or a genuinely unreferred player's own Tier-5 crossing, can never
+ * permanently burn this account's one shot at a reward it might actually qualify for once (or
+ * if) a real link exists. The reported `carTier` is trusted from the caller the same way
+ * claimNeonSyphon/claimQuest/creditBossKillReward already trust their own callers elsewhere in
+ * this codebase (this project's established client-trusted-economy model), rather than
+ * re-deriving it from this account's own separately-synced `game-saves` record: that record is
+ * written by this same device's own useCloudSync push, which is not guaranteed to have landed
+ * yet at the exact moment tradeInCar fires this call, and re-checking against it here would risk
+ * rejecting a completely legitimate milestone purely due to that ordinary sync-lag race. */
 async function handleMilestoneReached(
   user: VerifiedTelegramUser,
   body: MilestoneReachedBody,
@@ -196,9 +196,17 @@ async function handleMilestoneReached(
     return jsonResponse({ error: `carTier must be at least ${REFERRAL.MILESTONE_CAR_TIER}.` }, 400);
   }
 
+  const link = (await referralLinks.get(user.id, { type: 'json' })) as ReferralLink | null;
+  if (!link?.inviterId) {
+    // Reached the tier organically, with no inviter on record — nothing to credit on either
+    // side, and nothing to guard against re-processing either (there was never anything to
+    // double-credit in the first place).
+    return jsonResponse({ ok: true, credited: false, neonCredited: 0, scrapCredited: 0 });
+  }
+
   const guard = await referralMilestones.setJSON(user.id, { reachedAt: Date.now() }, { onlyIfNew: true });
   if (!guard.modified) {
-    return jsonResponse({ ok: true, credited: false });
+    return jsonResponse({ ok: true, credited: false, neonCredited: 0, scrapCredited: 0 });
   }
 
   const ownCredited = await creditUnclaimedRewards(
@@ -208,20 +216,20 @@ async function handleMilestoneReached(
     REFERRAL.MILESTONE_SCRAP_REWARD,
     false,
   );
+  await creditUnclaimedRewards(
+    saves,
+    link.inviterId,
+    REFERRAL.MILESTONE_NEON_REWARD,
+    REFERRAL.MILESTONE_SCRAP_REWARD,
+    true,
+  );
 
-  const link = (await referralLinks.get(user.id, { type: 'json' })) as ReferralLink | null;
-  let inviterCredited = false;
-  if (link?.inviterId) {
-    inviterCredited = await creditUnclaimedRewards(
-      saves,
-      link.inviterId,
-      REFERRAL.MILESTONE_NEON_REWARD,
-      REFERRAL.MILESTONE_SCRAP_REWARD,
-      true,
-    );
-  }
-
-  return jsonResponse({ ok: true, credited: true, ownCredited, inviterCredited });
+  return jsonResponse({
+    ok: true,
+    credited: ownCredited,
+    neonCredited: ownCredited ? REFERRAL.MILESTONE_NEON_REWARD : 0,
+    scrapCredited: ownCredited ? REFERRAL.MILESTONE_SCRAP_REWARD : 0,
+  });
 }
 
 /** Moves 100% of this account's current unclaimedNeon/unclaimedScrap into its real balances,

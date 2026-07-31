@@ -74,11 +74,7 @@ function App() {
              the button itself was never broken. A real (non-auto) z-index wins regardless of
              DOM order or sibling filters. */}
           <AirdropEntryButton onClick={() => setActiveOverlay('airdrop')} />
-          <ReferralsEntryButton onClick={() => setActiveOverlay('referrals')} />
           <ProfileAvatarButton photoUrl={userPhotoUrl} onClick={() => setActiveOverlay('profile')} />
-          <p className="px-11 font-mono text-[9px] uppercase tracking-[0.2em] text-amber/70">
-            Sys.Online // Uplink: Stable
-          </p>
           <h1 className="font-display text-2xl font-bold tracking-wide text-neon-cyan drop-shadow-[0_0_4px_rgba(0,240,255,0.85)]">
             Cyber-Garage
           </h1>
@@ -88,6 +84,8 @@ function App() {
             </p>
           )}
         </header>
+
+        <ReferralsEntryButton onClick={() => setActiveOverlay('referrals')} />
 
         <CurrencyBar />
 

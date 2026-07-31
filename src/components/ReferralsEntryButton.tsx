@@ -4,23 +4,22 @@ interface ReferralsEntryButtonProps {
   onClick: () => void;
 }
 
-/** Sits immediately right of AirdropEntryButton (`left-14`, not `left-0`) in the same header
- * row — same z-[1001]-over-TonConnect's-ambient-layer reasoning as that button and
- * ProfileAvatarButton (see AirdropEntryButton.tsx's doc comment for the full explanation of why
- * 1001 specifically matters here). Kept out of BottomNav on purpose, matching Profile/Airdrop: a
- * 4th bottom-nav tab would force Scrapyard/Garage/The Streets to reflow to fit it. */
+/** A full-width banner button, not an absolutely-positioned header corner icon like
+ * AirdropEntryButton/ProfileAvatarButton — it used to sit at `left-14` in that same corner
+ * cluster, which overlapped the centered "Cyber-Garage" title on narrower screens. Sitting in
+ * normal document flow (App.tsx renders this between the header and CurrencyBar) means it can
+ * never collide with that title regardless of screen width, and its full width gives the
+ * Referral System — the game's main growth lever — more visual weight than a small corner icon
+ * would. */
 export function ReferralsEntryButton({ onClick }: ReferralsEntryButtonProps) {
   return (
     <button
       type="button"
       onClick={onClick}
-      aria-label="Referrals"
-      className="panel-cut-sm absolute left-14 top-0 z-[1001] flex w-12 flex-col items-center gap-0.5 border border-amber/50 bg-amber/10 py-1.5 text-amber"
+      className="panel-cut-sm mb-4 flex w-full items-center justify-center gap-1.5 border border-amber/50 bg-amber/10 py-2 font-mono text-xs font-bold uppercase tracking-widest text-amber"
     >
-      <Users className="h-4 w-4" strokeWidth={1.75} />
-      <span className="font-mono text-[7px] font-bold uppercase tracking-wider leading-none">
-        Ref
-      </span>
+      <Users className="h-3.5 w-3.5" strokeWidth={2} />
+      Referrals — Invite &amp; Earn
     </button>
   );
 }

@@ -558,15 +558,15 @@ export function isNeonSyphonClaimable(lastClaim: number | null, now: number): bo
 }
 
 /** Tuning for the milestone-based Referral System (see netlify/functions/referrals.mts). An
- * invitee reaching MILESTONE_CAR_TIER credits *both* sides — the invitee's own Tier-5 bonus
- * unconditionally, and (only if a referral link was actually established at registration)
- * their inviter's matching bonus plus one tally toward QUEST_REQUIRED_VALID_REFERRALS. Rewards
- * never land directly in `neon`/`scrap`; they accumulate in `unclaimedNeon`/`unclaimedScrap`
- * until the player manually claims them from the REF tab's Vault (see claimReferralRewards in
- * GameStore.ts) — a deliberate "manual claim" mechanic, not a bug where rewards seem to vanish. */
+ * invitee reaching MILESTONE_CAR_TIER credits *both* sides — but only for a genuine referral: an
+ * account with no inviter on record gets nothing from this system at all, regardless of its own
+ * tier. Rewards never land directly in `neon`/`scrap`; they accumulate in
+ * `unclaimedNeon`/`unclaimedScrap` until the player manually claims them from the REF tab's
+ * Vault (see claimReferralRewards in GameStore.ts) — a deliberate "manual claim" mechanic, not a
+ * bug where rewards seem to vanish. */
 export const REFERRAL = {
-  /** $NEON credited to *each* side (invitee's own pool, and separately the inviter's, if any)
-   * once the invitee reaches MILESTONE_CAR_TIER. */
+  /** $NEON credited to *each* side (invitee's own pool, and separately the inviter's) once a
+   * genuinely-referred invitee reaches MILESTONE_CAR_TIER. */
   MILESTONE_NEON_REWARD: 10,
   /** Scrap credited alongside MILESTONE_NEON_REWARD, same both-sides rule. */
   MILESTONE_SCRAP_REWARD: 25_000,

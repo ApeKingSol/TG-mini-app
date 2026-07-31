@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Zap, Store, X, Gift, Flame, Coins, Sparkles, BatteryCharging } from 'lucide-react';
+import { Zap, Store, X, Gift, Flame, Coins, Sparkles } from 'lucide-react';
 import {
   DndContext,
   PointerSensor,
@@ -17,8 +17,6 @@ import { useEngineAudio } from '../hooks/useEngineAudio';
 import {
   ECONOMY,
   ANTI_STALL,
-  MAX_OFFLINE_HOURS,
-  getMaxAfkCapacityScrap,
   getPartBuyCost,
   getSecondsUntilNextEnergyRegen,
   getCarStats,
@@ -70,8 +68,6 @@ export function GarageScreen() {
   const tradeInCar = useGameStore((state) => state.tradeInCar);
   const dailyRewardStreak = useGameStore((state) => state.dailyRewardStreak);
   const lastDailyRewardClaim = useGameStore((state) => state.lastDailyRewardClaim);
-  const scrapPerSecond = useGameStore((state) => state.scrapPerSecond);
-  const lastOfflineCapacityRatio = useGameStore((state) => state.lastOfflineCapacityRatio);
   // TEMP DEBUG — see debugPreviewNextCar's own doc comment in GameStore.ts.
   const debugPreviewNextCar = useGameStore((state) => state.debugPreviewNextCar);
   const debugPreviewPrevCar = useGameStore((state) => state.debugPreviewPrevCar);
@@ -109,8 +105,6 @@ export function GarageScreen() {
     lastEnergyRegenAt,
     now,
   );
-  const maxAfkCapacityScrap = getMaxAfkCapacityScrap(scrapPerSecond);
-
   // PointerSensor alone covers mouse, touch, and pen — dnd-kit's own guidance is to avoid
   // layering a separate TouchSensor/MouseSensor on top, since they'd react to the same
   // input and can fight each other. `distance` lets a plain tap pass through as a tap
@@ -216,11 +210,6 @@ export function GarageScreen() {
         </div>
       </div>
 
-      <AfkStoragePanel
-        maxCapacityScrap={maxAfkCapacityScrap}
-        capacityRatio={lastOfflineCapacityRatio}
-      />
-
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <CarInstallationZone
           carName={car.name}
@@ -247,9 +236,6 @@ export function GarageScreen() {
             </AnimatePresence>
 
             <div className="panel-cut relative border border-neutral-800 bg-bg-panel p-4">
-              <span className="pointer-events-none absolute right-2 top-1 select-none font-mono text-[8px] uppercase tracking-widest text-neutral-600">
-                RIG.03
-              </span>
               <div className="flex items-center justify-between">
                 <p className="font-mono text-xs uppercase tracking-widest text-neutral-500">
                   Merge Grid
@@ -348,106 +334,6 @@ export function GarageScreen() {
         )}
       </AnimatePresence>
     </motion.div>
-  );
-}
-
-/** Above this ratio (but below 1, which is the hard cap itself), the panel switches from its
- * neutral cyan/magenta fill to an amber "getting close" warning — giving the player a heads-up
- * before they actually start losing potential Scrap, not just a binary full/not-full signal. */
-const AFK_APPROACHING_CAPACITY_RATIO = 0.75;
-
-interface AfkStoragePanelProps {
-  /** The most Scrap this account's AFK storage can hold at its current scrapPerSecond — see
-   * getMaxAfkCapacityScrap in economy.ts. Always shown, independent of capacityRatio, so the
-   * cap itself (the thing that used to look like a silent bug) is never invisible. */
-  maxCapacityScrap: number;
-  /** How much of the MAX_OFFLINE_HOURS cap the time away since the last login/pull used up —
-   * see PlayerState.lastOfflineCapacityRatio's doc comment. A snapshot taken once at that last
-   * login, not something that ticks upward while the app is open: every second spent actively
-   * playing lands directly in the Scrap balance already (see tick() in GameStore.ts), so there
-   * is no "storage" to fill while the app is in the foreground — only the gap *before* this
-   * session started could have been capped. */
-  capacityRatio: number;
-}
-
-/** "AFK Storage" status card — makes the offline-earnings cap (previously an invisible 8h,
- * now a configurable MAX_OFFLINE_HOURS) a visible, understandable mechanic instead of
- * something that just looked like scrap silently vanishing. Sits right above the car so it
- * reads as "this car's fuel tank," in keeping with the Garage's own visual language. */
-function AfkStoragePanel({ maxCapacityScrap, capacityRatio }: AfkStoragePanelProps) {
-  const isFull = capacityRatio >= 1;
-  const isApproaching = !isFull && capacityRatio >= AFK_APPROACHING_CAPACITY_RATIO;
-  const fillPercent = Math.round(Math.min(1, capacityRatio) * 100);
-
-  return (
-    <div
-      className={`panel-cut-sm relative border p-3 transition-colors ${
-        isFull
-          ? 'border-red-500/70 bg-red-500/10'
-          : isApproaching
-            ? 'border-amber/60 bg-amber/10'
-            : 'border-neutral-800 bg-bg-panel'
-      }`}
-    >
-      <div className="flex items-center justify-between font-mono text-[10px] uppercase tracking-widest text-neutral-500">
-        <span className="flex items-center gap-1">
-          <BatteryCharging
-            className={`h-3 w-3 ${isFull ? 'text-red-400' : isApproaching ? 'text-amber' : 'text-neon-cyan'}`}
-            strokeWidth={2}
-          />
-          AFK Storage
-        </span>
-        <span className="tabular-nums text-neutral-400">
-          Cap: {Math.floor(maxCapacityScrap).toLocaleString()} Scrap / {MAX_OFFLINE_HOURS}h
-        </span>
-      </div>
-
-      <div className="mt-1.5 h-2 w-full overflow-hidden border border-neutral-800 bg-neutral-900">
-        <motion.div
-          className={`h-full ${
-            isFull
-              ? 'bg-gradient-to-r from-red-500 to-orange-400'
-              : isApproaching
-                ? 'bg-gradient-to-r from-amber to-orange-300'
-                : 'bg-gradient-to-r from-neon-cyan to-neon-magenta'
-          }`}
-          animate={{ width: `${fillPercent}%` }}
-          transition={{ duration: 0.3, ease: 'easeOut' }}
-        />
-      </div>
-
-      <AnimatePresence mode="wait">
-        {isFull ? (
-          <motion.p
-            key="full"
-            initial={{ opacity: 0 }}
-            animate={{
-              opacity: 1,
-              textShadow: [
-                '0 0 6px rgba(255,80,0,0.55)',
-                '0 0 14px rgba(255,80,0,0.95)',
-                '0 0 6px rgba(255,80,0,0.55)',
-              ],
-            }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
-            className="mt-1.5 text-center font-display text-xs font-black uppercase tracking-[0.2em] text-red-400"
-          >
-            [ Storage Capacity: Full ]
-          </motion.p>
-        ) : isApproaching ? (
-          <motion.p
-            key="approaching"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="mt-1.5 text-center font-mono text-[10px] uppercase tracking-widest text-amber"
-          >
-            Approaching capacity — log in again soon or you'll lose Scrap
-          </motion.p>
-        ) : null}
-      </AnimatePresence>
-    </div>
   );
 }
 
@@ -662,9 +548,6 @@ const CarInstallationZone = memo(function CarInstallationZone({
         isOver ? 'border-neon-cyan/70' : 'border-neutral-800'
       }`}
     >
-      <span className="pointer-events-none absolute right-2 top-1 select-none font-mono text-[8px] uppercase tracking-widest text-amber/50">
-        Chassis.{String(carTier).padStart(2, '0')}
-      </span>
       {/* TEMP DEBUG — free preview of the next/previous car model, no cost/requirement check.
          Remove this pair of buttons (and debugPreviewNextCar/debugPreviewPrevCar in
          GameStore.ts) once the 20-car roster's been reviewed. */}
@@ -776,9 +659,6 @@ function TradeInPanel({ installedUpgrades, onTradeIn }: TradeInPanelProps) {
       animate={{ opacity: 1, scale: 1 }}
       className="panel-cut relative flex flex-col items-center gap-4 border border-neon-cyan/50 bg-bg-panel p-6 text-center"
     >
-      <span className="pointer-events-none absolute right-2 top-1 select-none font-mono text-[8px] uppercase tracking-widest text-neon-cyan/50">
-        Status.Ready
-      </span>
       <p className="font-display text-lg font-bold tracking-wide text-neon-cyan drop-shadow-[0_0_4px_rgba(0,240,255,0.9)]">
         CAR MASTERED
       </p>
@@ -982,9 +862,6 @@ function AntiStallCalibrationPanel({ partLevel, perk, onComplete }: AntiStallCal
       exit={{ opacity: 0, scale: 0.95, height: 0 }}
       className="panel-cut relative overflow-hidden border border-neon-cyan/50 bg-bg-panel p-4"
     >
-      <span className="pointer-events-none absolute right-2 top-1 select-none font-mono text-[8px] uppercase tracking-widest text-neon-cyan/50">
-        Diag.Active
-      </span>
       <AnimatePresence>
         {stallFlash && (
           <motion.div
