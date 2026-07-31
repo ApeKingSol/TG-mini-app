@@ -1,6 +1,15 @@
 import type { PartPerk } from './parts';
 import type { CarStats } from '../types';
 
+/** Offline (AFK) progress is capped at this many hours away, so a very stale save (or a
+ * fiddled system clock) can't award an absurd amount. Restricts *time away*, not a flat Scrap
+ * amount — the actual ceiling in Scrap terms still scales with the player's own
+ * scrapPerSecond (see getMaxAfkCapacityScrap below), so raising or lowering this number alone
+ * never needs a matching change per car tier. Exported standalone (not just buried inside
+ * ECONOMY) since the Garage's AFK Storage panel needs the *hours* figure directly to display,
+ * not just the seconds value ECONOMY.MAX_OFFLINE_SECONDS derives from it below. */
+export const MAX_OFFLINE_HOURS = 12;
+
 /** Central tuning knobs for the idle economy. Balance changes should happen here, not in the store logic. */
 export const ECONOMY = {
   /** Starting scrapPerSecond, before any upgrades are purchased. */
@@ -94,8 +103,11 @@ export const ECONOMY = {
   /** Critical taps award scrapPerClick multiplied by this. */
   STARTING_CRIT_MULTIPLIER: 3,
 
-  /** Offline progress is capped at this many seconds, so a very stale save (or a fiddled system clock) can't award an absurd amount. */
-  MAX_OFFLINE_SECONDS: 8 * 60 * 60,
+  /** Offline progress is capped at this many seconds — MAX_OFFLINE_HOURS above converted to
+   * seconds, since applyOfflineProgress() (GameStore.ts) compares against a ms-derived elapsed
+   * time. Every call site already works in seconds, so this stays its own field rather than
+   * making each one re-multiply MAX_OFFLINE_HOURS * 3600 independently. */
+  MAX_OFFLINE_SECONDS: MAX_OFFLINE_HOURS * 60 * 60,
   /** Below this many Scrap, the "Welcome back" toast doesn't bother showing. */
   MIN_OFFLINE_EARNINGS_TO_SHOW: 1,
 
@@ -105,6 +117,18 @@ export const ECONOMY = {
    * transactions — old entries just fall off the end rather than growing the save forever. */
   NEON_HISTORY_MAX_ENTRIES: 50,
 } as const;
+
+/** The most Scrap a player's AFK/offline storage can possibly hold at their *current*
+ * scrapPerSecond — i.e. what MAX_OFFLINE_HOURS away would earn them, back-to-back, with
+ * nothing collected in between. Deliberately a function of scrapPerSecond, not a flat number:
+ * the cap that's actually enforced (see applyOfflineProgress in GameStore.ts) restricts *time*
+ * away, so this figure automatically scales with every scrapPerSecond-boosting upgrade,
+ * calibration, and trade-in without needing a per-tier override anywhere. Used by the Garage's
+ * AFK Storage panel to show the player exactly what they stand to lose by staying away past
+ * the cap. */
+export function getMaxAfkCapacityScrap(scrapPerSecond: number): number {
+  return scrapPerSecond * MAX_OFFLINE_HOURS * 60 * 60;
+}
 
 /**
  * Starting blueprint for the Junkyard's always-visible upgrade list; the store seeds its
@@ -533,6 +557,26 @@ export function isNeonSyphonClaimable(lastClaim: number | null, now: number): bo
   return now - lastClaim >= NEON_SYPHON.COOLDOWN_MS;
 }
 
+/** Tuning for the milestone-based Referral System (see netlify/functions/referrals.mts). An
+ * invitee reaching MILESTONE_CAR_TIER credits *both* sides — the invitee's own Tier-5 bonus
+ * unconditionally, and (only if a referral link was actually established at registration)
+ * their inviter's matching bonus plus one tally toward QUEST_REQUIRED_VALID_REFERRALS. Rewards
+ * never land directly in `neon`/`scrap`; they accumulate in `unclaimedNeon`/`unclaimedScrap`
+ * until the player manually claims them from the REF tab's Vault (see claimReferralRewards in
+ * GameStore.ts) — a deliberate "manual claim" mechanic, not a bug where rewards seem to vanish. */
+export const REFERRAL = {
+  /** $NEON credited to *each* side (invitee's own pool, and separately the inviter's, if any)
+   * once the invitee reaches MILESTONE_CAR_TIER. */
+  MILESTONE_NEON_REWARD: 10,
+  /** Scrap credited alongside MILESTONE_NEON_REWARD, same both-sides rule. */
+  MILESTONE_SCRAP_REWARD: 25_000,
+  /** The car tier that fires the milestone credit — see tradeInCar in GameStore.ts. */
+  MILESTONE_CAR_TIER: 5,
+  /** How many of an account's own invitees must individually reach MILESTONE_CAR_TIER before
+   * the invite-3-friends Airdrop quest below counts as complete. */
+  QUEST_REQUIRED_VALID_REFERRALS: 3,
+} as const;
+
 /** One Airdrop quest — a one-time $NEON reward for hitting a specific, checkable milestone.
  * Completion is derived (see isQuestComplete below), never stored directly, so it can never
  * drift out of sync with the actual state it's checking; only *claiming* it is stored (see
@@ -552,16 +596,33 @@ export const QUESTS: readonly QuestDefinition[] = [
     neonReward: 10,
   },
   {
-    id: 'reach-tier-5',
-    title: 'Reach Tier 5 Car',
-    description: 'Trade in for a Tier 5 or higher car in the Garage.',
+    // Was 'reach-tier-5' (Tier 5), raised to Tier 10 — kept a distinct id rather than reusing
+    // the old one so this reads unambiguously as its own milestone; a save that already
+    // claimed the old Tier 5 version simply keeps that claimedQuests entry as a harmless
+    // orphan (it no longer matches anything in this list), same as a retired Junkyard upgrade
+    // id falling out of UPGRADE_BLUEPRINTS (see reconcileUpgrades in GameStore.ts).
+    id: 'reach-tier-10',
+    title: 'Reach Tier 10 Car',
+    description: 'Trade in for a Tier 10 or higher car in the Garage.',
     neonReward: 25,
   },
   {
     id: 'win-10-races',
     title: 'Win 10 Races',
-    description: "Win 10 races in Auto-Drag (Race vs Player or Syndicate Bot).",
+    description: 'Win 10 races in Auto-Drag (Race vs Player or Syndicate Bot).',
     neonReward: 50,
+  },
+  {
+    id: 'join-syndicate',
+    title: 'Join or Create a Syndicate',
+    description: 'Team up — join an existing Syndicate or start your own from the Syndicate Hub.',
+    neonReward: 15,
+  },
+  {
+    id: 'invite-3-friends',
+    title: 'Invite 3 Friends (Tier 5 required)',
+    description: 'Get 3 invited friends to reach Tier 5 — see the REF tab for your link and progress.',
+    neonReward: 75,
   },
 ] as const;
 
@@ -572,6 +633,8 @@ export interface QuestProgress {
   walletAddress: string | null;
   carTier: number;
   racesWon: number;
+  syndicateId: string | null;
+  validReferralsCount: number;
 }
 
 /** Whether a given quest's milestone has been reached — independent of whether it's already
@@ -581,10 +644,14 @@ export function isQuestComplete(questId: string, progress: QuestProgress): boole
   switch (questId) {
     case 'connect-wallet':
       return progress.walletAddress !== null;
-    case 'reach-tier-5':
-      return progress.carTier >= 5;
+    case 'reach-tier-10':
+      return progress.carTier >= 10;
     case 'win-10-races':
       return progress.racesWon >= 10;
+    case 'join-syndicate':
+      return progress.syndicateId !== null;
+    case 'invite-3-friends':
+      return progress.validReferralsCount >= REFERRAL.QUEST_REQUIRED_VALID_REFERRALS;
     default:
       return false;
   }

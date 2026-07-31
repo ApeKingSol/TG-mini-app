@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { ProfileAvatarButton } from './components/ProfileAvatarButton';
 import { AirdropEntryButton } from './components/AirdropEntryButton';
+import { ReferralsEntryButton } from './components/ReferralsEntryButton';
 import { ScreenBackground } from './components/ScreenBackground';
 import { useGameLoop } from './hooks/useGameLoop';
 import { useTelegram } from './hooks/useTelegram';
@@ -14,6 +15,7 @@ import { GarageScreen } from './screens/GarageScreen';
 import { RaceScreen } from './screens/RaceScreen';
 import { ProfileScreen } from './screens/ProfileScreen';
 import { AirdropScreen } from './screens/AirdropScreen';
+import { ReferralsScreen } from './screens/ReferralsScreen';
 import { trackAppOpened } from './utils/analytics';
 
 function App() {
@@ -32,7 +34,9 @@ function App() {
   // true while isProfileOpen stayed true, and the render ternary checked isProfileOpen first —
   // so the Airdrop button silently did nothing whenever Profile was already open, the exact bug
   // this replaced.
-  const [activeOverlay, setActiveOverlay] = useState<'profile' | 'airdrop' | null>(null);
+  const [activeOverlay, setActiveOverlay] = useState<'profile' | 'airdrop' | 'referrals' | null>(
+    null,
+  );
 
   useEffect(() => {
     trackAppOpened();
@@ -70,6 +74,7 @@ function App() {
              the button itself was never broken. A real (non-auto) z-index wins regardless of
              DOM order or sibling filters. */}
           <AirdropEntryButton onClick={() => setActiveOverlay('airdrop')} />
+          <ReferralsEntryButton onClick={() => setActiveOverlay('referrals')} />
           <ProfileAvatarButton photoUrl={userPhotoUrl} onClick={() => setActiveOverlay('profile')} />
           <p className="px-11 font-mono text-[9px] uppercase tracking-[0.2em] text-amber/70">
             Sys.Online // Uplink: Stable
@@ -97,6 +102,8 @@ function App() {
               />
             ) : activeOverlay === 'airdrop' ? (
               <AirdropScreen key="airdrop" onBack={() => setActiveOverlay(null)} />
+            ) : activeOverlay === 'referrals' ? (
+              <ReferralsScreen key="referrals" onBack={() => setActiveOverlay(null)} />
             ) : (
               <>
                 {activeScreen === 'junkyard' && <JunkyardScreen key="junkyard" />}

@@ -96,6 +96,13 @@ export interface PlayerState {
   critMultiplier: number;
   /** Scrap awarded for time elapsed while the app was closed, shown once as a toast. Not persisted. */
   offlineEarnings: number | null;
+  /** How much of the AFK/offline cap (ECONOMY.MAX_OFFLINE_SECONDS) the time away since the
+   * last save had used up, as of the most recent applyOfflineProgress() run — 0 for no time
+   * away, 1 (or more, pre-clamp) if the player was away long enough to hit the cap and lose
+   * potential Scrap. Recomputed fresh on every load/remote-hydrate; not persisted, since a
+   * stale ratio from one device showing up on another would be meaningless there. Drives the
+   * Garage's AFK Storage panel warning. */
+  lastOfflineCapacityRatio: number;
   /** Unix ms timestamp of the last time state was brought current — drives both the live per-second tick and the offline-progress catch-up on reload. */
   lastSaved: number;
   /** Consecutive Daily Reward claim count (1-indexed once the first claim happens) — see
@@ -151,4 +158,24 @@ export interface PlayerState {
    * server's own `night-siege-attack-cooldown` record (night-siege.mts) is what actually
    * enforces the gate, same dual-track pattern as lastClaimedBossId/claimedBy above. */
   lastBossAttackTime: number | null;
+  /** This account's current Syndicate id, or null if solo — mirrored from SyndicateHub.tsx
+   * (see setSyndicateId in GameStore.ts) purely so the "Join or Create a Syndicate" Airdrop
+   * quest (see isQuestComplete in economy.ts) has something synchronous to check. The
+   * Syndicate itself (roster, name, tag, ...) is *not* duplicated here — this is only ever an
+   * id pointer; SyndicateHub.tsx's own `syndicateApi.ts` backend remains the sole source of
+   * truth for everything else about it. */
+  syndicateId: string | null;
+  /** $NEON earned from the Referral System's Tier-5 milestone (see REFERRAL in economy.ts) but
+   * not yet moved into the real `neon` balance — the "manual claim" mechanic: rewards
+   * accumulate here and only transfer via claimReferralRewards, triggered by the REF tab's
+   * Vault "Claim Rewards" button, never automatically. */
+  unclaimedNeon: number;
+  /** Scrap earned the same way as unclaimedNeon above, same manual-claim mechanic. */
+  unclaimedScrap: number;
+  /** How many of this account's own invitees have individually reached
+   * REFERRAL.MILESTONE_CAR_TIER — incremented server-side (see netlify/functions/referrals.mts's
+   * milestone-reached action) whenever *this* account turns out to be the inviter on record for
+   * whoever just hit the milestone. Drives the "Invite 3 Friends" Airdrop quest and the REF
+   * tab's progress readout. */
+  validReferralsCount: number;
 }

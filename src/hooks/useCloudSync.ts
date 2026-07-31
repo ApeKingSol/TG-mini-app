@@ -6,6 +6,7 @@ import {
   hadLocalSaveAtLoad,
 } from '../game/store/GameStore';
 import { WebApp, isRunningInTelegram } from '../lib/telegram';
+import { registerReferralIfNewPlayer } from '../game/mock/referralsApi';
 import type { PlayerState } from '../game/types';
 
 const SYNC_ENDPOINT = '/api/sync';
@@ -52,6 +53,10 @@ const SIGNIFICANT_KEYS = [
   'claimedQuests',
   'lastClaimedBossId',
   'lastBossAttackTime',
+  'syndicateId',
+  'unclaimedNeon',
+  'unclaimedScrap',
+  'validReferralsCount',
 ] as const satisfies readonly (keyof PlayerState)[];
 
 /** Surfaced to the Profile screen so sync problems are actually observable instead of a
@@ -241,6 +246,15 @@ export function useCloudSync(): { status: CloudSyncStatus; syncNow: () => void }
             const shouldAdopt =
               (isInitialPull && !hadLocalSaveAtLoad) || remote.lastSaved > localBaseline;
             if (shouldAdopt) applyRemoteState(remote);
+          } else if (isInitialPull) {
+            // No save on file at all, on this session's very first pull — a genuinely new
+            // account. This is the one moment a `?startapp=ref_X` launch can be safely linked:
+            // registerReferralIfNewPlayer re-derives the inviter id straight off this launch's
+            // own (already backend-verified) initData, and the backend's own one-shot CAS lock
+            // is what actually makes this idempotent — not this `isInitialPull` gate, which is
+            // just what keeps a returning player's every later periodic pull from bothering to
+            // call it at all.
+            registerReferralIfNewPlayer().catch(() => {});
           }
           // The lock opens once the pull has genuinely settled against the backend — a real
           // answer (existing save, or `remote === null` for a brand-new player), not a
