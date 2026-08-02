@@ -32,6 +32,7 @@ interface SaveRecordFields {
   unclaimedNeon?: number;
   unclaimedScrap?: number;
   validReferralsCount?: number;
+  totalReferralsCount?: number;
   lastSaved?: number;
   [key: string]: unknown;
 }
@@ -103,6 +104,36 @@ async function creditUnclaimedRewards(
   return false;
 }
 
+/** Bumps `userId`'s own totalReferralsCount by 1 — called exactly once, the moment a brand-new
+ * invitee's link to them is first established (see handleRegister), independent of whether that
+ * invitee ever goes on to reach Tier 5 (that separate, milestone-gated tally is
+ * validReferralsCount, bumped instead by creditUnclaimedRewards from handleMilestoneReached).
+ * Same CAS read-etag-modify-write retry loop as creditUnclaimedRewards, just for a single
+ * counter rather than an economy credit — every other field on the record is preserved by
+ * spreading `...record` first, same "never overwrite the rest of a save" guarantee. */
+async function incrementTotalReferralsCount(
+  saves: ReturnType<typeof getStore>,
+  userId: string,
+): Promise<boolean> {
+  for (let attempt = 0; attempt < MAX_WRITE_RETRIES; attempt++) {
+    const existing = await saves.getWithMetadata(userId, { type: 'json' });
+    if (!existing) return false;
+
+    const record = existing.data as SaveRecordFields;
+    const updated: SaveRecordFields = {
+      ...record,
+      totalReferralsCount:
+        (typeof record.totalReferralsCount === 'number' ? record.totalReferralsCount : 0) + 1,
+      lastSaved: Date.now(),
+    };
+
+    const result = await saves.setJSON(userId, updated, { onlyIfMatch: existing.etag });
+    if (result.modified) return true;
+    // Conflicting concurrent write — retry against the freshest record.
+  }
+  return false;
+}
+
 /** GET — this account's own Vault numbers plus its referral code (its own Telegram id;
  * ReferralsScreen.tsx builds its shareable link from the same id it already has locally, this
  * just confirms it). Purely a read: never creates a link, credits anything, or claims anything.
@@ -117,6 +148,8 @@ async function handleGet(req: Request, saves: ReturnType<typeof getStore>): Prom
     unclaimedNeon: typeof raw?.unclaimedNeon === 'number' ? raw.unclaimedNeon : 0,
     unclaimedScrap: typeof raw?.unclaimedScrap === 'number' ? raw.unclaimedScrap : 0,
     validReferralsCount: typeof raw?.validReferralsCount === 'number' ? raw.validReferralsCount : 0,
+    totalReferralsCount:
+      typeof raw?.totalReferralsCount === 'number' ? raw.totalReferralsCount : 0,
     referralCode: user.id,
   });
 }
@@ -143,7 +176,13 @@ type PostBody = RegisterBody | MilestoneReachedBody | ClaimRewardsBody;
  * ever change after the fact. Also refuses a self-referral outright, and requires the claimed
  * inviter to actually be a real, previously-registered account (checked against the shared
  * `game-saves` store) before linking — otherwise a typo'd or made-up id could sit in
- * `referral-links` forever as a dead link nothing could ever credit. */
+ * `referral-links` forever as a dead link nothing could ever credit.
+ *
+ * The moment a link is *genuinely new* (not found already sitting there from an earlier call)
+ * is also when the inviter's raw totalReferralsCount goes up — independent of whether this
+ * invitee ever reaches Tier 5 later (see validReferralsCount/handleMilestoneReached for that
+ * separate, milestone-gated tally). This is what lets the REF tab show a "Pending" count of
+ * invitees who joined but haven't hit the milestone yet. */
 async function handleRegister(
   user: VerifiedTelegramUser,
   rawInitData: string,
@@ -162,6 +201,9 @@ async function handleRegister(
 
   const link: ReferralLink = { inviterId: referrerId, linkedAt: Date.now() };
   const result = await referralLinks.setJSON(user.id, link, { onlyIfNew: true });
+  if (result.modified) {
+    await incrementTotalReferralsCount(saves, referrerId);
+  }
   return jsonResponse({ ok: true, linked: result.modified });
 }
 

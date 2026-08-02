@@ -65,14 +65,33 @@ export function AirdropScreen({ onBack }: AirdropScreenProps) {
         </p>
       </div>
 
-      <div className="flex items-center justify-between rounded-lg border border-neutral-800 bg-bg-panel/60 px-4 py-2.5">
-        <p className="font-mono text-[11px] uppercase tracking-wide text-neutral-400">
-          Quest Progress
-        </p>
-        <p className="font-display text-sm font-bold tabular-nums text-neon-cyan">
-          {completedCount}/{totalCount} Quests
-        </p>
-      </div>
+      <motion.div
+        animate={{
+          boxShadow: [
+            '0 0 10px 2px rgba(0,240,255,0.3)',
+            '0 0 22px 4px rgba(0,240,255,0.55)',
+            '0 0 10px 2px rgba(0,240,255,0.3)',
+          ],
+        }}
+        transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+        className="panel-cut relative overflow-hidden border-2 border-neon-cyan bg-neon-cyan/10 p-4"
+      >
+        <div className="flex items-center justify-between">
+          <p className="font-display text-xs font-bold uppercase tracking-widest text-neon-cyan drop-shadow-[0_0_8px_rgba(0,240,255,0.6)]">
+            Quests Completed
+          </p>
+          <p className="font-display text-xl font-black tabular-nums text-neon-cyan drop-shadow-[0_0_10px_rgba(0,240,255,0.7)]">
+            {completedCount} / {totalCount}
+          </p>
+        </div>
+        <div className="mt-2.5 h-3 w-full overflow-hidden rounded-full border border-neon-cyan/40 bg-black/40">
+          <motion.div
+            className="h-full rounded-full bg-gradient-to-r from-neon-cyan to-neon-magenta"
+            animate={{ width: `${(completedCount / totalCount) * 100}%` }}
+            transition={{ duration: 0.4, ease: 'easeOut' }}
+          />
+        </div>
+      </motion.div>
 
       <div className="flex flex-col gap-3">
         {allQuestsComplete ? (

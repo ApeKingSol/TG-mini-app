@@ -94,7 +94,11 @@ export function registerReferralIfNewPlayer(): Promise<void> {
 export interface ReferralsData {
   unclaimedNeon: number;
   unclaimedScrap: number;
+  /** How many invitees have reached REFERRAL.MILESTONE_CAR_TIER. */
   validReferralsCount: number;
+  /** How many invitees have *ever* registered with this account's link, milestone reached or
+   * not — `totalReferralsCount - validReferralsCount` is the REF tab's "Pending" count. */
+  totalReferralsCount: number;
   /** This account's own Telegram id — the same value ReferralsScreen.tsx's share link already
    * builds from getTelegramUserId() locally; returned here too purely so the REF tab's
    * displayed link and progress numbers can come from a single server round-trip together. */

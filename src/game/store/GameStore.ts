@@ -15,6 +15,7 @@ import {
   QUESTS,
   isQuestComplete,
   REFERRAL,
+  getEffectiveMaxOfflineSeconds,
 } from '../config/economy';
 import { getPartTier, rollPartPerk, type PartPerk } from '../config/parts';
 import { CAR_TIERS, getCarTier, getUpgradeRequirement } from '../config/carTiers';
@@ -239,6 +240,7 @@ interface GameActions {
     unclaimedNeon: number;
     unclaimedScrap: number;
     validReferralsCount: number;
+    totalReferralsCount: number;
   }) => void;
 }
 
@@ -302,6 +304,7 @@ function createInitialPlayerState(): PlayerState {
     dailyRewardStreak: 0,
     lastDailyRewardClaim: null,
     boostEndsAt: null,
+    megaBoostEndsAt: null,
     lastNeonSyphonTime: null,
     walletAddress: null,
     racesWon: 0,
@@ -312,6 +315,7 @@ function createInitialPlayerState(): PlayerState {
     unclaimedNeon: 0,
     unclaimedScrap: 0,
     validReferralsCount: 0,
+    totalReferralsCount: 0,
   };
 }
 
@@ -692,16 +696,20 @@ export const useGameStore = create<GameStore>()(
           };
         });
 
-        const { lastSaved, scrapPerSecond, boostEndsAt } = get();
+        const { lastSaved, scrapPerSecond, boostEndsAt, megaBoostEndsAt } = get();
         // Uncapped — used only to measure how much of the AFK cap the time away actually used
         // up (see lastOfflineCapacityRatio's doc comment in types/index.ts), never to pay out
         // Scrap directly. `elapsedSeconds` below is the one that's actually capped and paid.
         const rawElapsedSeconds = Math.max(0, (now - lastSaved) / 1000);
+        // A Mega Overclock (see MEGA_OVERCLOCK in economy.ts) still active at the moment this
+        // device went offline raises the applicable cap for this entire gap from the normal
+        // ECONOMY.MAX_OFFLINE_SECONDS to its own longer one.
+        const effectiveMaxOfflineSeconds = getEffectiveMaxOfflineSeconds(megaBoostEndsAt, lastSaved);
         const offlineCapacityRatio =
-          ECONOMY.MAX_OFFLINE_SECONDS > 0
-            ? Math.min(1, rawElapsedSeconds / ECONOMY.MAX_OFFLINE_SECONDS)
+          effectiveMaxOfflineSeconds > 0
+            ? Math.min(1, rawElapsedSeconds / effectiveMaxOfflineSeconds)
             : 1;
-        const elapsedSeconds = Math.min(rawElapsedSeconds, ECONOMY.MAX_OFFLINE_SECONDS);
+        const elapsedSeconds = Math.min(rawElapsedSeconds, effectiveMaxOfflineSeconds);
         if (elapsedSeconds <= 0) {
           set({ lastSaved: now, lastOfflineCapacityRatio: offlineCapacityRatio });
           return;
@@ -864,6 +872,7 @@ export const useGameStore = create<GameStore>()(
           unclaimedNeon: data.unclaimedNeon,
           unclaimedScrap: data.unclaimedScrap,
           validReferralsCount: data.validReferralsCount,
+          totalReferralsCount: data.totalReferralsCount,
         }),
     }),
     {

@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Zap, Store, X, Gift, Flame, Coins, Sparkles } from 'lucide-react';
+import { Zap, Store, Gift } from 'lucide-react';
 import {
   DndContext,
   PointerSensor,
@@ -20,15 +20,12 @@ import {
   getPartBuyCost,
   getSecondsUntilNextEnergyRegen,
   getCarStats,
-  DAILY_REWARDS,
-  DAILY_REWARD_STREAK_RESET_HOURS,
-  getDailyRewardForStreak,
   isDailyRewardClaimable,
-  type DailyRewardTier,
 } from '../game/config/economy';
 import { getPartTier, PERK_DESCRIPTIONS, type PartPerk } from '../game/config/parts';
 import { getCarTier, getUpgradeRequirement } from '../game/config/carTiers';
 import { ShopModal } from './ShopScreen';
+import { DailyRewardScreen } from './DailyRewardScreen';
 import type { CarStats } from '../game/types';
 
 const CAR_INSTALLATION_ZONE_ID = 'car-installation-zone';
@@ -322,7 +319,7 @@ export function GarageScreen() {
 
       <AnimatePresence>
         {isDailyRewardOpen && (
-          <DailyRewardModal
+          <DailyRewardScreen
             streak={dailyRewardStreak}
             lastClaim={lastDailyRewardClaim}
             onClose={() => setIsDailyRewardOpen(false)}
@@ -334,155 +331,6 @@ export function GarageScreen() {
         )}
       </AnimatePresence>
     </motion.div>
-  );
-}
-
-interface DailyRewardModalProps {
-  /** Consecutive claims completed so far (0 if never claimed). */
-  streak: number;
-  lastClaim: number | null;
-  onClose: () => void;
-  /** Fired right after a successful claim with a ready-to-display confirmation message —
-   * GarageScreen closes the modal and hands this straight to its existing toast. */
-  onClaimed: (message: string) => void;
-}
-
-/** The 7-day login-streak track — Days 1-6 escalating Scrap, Day 7 a $NEON payout, cycling
- * forever past Day 7 (see DAILY_REWARDS/getDailyRewardForStreak in economy.ts). Mirrors
- * ShopScreen.tsx's ShopModal overlay/panel structure so the Garage's two header buttons open
- * visually consistent modals. */
-function DailyRewardModal({ streak, lastClaim, onClose, onClaimed }: DailyRewardModalProps) {
-  const claimDailyReward = useGameStore((state) => state.claimDailyReward);
-  const [now, setNow] = useState(() => Date.now());
-  const [isClaiming, setIsClaiming] = useState(false);
-
-  // The countdown to "next claim opens" needs a live clock of its own — this modal can be left
-  // open across that boundary.
-  useEffect(() => {
-    const interval = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(interval);
-  }, []);
-
-  const claimable = isDailyRewardClaimable(lastClaim, now);
-  // What the *next* claim would actually grant — mirrors the store's own continue-vs-reset
-  // check (see claimDailyReward in GameStore.ts) purely for this preview; the real claim always
-  // recomputes and commits it authoritatively, this can never itself grant anything.
-  const streakBroken =
-    lastClaim !== null && now - lastClaim > DAILY_REWARD_STREAK_RESET_HOURS * 60 * 60 * 1000;
-  const upcomingStreak = lastClaim === null || streakBroken ? 1 : streak + 1;
-  const upcomingDay = getDailyRewardForStreak(upcomingStreak).day;
-
-  const msUntilClaimable =
-    lastClaim === null ? 0 : Math.max(0, lastClaim + 24 * 60 * 60 * 1000 - now);
-  const hoursUntilClaimable = Math.floor(msUntilClaimable / (60 * 60 * 1000));
-  const minutesUntilClaimable = Math.floor((msUntilClaimable % (60 * 60 * 1000)) / (60 * 1000));
-
-  const handleClaim = () => {
-    if (!claimable || isClaiming) return;
-    setIsClaiming(true);
-    const reward = claimDailyReward();
-    setIsClaiming(false);
-    if (!reward) return;
-    const amount = reward.scrap ? `+${reward.scrap.toLocaleString()} Scrap` : `+${reward.neon} NEON`;
-    onClaimed(`Day ${reward.day} claimed — ${amount}!`);
-  };
-
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      onClick={onClose}
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/70 px-4 pt-20 backdrop-blur-sm"
-    >
-      <motion.div
-        initial={{ opacity: 0, y: -24, scale: 0.95 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: -24, scale: 0.95 }}
-        transition={{ duration: 0.25, ease: 'easeOut' }}
-        onClick={(event) => event.stopPropagation()}
-        className="panel-cut w-full max-w-sm border border-amber/50 bg-bg-panel p-4 text-left shadow-lg"
-      >
-        <div className="mb-1 flex items-center justify-between">
-          <p className="flex items-center gap-1.5 font-display text-sm font-bold uppercase tracking-widest text-amber">
-            <Gift className="h-4 w-4" strokeWidth={2} />
-            Daily Reward
-          </p>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1 text-neutral-500 hover:text-neutral-300"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        <div className="mb-3 flex items-center justify-center gap-1.5 text-neutral-400">
-          <Flame className={`h-3.5 w-3.5 ${streak > 0 ? 'text-amber' : 'text-neutral-600'}`} />
-          <p className="text-xs">
-            {streak > 0 ? (
-              <>
-                <span className="font-bold text-amber">{streak}</span>-day streak
-              </>
-            ) : (
-              'No streak yet'
-            )}
-          </p>
-        </div>
-
-        <div className="grid grid-cols-7 gap-1.5">
-          {DAILY_REWARDS.map((tier) => (
-            <DailyRewardDayCell key={tier.day} tier={tier} isUpcoming={tier.day === upcomingDay} />
-          ))}
-        </div>
-
-        <motion.button
-          type="button"
-          onClick={handleClaim}
-          disabled={!claimable || isClaiming}
-          whileHover={claimable && !isClaiming ? { scale: 1.02 } : undefined}
-          whileTap={claimable && !isClaiming ? { scale: 0.97 } : undefined}
-          className="mt-4 w-full rounded-lg border-2 border-amber bg-amber/10 py-3 font-display text-sm font-black uppercase tracking-widest text-amber shadow-[0_0_20px_rgba(255,149,0,0.3)] transition-opacity disabled:cursor-not-allowed disabled:border-neutral-700 disabled:bg-transparent disabled:text-neutral-500 disabled:shadow-none"
-        >
-          {claimable
-            ? `Claim Day ${upcomingDay}`
-            : `Next reward in ${hoursUntilClaimable}h ${minutesUntilClaimable}m`}
-        </motion.button>
-      </motion.div>
-    </motion.div>
-  );
-}
-
-interface DailyRewardDayCellProps {
-  tier: DailyRewardTier;
-  isUpcoming: boolean;
-}
-
-function DailyRewardDayCell({ tier, isUpcoming }: DailyRewardDayCellProps) {
-  const isNeonDay = tier.neon !== undefined;
-
-  return (
-    <div
-      className={`flex flex-col items-center gap-1 rounded-lg border p-1.5 ${
-        isUpcoming
-          ? 'border-amber bg-amber/15 shadow-[0_0_12px_rgba(255,149,0,0.35)]'
-          : 'border-neutral-800 bg-black/20'
-      }`}
-    >
-      <p className="text-[9px] uppercase tracking-widest text-neutral-500">D{tier.day}</p>
-      {isNeonDay ? (
-        <Sparkles className={`h-3.5 w-3.5 ${isUpcoming ? 'text-neon-magenta' : 'text-neutral-600'}`} />
-      ) : (
-        <Coins className={`h-3.5 w-3.5 ${isUpcoming ? 'text-scrap' : 'text-neutral-600'}`} />
-      )}
-      <p
-        className={`text-center text-[9px] font-bold tabular-nums ${
-          isUpcoming ? (isNeonDay ? 'text-neon-magenta' : 'text-scrap') : 'text-neutral-600'
-        }`}
-      >
-        {tier.scrap ?? tier.neon}
-      </p>
-    </div>
   );
 }
 

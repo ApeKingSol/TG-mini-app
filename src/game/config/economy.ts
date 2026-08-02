@@ -432,12 +432,12 @@ export interface DailyRewardTier {
  * Day 7 (Day 8 repeats Day 1's reward, Day 14 repeats Day 7's, ...) rather than capping — a
  * streak has no defined end. */
 export const DAILY_REWARDS: readonly DailyRewardTier[] = [
-  { day: 1, scrap: 50 },
-  { day: 2, scrap: 100 },
-  { day: 3, scrap: 200 },
-  { day: 4, scrap: 350 },
-  { day: 5, scrap: 550 },
-  { day: 6, scrap: 800 },
+  { day: 1, scrap: 50_000 },
+  { day: 2, scrap: 100_000 },
+  { day: 3, scrap: 200_000 },
+  { day: 4, scrap: 350_000 },
+  { day: 5, scrap: 550_000 },
+  { day: 6, scrap: 800_000 },
   { day: 7, neon: 25 },
 ] as const;
 
@@ -486,6 +486,52 @@ export const OVERCLOCK = {
 /** Whether the Overclock boost is currently active. */
 export function isOverclockActive(boostEndsAt: number | null, now: number): boolean {
   return boostEndsAt !== null && boostEndsAt > now;
+}
+
+/** Tuning for the Shop's premium "Mega Overclock" tier — the same passive-income multiplier
+ * mechanic as OVERCLOCK above (it extends the exact same `boostEndsAt` clock, so the two stack
+ * into one shared countdown regardless of which tier a purchase was), just a 3-day (72h)
+ * duration instead of 24h for a correspondingly bigger Stars price. What makes this tier
+ * genuinely different, not just "the same boost, longer": for as long as *this* purchase's own
+ * effect is active (see megaBoostEndsAt in game/types/index.ts, tracked separately from
+ * boostEndsAt), the AFK/offline cap is also raised from the normal ECONOMY.MAX_OFFLINE_SECONDS to
+ * EXTENDED_OFFLINE_HOURS — see getEffectiveMaxOfflineSeconds below — so a player about to be away
+ * for a multi-day trip doesn't lose out on offline earnings past the normal 12h ceiling. Buying a
+ * *regular* 24h Overclock on top of an active Mega Overclock only extends the shared multiplier
+ * clock; it does not touch megaBoostEndsAt, so the extended AFK cap still expires on its own
+ * original schedule — that privilege is specific to what was actually paid for. */
+export const MEGA_OVERCLOCK = {
+  DURATION_HOURS: 72,
+  /** The AFK/offline cap while this boost is active, in hours — see
+   * getEffectiveMaxOfflineSeconds below. */
+  EXTENDED_OFFLINE_HOURS: 72,
+  /** Price in Telegram Stars (XTR) — see ITEM_CONFIG in netlify/functions/create-invoice.mts. */
+  STARS_PRICE: 300,
+} as const;
+
+/** Whether the Mega Overclock's own extended-AFK-cap privilege is currently active — distinct
+ * from isOverclockActive, which only tracks the shared scrap-multiplier clock both tiers write
+ * into. */
+export function isMegaOverclockActive(megaBoostEndsAt: number | null, now: number): boolean {
+  return megaBoostEndsAt !== null && megaBoostEndsAt > now;
+}
+
+/** The AFK/offline cap (in seconds) that actually applies to a given offline gap: the normal
+ * ECONOMY.MAX_OFFLINE_SECONDS, unless a Mega Overclock was still active at the exact moment this
+ * device went offline (`megaBoostEndsAt` newer than `lastSaved`), in which case the whole gap is
+ * capped at MEGA_OVERCLOCK.EXTENDED_OFFLINE_HOURS instead. Deliberately a single either/or answer
+ * for the whole gap rather than splitting it into boosted/non-boosted sub-windows (the way
+ * getBoostedScrapEarned splits the *scrap* multiplier) — the AFK cap is a coarse anti-abuse
+ * ceiling, not a precise economic lever, so "was Mega Overclock running when you left" is a
+ * simple, defensible rule that doesn't need that level of precision. */
+export function getEffectiveMaxOfflineSeconds(
+  megaBoostEndsAt: number | null,
+  lastSaved: number,
+): number {
+  if (megaBoostEndsAt !== null && megaBoostEndsAt > lastSaved) {
+    return MEGA_OVERCLOCK.EXTENDED_OFFLINE_HOURS * 60 * 60;
+  }
+  return ECONOMY.MAX_OFFLINE_SECONDS;
 }
 
 /** Scrap earned over a `[windowStart, now]` span, honoring the Overclock multiplier for exactly

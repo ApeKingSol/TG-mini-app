@@ -92,12 +92,7 @@ function App() {
         <main className="mt-6">
           <AnimatePresence mode="wait">
             {activeOverlay === 'profile' ? (
-              <ProfileScreen
-                key="profile"
-                onBack={() => setActiveOverlay(null)}
-                syncStatus={cloudSync.status}
-                onSyncNow={cloudSync.syncNow}
-              />
+              <ProfileScreen key="profile" onBack={() => setActiveOverlay(null)} />
             ) : activeOverlay === 'airdrop' ? (
               <AirdropScreen key="airdrop" onBack={() => setActiveOverlay(null)} />
             ) : activeOverlay === 'referrals' ? (

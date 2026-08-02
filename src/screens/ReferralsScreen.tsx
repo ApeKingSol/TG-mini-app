@@ -16,18 +16,25 @@ function buildReferralLink(userId: string): string {
 const REFERRAL_SHARE_TEXT =
   'Join me in Cyber-Garage — build your rig, race The Streets, and stack $NEON before the airdrop. Tap in:';
 
+/** Tailwind doesn't ship a vivid enough "neon purple" of its own for this — arbitrary-value hex
+ * keeps the Referral System's $NEON profit visually distinct from every other color already in
+ * use here (amber rules banner, magenta/cyan elsewhere in the app, toxic-green claim button),
+ * marking it explicitly as *premium* currency the instant you glance at the Vault. */
+const NEON_PURPLE = '#b026ff';
+
 interface ReferralsScreenProps {
   onBack: () => void;
 }
 
 /** The dedicated "REF" tab — rules banner, the Vault (accumulated, manually-claimed rewards),
- * invite-progress toward the Airdrop's "Invite 3 Friends" quest, and the actual share/copy
- * surface. Reached from its own header button (see App.tsx's ReferralsEntryButton), same
- * outside-the-bottom-nav pattern as ProfileScreen/AirdropScreen. */
+ * pending/valid invite counts, and the actual share/copy surface. Reached from its own header
+ * button (see App.tsx's ReferralsEntryButton), same outside-the-bottom-nav pattern as
+ * ProfileScreen/AirdropScreen. */
 export function ReferralsScreen({ onBack }: ReferralsScreenProps) {
   const unclaimedNeon = useGameStore((state) => state.unclaimedNeon);
   const unclaimedScrap = useGameStore((state) => state.unclaimedScrap);
   const validReferralsCount = useGameStore((state) => state.validReferralsCount);
+  const totalReferralsCount = useGameStore((state) => state.totalReferralsCount);
   const claimReferralRewards = useGameStore((state) => state.claimReferralRewards);
   const refreshReferralsData = useGameStore((state) => state.refreshReferralsData);
 
@@ -46,6 +53,7 @@ export function ReferralsScreen({ onBack }: ReferralsScreenProps) {
           unclaimedNeon: data.unclaimedNeon,
           unclaimedScrap: data.unclaimedScrap,
           validReferralsCount: data.validReferralsCount,
+          totalReferralsCount: data.totalReferralsCount,
         });
       })
       .catch(() => {});
@@ -54,6 +62,10 @@ export function ReferralsScreen({ onBack }: ReferralsScreenProps) {
 
   const userId = getTelegramUserId();
   const canClaim = (unclaimedNeon > 0 || unclaimedScrap > 0) && !isClaiming;
+  // Invitees who joined via this account's link but haven't (yet) reached Tier 5 — invites
+  // themselves have no cap, only the "Invite 3 Friends" Airdrop quest cares about a fixed count,
+  // so this is a plain, uncapped pending tally.
+  const pendingReferrals = Math.max(0, (totalReferralsCount || 0) - (validReferralsCount || 0));
 
   const handleClaim = async () => {
     if (!canClaim) return;
@@ -157,7 +169,10 @@ export function ReferralsScreen({ onBack }: ReferralsScreenProps) {
         </p>
         <div className="mt-2 flex items-center justify-center gap-5">
           <div className="text-center">
-            <p className="font-display text-2xl font-black tabular-nums text-neon-magenta drop-shadow-[0_0_10px_rgba(255,46,230,0.6)]">
+            <p
+              style={{ color: NEON_PURPLE, textShadow: `0 0 10px ${NEON_PURPLE}99` }}
+              className="font-display text-2xl font-black tabular-nums"
+            >
               {unclaimedNeon.toLocaleString()}
             </p>
             <p className="font-mono text-[10px] uppercase tracking-widest text-neutral-500">NEON</p>
@@ -210,16 +225,25 @@ export function ReferralsScreen({ onBack }: ReferralsScreenProps) {
         {claimError && <p className="mt-2 text-center text-xs font-medium text-red-400">{claimError}</p>}
       </div>
 
-      {/* Invites have no cap — only 3 are actually required for the Airdrop's "Invite 3
-         Friends" quest (see AirdropScreen.tsx), so this is a plain running count, not a
-         fraction that would look broken past 3. */}
-      <div className="flex items-center justify-between rounded-lg border border-neutral-800 bg-bg-panel/60 px-4 py-2.5">
-        <p className="font-mono text-[11px] uppercase tracking-wide text-neutral-400">
-          Friends at Tier 5
-        </p>
-        <p className="font-display text-sm font-bold tabular-nums text-neon-cyan">
-          {validReferralsCount}
-        </p>
+      {/* Invite counts — invites themselves have no cap, only the Airdrop's "Invite 3 Friends"
+         quest cares about a fixed count of 3, so these are both plain running totals. */}
+      <div className="flex flex-col gap-1.5 rounded-lg border border-neutral-800 bg-bg-panel/60 px-4 py-2.5">
+        <div className="flex items-center justify-between">
+          <p className="font-mono text-[11px] uppercase tracking-wide text-neutral-400">
+            Friends at Tier 5
+          </p>
+          <p className="font-display text-sm font-bold tabular-nums text-neon-cyan">
+            {validReferralsCount}
+          </p>
+        </div>
+        <div className="flex items-center justify-between">
+          <p className="font-mono text-[11px] uppercase tracking-wide text-neutral-500">
+            Pending
+          </p>
+          <p className="font-mono text-xs font-semibold tabular-nums text-amber/80">
+            {pendingReferrals} player{pendingReferrals === 1 ? '' : 's'} (Need Tier 5)
+          </p>
+        </div>
       </div>
 
       {/* Share */}

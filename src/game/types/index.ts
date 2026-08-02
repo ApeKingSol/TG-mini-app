@@ -128,6 +128,16 @@ export interface PlayerState {
    * exact pattern existed once and was removed because it let a modified client grant itself
    * the boost without ever paying. */
   boostEndsAt: number | null;
+  /** Unix ms timestamp the Shop's premium "Mega Overclock (72h)" boost's own extended-AFK-cap
+   * privilege expires at, or null if it's never been bought. Tracked separately from
+   * `boostEndsAt` (which both the regular 24h Overclock and this Mega tier extend identically,
+   * for the shared scrap multiplier) precisely because this field's only job is deciding
+   * whether an offline gap gets the extended 72h AFK cap instead of the normal
+   * ECONOMY.MAX_OFFLINE_SECONDS one — see getEffectiveMaxOfflineSeconds in economy.ts and
+   * applyOfflineProgress in GameStore.ts. Same "never set directly from the client" rule as
+   * boostEndsAt: only netlify/functions/telegram-webhook.mts writes this, once Telegram
+   * confirms the Stars payment actually happened. */
+  megaBoostEndsAt: number | null;
   /** Unix ms timestamp of the last "Neon Syphon" claim (The Streets' free, 24h-gated $NEON
    * trickle), or null if this save has never claimed one. See NEON_SYPHON/
    * isNeonSyphonClaimable/getNeonSyphonReward in economy.ts. */
@@ -178,4 +188,10 @@ export interface PlayerState {
    * whoever just hit the milestone. Drives the "Invite 3 Friends" Airdrop quest and the REF
    * tab's progress readout. */
   validReferralsCount: number;
+  /** How many invitees have *ever* registered with this account's referral link — incremented
+   * server-side (see netlify/functions/referrals.mts's handleRegister) the moment a new
+   * invitee's link is established, independent of whether they ever go on to reach Tier 5.
+   * `totalReferralsCount - validReferralsCount` is how the REF tab computes its "Pending"
+   * indicator (invitees who joined but haven't hit the milestone yet). Never decremented. */
+  totalReferralsCount: number;
 }
