@@ -104,9 +104,19 @@ export let localLastSavedAtLoad = Date.now();
 // have that account's own client apply the grant to itself the next time it loads. Guarded by
 // checking neonHistory for the grant label already being present, so re-opening the app
 // doesn't re-grant it.
-const ADMIN_TELEGRAM_ID = '8280101176';
+export const ADMIN_TELEGRAM_ID = '8280101176';
 const ADMIN_GRANT_AMOUNT = 10000;
 const ADMIN_GRANT_LABEL = 'Admin Bonus';
+
+/** True only for the single hardcoded admin Telegram id above — gates ProfileScreen.tsx's Admin
+ * Panel and the adminGrantNeon/adminGrantScrap/adminNextCar/adminPrevCar actions below. Purely a
+ * client-side convenience gate, same trust model as the one-time admin grants already applied in
+ * applyOfflineProgress(): there's no backend account system here for a "real" permission check to
+ * live in — every save is just this one player's own browser/Telegram-client storage, so an
+ * ungated client has nothing cross-account to reach anyway. */
+export function isAdminAccount(): boolean {
+  return getTelegramUserId() === ADMIN_TELEGRAM_ID;
+}
 
 /** One-time admin Scrap grant, same rationale as the $NEON one above but guarded by its own
  * `hasReceivedAdminScrapGrant` flag instead of a neonHistory label — Scrap has no equivalent
@@ -159,13 +169,19 @@ interface GameActions {
   buyUpgrade: (id: string) => boolean;
   /** Once installedUpgrades reaches getUpgradeRequirement(carTier), resets installedUpgrades/partsPurchased and advances to the next car tier. No-op otherwise. */
   tradeInCar: () => void;
-  /** TEMP DEBUG — jumps straight to the next/previous car tier's art/name for a free look at
-   * the new 20-car roster, bypassing installedUpgrades/cost entirely (doesn't touch
-   * scrapPerSecond, partsPurchased, or installedUpgrades, so it can't be used to cheese the
-   * real economy). Remove these two actions, their buttons in GarageScreen, and this comment
-   * once the roster's been reviewed. */
-  debugPreviewNextCar: () => void;
-  debugPreviewPrevCar: () => void;
+  /** Admin-only (see isAdminAccount) — grants `amount` $NEON directly, for testing/support.
+   * A silent no-op for every other account, and for a non-finite or non-positive amount. */
+  adminGrantNeon: (amount: number) => void;
+  /** Admin-only (see isAdminAccount) — grants `amount` Scrap directly, same guard as
+   * adminGrantNeon. */
+  adminGrantScrap: (amount: number) => void;
+  /** Admin-only (see isAdminAccount) — jumps straight to the next/previous car tier's art/name,
+   * bypassing installedUpgrades/cost entirely (doesn't touch scrapPerSecond, partsPurchased, or
+   * installedUpgrades, so it can't be used to cheese the real economy). Replaces the old
+   * always-visible debug Prev/Next buttons in GarageScreen — now only reachable from
+   * ProfileScreen.tsx's Admin Panel, gated by the same isAdminAccount() check. */
+  adminNextCar: () => void;
+  adminPrevCar: () => void;
   /** Fast-forwards Scrap/Energy for time elapsed since lastSaved, run once after the persisted save is rehydrated. */
   applyOfflineProgress: () => void;
   dismissOfflineEarnings: () => void;
@@ -652,14 +668,29 @@ export const useGameStore = create<GameStore>()(
         }
       },
 
-      debugPreviewNextCar: () => {
+      adminGrantNeon: (amount) => {
+        if (!isAdminAccount() || !Number.isFinite(amount) || amount <= 0) return;
+        set((state) => ({
+          neon: state.neon + amount,
+          neonHistory: withNeonTransaction(state.neonHistory, 'Admin Grant', amount),
+        }));
+      },
+
+      adminGrantScrap: (amount) => {
+        if (!isAdminAccount() || !Number.isFinite(amount) || amount <= 0) return;
+        set((state) => ({ scrap: state.scrap + amount }));
+      },
+
+      adminNextCar: () => {
+        if (!isAdminAccount()) return;
         set((state) => {
           const nextTier = Math.min(state.carTier + 1, CAR_TIERS.length);
           return { carTier: nextTier, car: { ...state.car, name: getCarTier(nextTier).name } };
         });
       },
 
-      debugPreviewPrevCar: () => {
+      adminPrevCar: () => {
+        if (!isAdminAccount()) return;
         set((state) => {
           const prevTier = Math.max(state.carTier - 1, 1);
           return { carTier: prevTier, car: { ...state.car, name: getCarTier(prevTier).name } };

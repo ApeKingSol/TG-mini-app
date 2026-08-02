@@ -425,20 +425,28 @@ export interface DailyRewardTier {
 }
 
 /** The retention login-streak reward table, keyed by streak day (1-indexed). Days 1-6 escalate
- * in Scrap (sized against the early-game economy above — Tier 1 parts cost ~15-27 Scrap, so
- * even Day 1 is a meaningful chunk of a part), Day 7 pays out in $NEON instead, both a bigger
- * "why bother with the whole week" payoff and a taste of the premium currency for a player who
- * hasn't touched The Streets yet. getDailyRewardForStreak below cycles this table forever past
- * Day 7 (Day 8 repeats Day 1's reward, Day 14 repeats Day 7's, ...) rather than capping — a
- * streak has no defined end. */
+ * in Scrap (sized against the early-game economy above — Tier 1 parts cost ~15-27 Scrap, so Day
+ * 1's 500 is a meaningful multi-part boost, not a whole-tier skip), Day 7 pays out in $NEON
+ * instead, both a bigger "why bother with the whole week" payoff and a taste of the premium
+ * currency for a player who hasn't touched The Streets yet.
+ *
+ * Deliberately kept modest rather than economy-defining: an earlier pass had these at 100x these
+ * numbers (50,000-800,000 Scrap, 25 $NEON), which handed out several car tiers' worth of parts
+ * in one tap and made the streak itself pointless to protect — a reward that big is claimed once
+ * and forgotten, not something a player logs back in for. Scaled down so each day is a genuine,
+ * felt boost (roughly a double-digit-to-low-hundreds multiple of a Tier 1 part's price) without
+ * ever being the fastest way to progress — that's still buying parts/calibrating/trading in.
+ *
+ * getDailyRewardForStreak below cycles this table forever past Day 7 (Day 8 repeats Day 1's
+ * reward, Day 14 repeats Day 7's, ...) rather than capping — a streak has no defined end. */
 export const DAILY_REWARDS: readonly DailyRewardTier[] = [
-  { day: 1, scrap: 50_000 },
-  { day: 2, scrap: 100_000 },
-  { day: 3, scrap: 200_000 },
-  { day: 4, scrap: 350_000 },
-  { day: 5, scrap: 550_000 },
-  { day: 6, scrap: 800_000 },
-  { day: 7, neon: 25 },
+  { day: 1, scrap: 500 },
+  { day: 2, scrap: 1_000 },
+  { day: 3, scrap: 2_000 },
+  { day: 4, scrap: 3_500 },
+  { day: 5, scrap: 5_500 },
+  { day: 6, scrap: 8_000 },
+  { day: 7, neon: 10 },
 ] as const;
 
 /** Below this many hours since the last claim, the reward isn't ready yet — claiming exactly
@@ -700,5 +708,36 @@ export function isQuestComplete(questId: string, progress: QuestProgress): boole
       return progress.validReferralsCount >= REFERRAL.QUEST_REQUIRED_VALID_REFERRALS;
     default:
       return false;
+  }
+}
+
+/** A quest's progress as a plain `current`/`target` pair, for AirdropScreen.tsx's per-quest
+ * progress bar — `target` is always 1 for the two boolean milestones (connect a wallet, join a
+ * Syndicate), so their bar is either empty or full with no fraction worth printing; the other
+ * three have a real target above 1. `current` is clamped to `target` so an already-complete
+ * quest's bar reads as a clean 100% rather than, say, "14 / 10" once racesWon keeps climbing
+ * past the milestone. */
+export interface QuestProgressValue {
+  current: number;
+  target: number;
+}
+
+export function getQuestProgressValue(questId: string, progress: QuestProgress): QuestProgressValue {
+  switch (questId) {
+    case 'connect-wallet':
+      return { current: progress.walletAddress !== null ? 1 : 0, target: 1 };
+    case 'reach-tier-10':
+      return { current: Math.min(progress.carTier, 10), target: 10 };
+    case 'win-10-races':
+      return { current: Math.min(progress.racesWon, 10), target: 10 };
+    case 'join-syndicate':
+      return { current: progress.syndicateId !== null ? 1 : 0, target: 1 };
+    case 'invite-3-friends':
+      return {
+        current: Math.min(progress.validReferralsCount, REFERRAL.QUEST_REQUIRED_VALID_REFERRALS),
+        target: REFERRAL.QUEST_REQUIRED_VALID_REFERRALS,
+      };
+    default:
+      return { current: 0, target: 1 };
   }
 }

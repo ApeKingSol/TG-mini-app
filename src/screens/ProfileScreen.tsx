@@ -1,8 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TonConnectButton, useTonAddress, useTonConnectUI } from '@tonconnect/ui-react';
-import { ArrowLeft, ArrowUpFromLine, Clock, Lock, Wallet, type LucideIcon } from 'lucide-react';
-import { useGameStore } from '../game/store/GameStore';
+import {
+  ArrowLeft,
+  ArrowUpFromLine,
+  Clock,
+  Lock,
+  ShieldAlert,
+  Wallet,
+  type LucideIcon,
+} from 'lucide-react';
+import { useGameStore, isAdminAccount } from '../game/store/GameStore';
 
 interface ProfileScreenProps {
   onBack: () => void;
@@ -194,8 +202,97 @@ export function ProfileScreen({ onBack }: ProfileScreenProps) {
         )}
       </div>
 
+      {isAdminAccount() && <AdminPanel />}
+
       <p className="text-center text-[10px] text-neutral-700">Build {__BUILD_ID__}</p>
     </motion.div>
+  );
+}
+
+/** Only ever rendered for the single hardcoded admin Telegram account (see isAdminAccount in
+ * GameStore.ts) — grants arbitrary $NEON/Scrap and jumps the car between tiers, for testing and
+ * support without needing to grind or edit localStorage by hand. Replaces the old always-visible
+ * debug Prev/Next car buttons that used to sit on GarageScreen's car card. */
+function AdminPanel() {
+  const carTier = useGameStore((state) => state.carTier);
+  const car = useGameStore((state) => state.car);
+  const adminGrantNeon = useGameStore((state) => state.adminGrantNeon);
+  const adminGrantScrap = useGameStore((state) => state.adminGrantScrap);
+  const adminNextCar = useGameStore((state) => state.adminNextCar);
+  const adminPrevCar = useGameStore((state) => state.adminPrevCar);
+
+  const [neonInput, setNeonInput] = useState('1000');
+  const [scrapInput, setScrapInput] = useState('100000');
+
+  const handleGrantNeon = () => {
+    const amount = Number(neonInput);
+    if (Number.isFinite(amount) && amount > 0) adminGrantNeon(amount);
+  };
+
+  const handleGrantScrap = () => {
+    const amount = Number(scrapInput);
+    if (Number.isFinite(amount) && amount > 0) adminGrantScrap(amount);
+  };
+
+  return (
+    <div className="rounded-xl border-2 border-danger-red/50 bg-danger-red/5 p-4">
+      <p className="flex items-center gap-1.5 font-display text-xs font-bold uppercase tracking-widest text-danger-red">
+        <ShieldAlert className="h-3.5 w-3.5" strokeWidth={2} />
+        Admin Panel
+      </p>
+
+      <div className="mt-3 flex items-center gap-2">
+        <input
+          type="number"
+          value={neonInput}
+          onChange={(event) => setNeonInput(event.target.value)}
+          className="w-full rounded-lg border border-neutral-700 bg-black/40 px-2.5 py-1.5 font-mono text-xs text-neon-magenta outline-none focus:border-neon-magenta/60"
+        />
+        <button
+          type="button"
+          onClick={handleGrantNeon}
+          className="shrink-0 rounded-lg border border-neon-magenta bg-neon-magenta/10 px-3 py-1.5 font-mono text-xs font-bold uppercase tracking-wide text-neon-magenta"
+        >
+          + NEON
+        </button>
+      </div>
+
+      <div className="mt-2 flex items-center gap-2">
+        <input
+          type="number"
+          value={scrapInput}
+          onChange={(event) => setScrapInput(event.target.value)}
+          className="w-full rounded-lg border border-neutral-700 bg-black/40 px-2.5 py-1.5 font-mono text-xs text-scrap outline-none focus:border-scrap/60"
+        />
+        <button
+          type="button"
+          onClick={handleGrantScrap}
+          className="shrink-0 rounded-lg border border-scrap bg-scrap/10 px-3 py-1.5 font-mono text-xs font-bold uppercase tracking-wide text-scrap"
+        >
+          + SCRAP
+        </button>
+      </div>
+
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <button
+          type="button"
+          onClick={adminPrevCar}
+          className="flex-1 rounded-lg border border-neutral-700 bg-black/30 py-2 font-mono text-xs font-bold uppercase tracking-wide text-neutral-300"
+        >
+          ◀ Prev Car
+        </button>
+        <span className="shrink-0 font-mono text-[11px] text-neutral-500">
+          {car.name} (T{carTier})
+        </span>
+        <button
+          type="button"
+          onClick={adminNextCar}
+          className="flex-1 rounded-lg border border-neutral-700 bg-black/30 py-2 font-mono text-xs font-bold uppercase tracking-wide text-neutral-300"
+        >
+          Next Car ▶
+        </button>
+      </div>
+    </div>
   );
 }
 

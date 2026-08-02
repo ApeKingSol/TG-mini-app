@@ -65,9 +65,6 @@ export function GarageScreen() {
   const tradeInCar = useGameStore((state) => state.tradeInCar);
   const dailyRewardStreak = useGameStore((state) => state.dailyRewardStreak);
   const lastDailyRewardClaim = useGameStore((state) => state.lastDailyRewardClaim);
-  // TEMP DEBUG — see debugPreviewNextCar's own doc comment in GameStore.ts.
-  const debugPreviewNextCar = useGameStore((state) => state.debugPreviewNextCar);
-  const debugPreviewPrevCar = useGameStore((state) => state.debugPreviewPrevCar);
 
   const [justMergedId, setJustMergedId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; variant: 'error' | 'success' } | null>(
@@ -214,8 +211,6 @@ export function GarageScreen() {
           upgradesInstalled={installedUpgrades.length}
           upgradesRequired={upgradeRequirement}
           carStats={carStats}
-          onDebugNextCar={debugPreviewNextCar}
-          onDebugPrevCar={debugPreviewPrevCar}
         />
 
         {isMastered ? (
@@ -340,9 +335,6 @@ interface CarInstallationZoneProps {
   upgradesInstalled: number;
   upgradesRequired: number;
   carStats: CarStats;
-  /** TEMP DEBUG — see debugPreviewNextCar's doc comment in GameStore.ts. */
-  onDebugNextCar: () => void;
-  onDebugPrevCar: () => void;
 }
 
 // Memoized so the parent's once-a-second countdown-clock re-render (unrelated to the car on
@@ -355,34 +347,9 @@ const CarInstallationZone = memo(function CarInstallationZone({
   upgradesInstalled,
   upgradesRequired,
   carStats,
-  onDebugNextCar,
-  onDebugPrevCar,
 }: CarInstallationZoneProps) {
   const { setNodeRef, isOver } = useDroppable({ id: CAR_INSTALLATION_ZONE_ID });
   const upgradesRemaining = Math.max(0, upgradesRequired - upgradesInstalled);
-
-  // Debounces the debug Prev/Next buttons for the slide transition's own duration so a second
-  // click can't retrigger AnimatePresence before the first exit/enter pair finishes — see the
-  // AnimatePresence comment below for why an overlapping retrigger is the thing to avoid. This
-  // is a plain ref with no accompanying state: a state update here would re-render this same
-  // component at the same moment carTier changes, which turned out to be enough on its own to
-  // strand the transition (independent of whether a second click was involved at all).
-  const isSwitchingCarRef = useRef(false);
-  const unlockSwitchingCar = () => {
-    isSwitchingCarRef.current = false;
-  };
-  const handleDebugPrevCar = () => {
-    if (isSwitchingCarRef.current) return;
-    isSwitchingCarRef.current = true;
-    window.setTimeout(unlockSwitchingCar, CAR_SLIDE_TRANSITION.duration * 1000);
-    onDebugPrevCar();
-  };
-  const handleDebugNextCar = () => {
-    if (isSwitchingCarRef.current) return;
-    isSwitchingCarRef.current = true;
-    window.setTimeout(unlockSwitchingCar, CAR_SLIDE_TRANSITION.duration * 1000);
-    onDebugNextCar();
-  };
 
   return (
     // No background fill or box-shadow here on purpose: a `drop-shadow`/`shadow-*` glow
@@ -396,25 +363,6 @@ const CarInstallationZone = memo(function CarInstallationZone({
         isOver ? 'border-neon-cyan/70' : 'border-neutral-800'
       }`}
     >
-      {/* TEMP DEBUG — free preview of the next/previous car model, no cost/requirement check.
-         Remove this pair of buttons (and debugPreviewNextCar/debugPreviewPrevCar in
-         GameStore.ts) once the 20-car roster's been reviewed. */}
-      <div className="absolute left-2 top-1 flex gap-1">
-        <button
-          type="button"
-          onClick={handleDebugPrevCar}
-          className="rounded border border-neon-magenta/40 bg-neon-magenta/10 px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-widest text-neon-magenta/80"
-        >
-          ◀ Prev
-        </button>
-        <button
-          type="button"
-          onClick={handleDebugNextCar}
-          className="rounded border border-neon-magenta/40 bg-neon-magenta/10 px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-widest text-neon-magenta/80"
-        >
-          Next ▶
-        </button>
-      </div>
       <p className="text-center font-display text-lg font-bold uppercase tracking-wide text-white drop-shadow-[0_0_3px_rgba(255,255,255,0.6)]">
         {carName}
       </p>
@@ -432,11 +380,10 @@ const CarInstallationZone = memo(function CarInstallationZone({
          owns that one-shot enter/exit transform; the inner motion.img owns the perpetual
          idle bob independently, so the two animations don't fight over the same transform.
          mode="wait" serializes exit-then-enter, which is what gives the "drives off, then next
-         one drives in" feel — but if the tier changes again before the exit finishes, a second
-         overlapping transition can leave one of them stuck without ever reaching its target
-         opacity/position. The debug Prev/Next buttons guard against that below by disabling
-         themselves for the transition's duration; a real trade-in only ever fires once per
-         upgrade so it can't retrigger mid-flight. */}
+         one drives in" feel — a real trade-in (or an admin car switch from ProfileScreen, which
+         remounts this component fresh since the two screens are mutually exclusive) only ever
+         fires once per transition, so there's no overlapping-retrigger case to guard against
+         here. */}
       <AnimatePresence mode="wait">
         <motion.div
           key={carTier}

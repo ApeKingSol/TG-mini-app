@@ -147,10 +147,15 @@ export function ReferralsScreen({ onBack }: ReferralsScreenProps) {
 
         <div className="mt-3 flex items-center justify-center gap-5">
           <div className="text-center">
-            <p className="font-display text-3xl font-black tabular-nums text-amber drop-shadow-[0_0_16px_rgba(255,149,0,0.85)]">
+            <p
+              style={{ color: NEON_PURPLE, textShadow: `0 0 16px ${NEON_PURPLE}d9` }}
+              className="font-display text-3xl font-black tabular-nums"
+            >
               +{REFERRAL.MILESTONE_NEON_REWARD}
             </p>
-            <p className="font-mono text-[10px] uppercase tracking-widest text-amber/70">NEON</p>
+            <p className="font-mono text-[10px] uppercase tracking-widest" style={{ color: `${NEON_PURPLE}b3` }}>
+              NEON
+            </p>
           </div>
           <div className="h-10 w-px bg-amber/30" />
           <div className="text-center">
@@ -238,7 +243,7 @@ export function ReferralsScreen({ onBack }: ReferralsScreenProps) {
         </div>
         <div className="flex items-center justify-between">
           <p className="font-mono text-[11px] uppercase tracking-wide text-neutral-500">
-            Pending
+            Unverified Friends
           </p>
           <p className="font-mono text-xs font-semibold tabular-nums text-amber/80">
             {pendingReferrals} player{pendingReferrals === 1 ? '' : 's'} (Need Tier 5)

@@ -1,7 +1,13 @@
 import { motion } from 'framer-motion';
 import { ArrowLeft, Check, Lock, Rocket } from 'lucide-react';
 import { useGameStore } from '../game/store/GameStore';
-import { QUESTS, isQuestComplete, type QuestDefinition } from '../game/config/economy';
+import {
+  QUESTS,
+  isQuestComplete,
+  getQuestProgressValue,
+  type QuestDefinition,
+  type QuestProgress,
+} from '../game/config/economy';
 
 interface AirdropScreenProps {
   onBack: () => void;
@@ -22,7 +28,7 @@ export function AirdropScreen({ onBack }: AirdropScreenProps) {
   const claimedQuests = useGameStore((state) => state.claimedQuests);
   const claimQuest = useGameStore((state) => state.claimQuest);
 
-  const progress = { walletAddress, carTier, racesWon, syndicateId, validReferralsCount };
+  const progress: QuestProgress = { walletAddress, carTier, racesWon, syndicateId, validReferralsCount };
   // "Complete" means the on-chain/in-game milestone is met, not that its small NEON bonus has
   // been clicked-and-claimed yet — qualifying for the airdrop allocation is about having done
   // the thing, independent of whether the player remembered to collect the reward for it.
@@ -116,6 +122,7 @@ export function AirdropScreen({ onBack }: AirdropScreenProps) {
               quest={quest}
               isComplete={isQuestComplete(quest.id, progress)}
               isClaimed={claimedQuests.includes(quest.id)}
+              progressValue={getQuestProgressValue(quest.id, progress)}
               onClaim={() => claimQuest(quest.id)}
             />
           ))
@@ -129,11 +136,19 @@ interface QuestCardProps {
   quest: QuestDefinition;
   isComplete: boolean;
   isClaimed: boolean;
+  progressValue: { current: number; target: number };
   onClaim: () => void;
 }
 
-function QuestCard({ quest, isComplete, isClaimed, onClaim }: QuestCardProps) {
+function QuestCard({ quest, isComplete, isClaimed, progressValue, onClaim }: QuestCardProps) {
   const canClaim = isComplete && !isClaimed;
+  const barColorClass = isClaimed
+    ? 'bg-toxic-green'
+    : isComplete
+      ? 'bg-neon-magenta'
+      : 'bg-neutral-600';
+  const fillPercent =
+    progressValue.target > 0 ? Math.min(100, (progressValue.current / progressValue.target) * 100) : 0;
 
   return (
     <div
@@ -159,6 +174,28 @@ function QuestCard({ quest, isComplete, isClaimed, onClaim }: QuestCardProps) {
         <span className="shrink-0 font-display text-sm font-bold tabular-nums text-neon-magenta">
           +{quest.neonReward}
         </span>
+      </div>
+
+      {/* Per-quest completion indicator — a plain progress bar for every quest, plus a
+         current/target fraction for the three quests whose target is more than a single
+         boolean flip (Tier 10, 10 Wins, 3 Friends); the two boolean milestones (wallet
+         connected, Syndicate joined) just show the bar itself, empty or full. */}
+      <div className="mt-2.5">
+        {progressValue.target > 1 && (
+          <div className="mb-1 flex items-center justify-between font-mono text-[10px] uppercase tracking-wide text-neutral-500">
+            <span>Progress</span>
+            <span className="tabular-nums text-neutral-400">
+              {progressValue.current} / {progressValue.target}
+            </span>
+          </div>
+        )}
+        <div className="h-1.5 w-full overflow-hidden rounded-full border border-neutral-800 bg-black/30">
+          <motion.div
+            className={`h-full rounded-full ${barColorClass}`}
+            animate={{ width: `${fillPercent}%` }}
+            transition={{ duration: 0.4, ease: 'easeOut' }}
+          />
+        </div>
       </div>
 
       <motion.button
