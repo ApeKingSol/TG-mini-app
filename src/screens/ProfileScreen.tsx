@@ -45,6 +45,7 @@ export function ProfileScreen({ onBack, syncStatus, onSyncNow }: ProfileScreenPr
   const setWalletAddress = useGameStore((state) => state.setWalletAddress);
 
   const [message, setMessage] = useState<string | null>(null);
+  const [isHistoryExpanded, setIsHistoryExpanded] = useState(false);
 
   // TonConnectUIProvider (see main.tsx) owns the actual connection *on this device*.
   // useTonAddress() only ever reflects a session this exact browser/app instance holds — it
@@ -179,26 +180,42 @@ export function ProfileScreen({ onBack, syncStatus, onSyncNow }: ProfileScreenPr
             No transactions yet.
           </p>
         ) : (
-          <div className="flex flex-col gap-1.5">
-            {neonHistory.map((entry) => (
-              <div
-                key={entry.id}
-                className="flex items-center justify-between rounded-lg border border-neutral-800 bg-bg-panel px-3 py-2"
-              >
-                <div>
-                  <p className="text-sm text-neutral-200">{entry.label}</p>
-                  <p className="text-[10px] text-neutral-600">{formatTimestamp(entry.timestamp)}</p>
-                </div>
-                <span
-                  className={`font-display text-sm tabular-nums ${
-                    entry.amount >= 0 ? 'text-green-400' : 'text-red-400'
-                  }`}
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-1.5">
+              {neonHistory.slice(0, isHistoryExpanded ? neonHistory.length : 3).map((entry) => (
+                <div
+                  key={entry.id}
+                  className="flex items-center justify-between rounded-lg border border-neutral-800 bg-bg-panel px-3 py-2"
                 >
-                  {entry.amount >= 0 ? '+' : ''}
-                  {entry.amount} NEON
-                </span>
-              </div>
-            ))}
+                  <div>
+                    <p className="text-sm text-neutral-200">{entry.label}</p>
+                    <p className="text-[10px] text-neutral-600">
+                      {formatTimestamp(entry.timestamp)}
+                    </p>
+                  </div>
+                  <span
+                    className={`font-display text-sm tabular-nums ${
+                      entry.amount >= 0 ? 'text-green-400' : 'text-red-400'
+                    }`}
+                  >
+                    {entry.amount >= 0 ? '+' : ''}
+                    {entry.amount} NEON
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {neonHistory.length > 3 && (
+              <motion.button
+                type="button"
+                onClick={() => setIsHistoryExpanded((expanded) => !expanded)}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.97 }}
+                className="panel-cut-sm border border-neon-cyan/40 bg-neon-cyan/10 px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.24em] text-neon-cyan shadow-[0_0_18px_rgba(0,245,255,0.14)] transition-colors hover:border-neon-magenta/60 hover:bg-neon-magenta/10 hover:text-neon-magenta"
+              >
+                {isHistoryExpanded ? 'HIDE ▲' : 'SHOW ALL ▼'}
+              </motion.button>
+            )}
           </div>
         )}
       </div>

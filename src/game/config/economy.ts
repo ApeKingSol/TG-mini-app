@@ -408,12 +408,12 @@ export interface DailyRewardTier {
  * Day 7 (Day 8 repeats Day 1's reward, Day 14 repeats Day 7's, ...) rather than capping — a
  * streak has no defined end. */
 export const DAILY_REWARDS: readonly DailyRewardTier[] = [
-  { day: 1, scrap: 50 },
-  { day: 2, scrap: 100 },
-  { day: 3, scrap: 200 },
-  { day: 4, scrap: 350 },
-  { day: 5, scrap: 550 },
-  { day: 6, scrap: 800 },
+  { day: 1, scrap: 500 },
+  { day: 2, scrap: 1000 },
+  { day: 3, scrap: 2000 },
+  { day: 4, scrap: 3500 },
+  { day: 5, scrap: 5500 },
+  { day: 6, scrap: 8000 },
   { day: 7, neon: 25 },
 ] as const;
 
