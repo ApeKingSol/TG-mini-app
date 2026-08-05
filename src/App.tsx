@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { ProfileAvatarButton } from './components/ProfileAvatarButton';
 import { AirdropEntryButton } from './components/AirdropEntryButton';
+import { ReferralsEntryButton } from './components/ReferralsEntryButton';
 import { ScreenBackground } from './components/ScreenBackground';
 import { useGameLoop } from './hooks/useGameLoop';
 import { useTelegram } from './hooks/useTelegram';
@@ -14,6 +15,7 @@ import { GarageScreen } from './screens/GarageScreen';
 import { RaceScreen } from './screens/RaceScreen';
 import { ProfileScreen } from './screens/ProfileScreen';
 import { AirdropScreen } from './screens/AirdropScreen';
+import { ReferralsScreen } from './screens/ReferralsScreen';
 import { trackAppOpened } from './utils/analytics';
 
 function App() {
@@ -32,7 +34,9 @@ function App() {
   // true while isProfileOpen stayed true, and the render ternary checked isProfileOpen first —
   // so the Airdrop button silently did nothing whenever Profile was already open, the exact bug
   // this replaced.
-  const [activeOverlay, setActiveOverlay] = useState<'profile' | 'airdrop' | null>(null);
+  const [activeOverlay, setActiveOverlay] = useState<'profile' | 'airdrop' | 'referrals' | null>(
+    null,
+  );
 
   useEffect(() => {
     trackAppOpened();
@@ -71,9 +75,6 @@ function App() {
              DOM order or sibling filters. */}
           <AirdropEntryButton onClick={() => setActiveOverlay('airdrop')} />
           <ProfileAvatarButton photoUrl={userPhotoUrl} onClick={() => setActiveOverlay('profile')} />
-          <p className="px-11 font-mono text-[9px] uppercase tracking-[0.2em] text-amber/70">
-            Sys.Online // Uplink: Stable
-          </p>
           <h1 className="font-display text-2xl font-bold tracking-wide text-neon-cyan drop-shadow-[0_0_4px_rgba(0,240,255,0.85)]">
             Cyber-Garage
           </h1>
@@ -84,19 +85,18 @@ function App() {
           )}
         </header>
 
+        <ReferralsEntryButton onClick={() => setActiveOverlay('referrals')} />
+
         <CurrencyBar />
 
         <main className="mt-6">
           <AnimatePresence mode="wait">
             {activeOverlay === 'profile' ? (
-              <ProfileScreen
-                key="profile"
-                onBack={() => setActiveOverlay(null)}
-                syncStatus={cloudSync.status}
-                onSyncNow={cloudSync.syncNow}
-              />
+              <ProfileScreen key="profile" onBack={() => setActiveOverlay(null)} />
             ) : activeOverlay === 'airdrop' ? (
               <AirdropScreen key="airdrop" onBack={() => setActiveOverlay(null)} />
+            ) : activeOverlay === 'referrals' ? (
+              <ReferralsScreen key="referrals" onBack={() => setActiveOverlay(null)} />
             ) : (
               <>
                 {activeScreen === 'junkyard' && <JunkyardScreen key="junkyard" />}

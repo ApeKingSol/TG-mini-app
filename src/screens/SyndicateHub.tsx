@@ -42,11 +42,17 @@ export function SyndicateHub() {
   const [isRestoringMembership, setIsRestoringMembership] = useState(true);
   const [restoreError, setRestoreError] = useState<string | null>(null);
 
+  const setSyndicateId = useGameStore((state) => state.setSyndicateId);
+
   useEffect(() => {
     fetchMySyndicate()
       .then((syndicate) => {
         setMySyndicate(syndicate);
         setView(syndicate ? 'active' : 'menu');
+        // Mirrors whatever this restore check found (including "solo," a real null) into
+        // GameStore so the "Join or Create a Syndicate" Airdrop quest has an answer the very
+        // first time this screen ever loads, not just after a create/join/leave this session.
+        setSyndicateId(syndicate ? syndicate.id : null);
       })
       .catch((err: unknown) => {
         // Previously silent (no .catch at all) — a failed check here landed on the exact same
@@ -57,21 +63,26 @@ export function SyndicateHub() {
         setRestoreError(err instanceof Error ? err.message.toUpperCase() : 'COULD NOT REACH SERVER');
       })
       .finally(() => setIsRestoringMembership(false));
-  }, []);
+    // setSyndicateId is a Zustand action reference — stable across renders, so including it
+    // here doesn't change how often this effect actually runs.
+  }, [setSyndicateId]);
 
   const handleCreated = (syndicate: Syndicate) => {
     setMySyndicate(syndicate);
     setView('active');
+    setSyndicateId(syndicate.id);
   };
 
   const handleJoined = (syndicate: Syndicate) => {
     setMySyndicate(syndicate);
     setView('active');
+    setSyndicateId(syndicate.id);
   };
 
   const handleLeft = () => {
     setMySyndicate(null);
     setView('menu');
+    setSyndicateId(null);
   };
 
   const handleSyndicateUpdate = (syndicate: Syndicate) => {

@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { useGameStore, getSyncableState, localLastSavedAtLoad } from '../game/store/GameStore';
+import {
+  useGameStore,
+  getSyncableState,
+  localLastSavedAtLoad,
+  hadLocalSaveAtLoad,
+} from '../game/store/GameStore';
 import { WebApp, isRunningInTelegram } from '../lib/telegram';
+import { registerReferralIfNewPlayer } from '../game/mock/referralsApi';
 import type { PlayerState } from '../game/types';
 
 const SYNC_ENDPOINT = '/api/sync';
@@ -47,6 +53,10 @@ const SIGNIFICANT_KEYS = [
   'claimedQuests',
   'lastClaimedBossId',
   'lastBossAttackTime',
+  'syndicateId',
+  'unclaimedNeon',
+  'unclaimedScrap',
+  'validReferralsCount',
 ] as const satisfies readonly (keyof PlayerState)[];
 
 /** Surfaced to the Profile screen so sync problems are actually observable instead of a
@@ -105,13 +115,33 @@ async function fetchRemoteState(initData: string): Promise<PlayerState | null> {
   return remote as PlayerState;
 }
 
-async function pushState(initData: string, state: PlayerState): Promise<void> {
+/** Discriminates a plain success from the backend refusing a stale write (see sync.mts's POST
+ * handler): a 409 means the cloud already holds a save stamped newer than what we just tried
+ * to send, and carries that save's current state in the body so the caller can adopt it
+ * immediately instead of quietly losing the write and waiting for the next scheduled pull. */
+type PushOutcome =
+  | { ok: true }
+  | { ok: false; conflictState: PlayerState | null };
+
+async function pushState(initData: string, state: PlayerState): Promise<PushOutcome> {
   const res = await fetch(SYNC_ENDPOINT, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ initData, state }),
   });
+  if (res.status === 409) {
+    const body = (await res.json().catch(() => null)) as { state?: unknown } | null;
+    const conflict = body?.state;
+    const conflictState =
+      conflict &&
+      typeof conflict === 'object' &&
+      typeof (conflict as PlayerState).lastSaved === 'number'
+        ? (conflict as PlayerState)
+        : null;
+    return { ok: false, conflictState };
+  }
   if (!res.ok) throw new Error(`POST /api/sync -> ${res.status}`);
+  return { ok: true };
 }
 
 /** Best-effort push that survives the page being backgrounded/closed right as it fires. A
@@ -122,7 +152,8 @@ async function pushState(initData: string, state: PlayerState): Promise<void> {
  * provide specifically to keep running past that point; the tradeoff is no custom headers,
  * which is why initData now travels in the JSON body instead of a header. There's no
  * delivery confirmation for a beacon (the browser only reports whether it was *queued*), so
- * this path doesn't feed the visible status the way pullRemote/pushState do. */
+ * this path doesn't feed the visible status the way pullRemote/pushState do, and a 409
+ * conflict on this path can't be detected or adopted — an accepted limitation of sendBeacon. */
 function pushStateReliably(initData: string, state: PlayerState) {
   const payload = JSON.stringify({ initData, state });
   if (navigator.sendBeacon) {
@@ -139,12 +170,34 @@ function pushStateReliably(initData: string, state: PlayerState) {
  * local state on an interval and — reliably, via sendBeacon — whenever the app is
  * backgrounded. A no-op everywhere outside an actual Telegram client, since there's no
  * initData to authenticate a sync call with there. Returns a status object (for a visible
- * indicator in the Profile screen) and a manual `syncNow` trigger. */
+ * indicator in the Profile screen) and a manual `syncNow` trigger.
+ *
+ * Hard invariant, load-bearing for correctness: `pushIfChanged` refuses to send *anything*
+ * until the very first pull has settled against the backend (see `hasPulledInitialStateRef`
+ * below). This is what a real data-wipe incident traced back to — a serverless cold start on
+ * the pull request took longer than PUSH_INTERVAL_MS, so the periodic push fired first and
+ * happily sent this device's untouched, all-default local state (freshly reset because
+ * Telegram had wiped the WebView's storage overnight) up to the backend, permanently
+ * overwriting the player's real save before the pull ever got a chance to bring it down. */
 export function useCloudSync(): { status: CloudSyncStatus; syncNow: () => void } {
   const [status, setStatus] = useState<CloudSyncStatus>(initialStatus);
   const lastPushedAtRef = useRef(0);
   const pullRemoteRef = useRef<() => void>(() => {});
   const pushIfChangedRef = useRef<(reliable: boolean) => void>(() => {});
+  /** Closed (false) until the initial pull settles with a real answer from the backend —
+   * success (data or a genuinely-new-player empty save) — and only ever set back to false
+   * never. A network error does NOT open it: that's not a resolution, it's silence, and the
+   * PULL_INTERVAL_MS retry loop keeps trying until one actually lands. `pushIfChanged` is the
+   * single choke point that checks this, so every push path (periodic interval, reactive
+   * push-on-change, visibilitychange/pagehide/beforeunload, and manual `syncNow`) is covered
+   * by one guard instead of needing to remember to check it everywhere separately. */
+  const hasPulledInitialStateRef = useRef(false);
+  /** Set for the duration of a `set()` call that applies a remote snapshot into the store (an
+   * adopted pull, or a conflict-state adopted off a rejected push), so the reactive
+   * subscription below — which exists to push *local* actions the instant they happen — does
+   * not mistake "we just received this from the backend" for "the player just did something"
+   * and immediately push it right back up. */
+  const isApplyingRemoteUpdateRef = useRef(false);
 
   useEffect(() => {
     if (!isRunningInTelegram()) {
@@ -155,10 +208,17 @@ export function useCloudSync(): { status: CloudSyncStatus; syncNow: () => void }
     const initData = WebApp.initData;
     let cancelled = false;
 
+    const applyRemoteState = (remote: PlayerState) => {
+      isApplyingRemoteUpdateRef.current = true;
+      useGameStore.getState().hydrateFromRemote(remote);
+      isApplyingRemoteUpdateRef.current = false;
+    };
+
     const pullRemote = () => {
       fetchRemoteState(initData)
         .then((remote) => {
           if (cancelled) return;
+          const isInitialPull = !hasPulledInitialStateRef.current;
           setStatus((s) => ({
             ...s,
             isInitialized: true,
@@ -167,17 +227,39 @@ export function useCloudSync(): { status: CloudSyncStatus; syncNow: () => void }
             lastError: null,
             remoteScrapAtLastPull: remote ? remote.scrap : s.remoteScrapAtLastPull,
           }));
-          if (!remote) return;
-          // Never adopt something older than what this device already knows about —
-          // either from its own load-time snapshot or from its own more recent push.
-          // Comparing only against the load-time snapshot (as the very first version of
-          // this hook did) meant a later periodic re-pull could wrongly downgrade local
-          // progress made *after* that snapshot if it happened to see a slightly stale
-          // remote read.
-          const localBaseline = Math.max(localLastSavedAtLoad, lastPushedAtRef.current);
-          if (remote.lastSaved > localBaseline) {
-            useGameStore.getState().hydrateFromRemote(remote);
+          if (remote) {
+            // Never adopt something older than what this device already knows about —
+            // either from its own load-time snapshot or from its own more recent push.
+            // Comparing only against the load-time snapshot (as the very first version of
+            // this hook did) meant a later periodic re-pull could wrongly downgrade local
+            // progress made *after* that snapshot if it happened to see a slightly stale
+            // remote read.
+            const localBaseline = Math.max(localLastSavedAtLoad, lastPushedAtRef.current);
+            // On the very first pull of this session, that timestamp comparison can't be
+            // trusted on its own: if this device's storage was wiped (or this is a brand-new
+            // device), local state is 100% defaults whose `lastSaved` just got stamped to
+            // "now" at store-creation time — which reads as *newer* than a perfectly
+            // legitimate but older cloud save. `hadLocalSaveAtLoad` (captured directly off
+            // localStorage before any hydration touched it) is what tells them apart: no real
+            // local save existed, so there is nothing for a timestamp to protect and the
+            // cloud save wins outright.
+            const shouldAdopt =
+              (isInitialPull && !hadLocalSaveAtLoad) || remote.lastSaved > localBaseline;
+            if (shouldAdopt) applyRemoteState(remote);
+          } else if (isInitialPull) {
+            // No save on file at all, on this session's very first pull — a genuinely new
+            // account. This is the one moment a `?startapp=ref_X` launch can be safely linked:
+            // registerReferralIfNewPlayer re-derives the inviter id straight off this launch's
+            // own (already backend-verified) initData, and the backend's own one-shot CAS lock
+            // is what actually makes this idempotent — not this `isInitialPull` gate, which is
+            // just what keeps a returning player's every later periodic pull from bothering to
+            // call it at all.
+            registerReferralIfNewPlayer().catch(() => {});
           }
+          // The lock opens once the pull has genuinely settled against the backend — a real
+          // answer (existing save, or `remote === null` for a brand-new player), not a
+          // network failure. From here on, pushIfChanged is allowed to actually send.
+          hasPulledInitialStateRef.current = true;
         })
         .catch((err: unknown) => {
           if (cancelled) return;
@@ -188,10 +270,14 @@ export function useCloudSync(): { status: CloudSyncStatus; syncNow: () => void }
             lastPullOk: false,
             lastError: err instanceof Error ? err.message : String(err),
           }));
+          // Deliberately does not set hasPulledInitialStateRef — see its doc comment above.
         });
     };
 
     const pushIfChanged = (reliable: boolean) => {
+      // HARD LOCK — see hasPulledInitialStateRef's doc comment. No payload leaves this
+      // device before the initial pull has resolved, full stop.
+      if (!hasPulledInitialStateRef.current) return;
       const state = getSyncableState(useGameStore.getState());
       if (state.lastSaved === lastPushedAtRef.current) return;
       lastPushedAtRef.current = state.lastSaved;
@@ -200,9 +286,23 @@ export function useCloudSync(): { status: CloudSyncStatus; syncNow: () => void }
         return;
       }
       pushState(initData, state)
-        .then(() => {
+        .then((outcome) => {
           if (cancelled) return;
-          setStatus((s) => ({ ...s, lastPushAt: Date.now(), lastPushOk: true, lastError: null }));
+          if (outcome.ok) {
+            setStatus((s) => ({ ...s, lastPushAt: Date.now(), lastPushOk: true, lastError: null }));
+            return;
+          }
+          // 409: the backend already holds a save stamped newer than the one we just tried
+          // to send — almost always another device having synced more recent progress in
+          // the gap since this device's last pull. Adopt it immediately rather than
+          // silently dropping the write and waiting for the next scheduled pull to notice.
+          if (outcome.conflictState) applyRemoteState(outcome.conflictState);
+          setStatus((s) => ({
+            ...s,
+            lastPushAt: Date.now(),
+            lastPushOk: false,
+            lastError: 'stale write rejected by backend (409) — adopted newer remote state',
+          }));
         })
         .catch((err: unknown) => {
           if (cancelled) return;
@@ -231,7 +331,12 @@ export function useCloudSync(): { status: CloudSyncStatus; syncNow: () => void }
     const unsubscribe = useGameStore.subscribe((state) => {
       const changed = SIGNIFICANT_KEYS.some((key) => state[key] !== previousSnapshot[key]);
       previousSnapshot = state;
-      if (changed) pushIfChanged(true);
+      // Skip while a remote snapshot is being applied (pull adoption or 409-conflict
+      // adoption) — that's data arriving *from* the backend, not a local action to send
+      // back to it. pushIfChanged's own lastSaved-vs-lastPushedAtRef check would mostly
+      // no-op this anyway once the timestamps line up, but skipping it here avoids a
+      // redundant round-trip and keeps the intent explicit.
+      if (changed && !isApplyingRemoteUpdateRef.current) pushIfChanged(true);
     });
 
     // All three of these exist because different browsers/WebViews fire different subsets
@@ -265,6 +370,8 @@ export function useCloudSync(): { status: CloudSyncStatus; syncNow: () => void }
     pullRemoteRef.current();
     // Force a push regardless of whether `lastSaved` looks unchanged, so "Sync Now" always
     // does something visible rather than silently no-op'ing on the `lastPushedAtRef` guard.
+    // Still subject to the hasPulledInitialStateRef hard lock inside pushIfChanged — mashing
+    // this before the very first pull has settled just re-triggers the pull, as it should.
     lastPushedAtRef.current = -1;
     pushIfChangedRef.current(false);
   };

@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Zap, Store, X, Gift, Flame, Coins, Sparkles } from 'lucide-react';
+import { Zap, Store, Gift } from 'lucide-react';
 import {
   DndContext,
   PointerSensor,
@@ -20,15 +20,12 @@ import {
   getPartBuyCost,
   getSecondsUntilNextEnergyRegen,
   getCarStats,
-  DAILY_REWARDS,
-  DAILY_REWARD_STREAK_RESET_HOURS,
-  getDailyRewardForStreak,
   isDailyRewardClaimable,
-  type DailyRewardTier,
 } from '../game/config/economy';
 import { getPartTier, PERK_DESCRIPTIONS, type PartPerk } from '../game/config/parts';
 import { getCarTier, getUpgradeRequirement } from '../game/config/carTiers';
 import { ShopModal } from './ShopScreen';
+import { DailyRewardScreen } from './DailyRewardScreen';
 import type { CarStats } from '../game/types';
 
 const CAR_INSTALLATION_ZONE_ID = 'car-installation-zone';
@@ -68,9 +65,6 @@ export function GarageScreen() {
   const tradeInCar = useGameStore((state) => state.tradeInCar);
   const dailyRewardStreak = useGameStore((state) => state.dailyRewardStreak);
   const lastDailyRewardClaim = useGameStore((state) => state.lastDailyRewardClaim);
-  // TEMP DEBUG — see debugPreviewNextCar's own doc comment in GameStore.ts.
-  const debugPreviewNextCar = useGameStore((state) => state.debugPreviewNextCar);
-  const debugPreviewPrevCar = useGameStore((state) => state.debugPreviewPrevCar);
 
   const [justMergedId, setJustMergedId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; variant: 'error' | 'success' } | null>(
@@ -105,7 +99,6 @@ export function GarageScreen() {
     lastEnergyRegenAt,
     now,
   );
-
   // PointerSensor alone covers mouse, touch, and pen — dnd-kit's own guidance is to avoid
   // layering a separate TouchSensor/MouseSensor on top, since they'd react to the same
   // input and can fight each other. `distance` lets a plain tap pass through as a tap
@@ -218,8 +211,6 @@ export function GarageScreen() {
           upgradesInstalled={installedUpgrades.length}
           upgradesRequired={upgradeRequirement}
           carStats={carStats}
-          onDebugNextCar={debugPreviewNextCar}
-          onDebugPrevCar={debugPreviewPrevCar}
         />
 
         {isMastered ? (
@@ -237,9 +228,6 @@ export function GarageScreen() {
             </AnimatePresence>
 
             <div className="panel-cut relative border border-neutral-800 bg-bg-panel p-4">
-              <span className="pointer-events-none absolute right-2 top-1 select-none font-mono text-[8px] uppercase tracking-widest text-neutral-600">
-                RIG.03
-              </span>
               <div className="flex items-center justify-between">
                 <p className="font-mono text-xs uppercase tracking-widest text-neutral-500">
                   Merge Grid
@@ -326,7 +314,7 @@ export function GarageScreen() {
 
       <AnimatePresence>
         {isDailyRewardOpen && (
-          <DailyRewardModal
+          <DailyRewardScreen
             streak={dailyRewardStreak}
             lastClaim={lastDailyRewardClaim}
             onClose={() => setIsDailyRewardOpen(false)}
@@ -341,164 +329,12 @@ export function GarageScreen() {
   );
 }
 
-interface DailyRewardModalProps {
-  /** Consecutive claims completed so far (0 if never claimed). */
-  streak: number;
-  lastClaim: number | null;
-  onClose: () => void;
-  /** Fired right after a successful claim with a ready-to-display confirmation message —
-   * GarageScreen closes the modal and hands this straight to its existing toast. */
-  onClaimed: (message: string) => void;
-}
-
-/** The 7-day login-streak track — Days 1-6 escalating Scrap, Day 7 a $NEON payout, cycling
- * forever past Day 7 (see DAILY_REWARDS/getDailyRewardForStreak in economy.ts). Mirrors
- * ShopScreen.tsx's ShopModal overlay/panel structure so the Garage's two header buttons open
- * visually consistent modals. */
-function DailyRewardModal({ streak, lastClaim, onClose, onClaimed }: DailyRewardModalProps) {
-  const claimDailyReward = useGameStore((state) => state.claimDailyReward);
-  const [now, setNow] = useState(() => Date.now());
-  const [isClaiming, setIsClaiming] = useState(false);
-
-  // The countdown to "next claim opens" needs a live clock of its own — this modal can be left
-  // open across that boundary.
-  useEffect(() => {
-    const interval = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(interval);
-  }, []);
-
-  const claimable = isDailyRewardClaimable(lastClaim, now);
-  // What the *next* claim would actually grant — mirrors the store's own continue-vs-reset
-  // check (see claimDailyReward in GameStore.ts) purely for this preview; the real claim always
-  // recomputes and commits it authoritatively, this can never itself grant anything.
-  const streakBroken =
-    lastClaim !== null && now - lastClaim > DAILY_REWARD_STREAK_RESET_HOURS * 60 * 60 * 1000;
-  const upcomingStreak = lastClaim === null || streakBroken ? 1 : streak + 1;
-  const upcomingDay = getDailyRewardForStreak(upcomingStreak).day;
-
-  const msUntilClaimable =
-    lastClaim === null ? 0 : Math.max(0, lastClaim + 24 * 60 * 60 * 1000 - now);
-  const hoursUntilClaimable = Math.floor(msUntilClaimable / (60 * 60 * 1000));
-  const minutesUntilClaimable = Math.floor((msUntilClaimable % (60 * 60 * 1000)) / (60 * 1000));
-
-  const handleClaim = () => {
-    if (!claimable || isClaiming) return;
-    setIsClaiming(true);
-    const reward = claimDailyReward();
-    setIsClaiming(false);
-    if (!reward) return;
-    const amount = reward.scrap ? `+${reward.scrap.toLocaleString()} Scrap` : `+${reward.neon} NEON`;
-    onClaimed(`Day ${reward.day} claimed — ${amount}!`);
-  };
-
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      onClick={onClose}
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/70 px-4 pt-20 backdrop-blur-sm"
-    >
-      <motion.div
-        initial={{ opacity: 0, y: -24, scale: 0.95 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: -24, scale: 0.95 }}
-        transition={{ duration: 0.25, ease: 'easeOut' }}
-        onClick={(event) => event.stopPropagation()}
-        className="panel-cut w-full max-w-sm border border-amber/50 bg-bg-panel p-4 text-left shadow-lg"
-      >
-        <div className="mb-1 flex items-center justify-between">
-          <p className="flex items-center gap-1.5 font-display text-sm font-bold uppercase tracking-widest text-amber">
-            <Gift className="h-4 w-4" strokeWidth={2} />
-            Daily Reward
-          </p>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1 text-neutral-500 hover:text-neutral-300"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        <div className="mb-3 flex items-center justify-center gap-1.5 text-neutral-400">
-          <Flame className={`h-3.5 w-3.5 ${streak > 0 ? 'text-amber' : 'text-neutral-600'}`} />
-          <p className="text-xs">
-            {streak > 0 ? (
-              <>
-                <span className="font-bold text-amber">{streak}</span>-day streak
-              </>
-            ) : (
-              'No streak yet'
-            )}
-          </p>
-        </div>
-
-        <div className="grid grid-cols-7 gap-1.5">
-          {DAILY_REWARDS.map((tier) => (
-            <DailyRewardDayCell key={tier.day} tier={tier} isUpcoming={tier.day === upcomingDay} />
-          ))}
-        </div>
-
-        <motion.button
-          type="button"
-          onClick={handleClaim}
-          disabled={!claimable || isClaiming}
-          whileHover={claimable && !isClaiming ? { scale: 1.02 } : undefined}
-          whileTap={claimable && !isClaiming ? { scale: 0.97 } : undefined}
-          className="mt-4 w-full rounded-lg border-2 border-amber bg-amber/10 py-3 font-display text-sm font-black uppercase tracking-widest text-amber shadow-[0_0_20px_rgba(255,149,0,0.3)] transition-opacity disabled:cursor-not-allowed disabled:border-neutral-700 disabled:bg-transparent disabled:text-neutral-500 disabled:shadow-none"
-        >
-          {claimable
-            ? `Claim Day ${upcomingDay}`
-            : `Next reward in ${hoursUntilClaimable}h ${minutesUntilClaimable}m`}
-        </motion.button>
-      </motion.div>
-    </motion.div>
-  );
-}
-
-interface DailyRewardDayCellProps {
-  tier: DailyRewardTier;
-  isUpcoming: boolean;
-}
-
-function DailyRewardDayCell({ tier, isUpcoming }: DailyRewardDayCellProps) {
-  const isNeonDay = tier.neon !== undefined;
-
-  return (
-    <div
-      className={`flex flex-col items-center gap-1 rounded-lg border p-1.5 ${
-        isUpcoming
-          ? 'border-amber bg-amber/15 shadow-[0_0_12px_rgba(255,149,0,0.35)]'
-          : 'border-neutral-800 bg-black/20'
-      }`}
-    >
-      <p className="text-[9px] uppercase tracking-widest text-neutral-500">D{tier.day}</p>
-      {isNeonDay ? (
-        <Sparkles className={`h-3.5 w-3.5 ${isUpcoming ? 'text-neon-magenta' : 'text-neutral-600'}`} />
-      ) : (
-        <Coins className={`h-3.5 w-3.5 ${isUpcoming ? 'text-scrap' : 'text-neutral-600'}`} />
-      )}
-      <p
-        className={`text-center text-[9px] font-bold tabular-nums ${
-          isUpcoming ? (isNeonDay ? 'text-neon-magenta' : 'text-scrap') : 'text-neutral-600'
-        }`}
-      >
-        {tier.scrap ?? tier.neon}
-      </p>
-    </div>
-  );
-}
-
 interface CarInstallationZoneProps {
   carName: string;
   carTier: number;
   upgradesInstalled: number;
   upgradesRequired: number;
   carStats: CarStats;
-  /** TEMP DEBUG — see debugPreviewNextCar's doc comment in GameStore.ts. */
-  onDebugNextCar: () => void;
-  onDebugPrevCar: () => void;
 }
 
 // Memoized so the parent's once-a-second countdown-clock re-render (unrelated to the car on
@@ -511,34 +347,9 @@ const CarInstallationZone = memo(function CarInstallationZone({
   upgradesInstalled,
   upgradesRequired,
   carStats,
-  onDebugNextCar,
-  onDebugPrevCar,
 }: CarInstallationZoneProps) {
   const { setNodeRef, isOver } = useDroppable({ id: CAR_INSTALLATION_ZONE_ID });
   const upgradesRemaining = Math.max(0, upgradesRequired - upgradesInstalled);
-
-  // Debounces the debug Prev/Next buttons for the slide transition's own duration so a second
-  // click can't retrigger AnimatePresence before the first exit/enter pair finishes — see the
-  // AnimatePresence comment below for why an overlapping retrigger is the thing to avoid. This
-  // is a plain ref with no accompanying state: a state update here would re-render this same
-  // component at the same moment carTier changes, which turned out to be enough on its own to
-  // strand the transition (independent of whether a second click was involved at all).
-  const isSwitchingCarRef = useRef(false);
-  const unlockSwitchingCar = () => {
-    isSwitchingCarRef.current = false;
-  };
-  const handleDebugPrevCar = () => {
-    if (isSwitchingCarRef.current) return;
-    isSwitchingCarRef.current = true;
-    window.setTimeout(unlockSwitchingCar, CAR_SLIDE_TRANSITION.duration * 1000);
-    onDebugPrevCar();
-  };
-  const handleDebugNextCar = () => {
-    if (isSwitchingCarRef.current) return;
-    isSwitchingCarRef.current = true;
-    window.setTimeout(unlockSwitchingCar, CAR_SLIDE_TRANSITION.duration * 1000);
-    onDebugNextCar();
-  };
 
   return (
     // No background fill or box-shadow here on purpose: a `drop-shadow`/`shadow-*` glow
@@ -552,28 +363,6 @@ const CarInstallationZone = memo(function CarInstallationZone({
         isOver ? 'border-neon-cyan/70' : 'border-neutral-800'
       }`}
     >
-      <span className="pointer-events-none absolute right-2 top-1 select-none font-mono text-[8px] uppercase tracking-widest text-amber/50">
-        Chassis.{String(carTier).padStart(2, '0')}
-      </span>
-      {/* TEMP DEBUG — free preview of the next/previous car model, no cost/requirement check.
-         Remove this pair of buttons (and debugPreviewNextCar/debugPreviewPrevCar in
-         GameStore.ts) once the 20-car roster's been reviewed. */}
-      <div className="absolute left-2 top-1 flex gap-1">
-        <button
-          type="button"
-          onClick={handleDebugPrevCar}
-          className="rounded border border-neon-magenta/40 bg-neon-magenta/10 px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-widest text-neon-magenta/80"
-        >
-          ◀ Prev
-        </button>
-        <button
-          type="button"
-          onClick={handleDebugNextCar}
-          className="rounded border border-neon-magenta/40 bg-neon-magenta/10 px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-widest text-neon-magenta/80"
-        >
-          Next ▶
-        </button>
-      </div>
       <p className="text-center font-display text-lg font-bold uppercase tracking-wide text-white drop-shadow-[0_0_3px_rgba(255,255,255,0.6)]">
         {carName}
       </p>
@@ -591,11 +380,10 @@ const CarInstallationZone = memo(function CarInstallationZone({
          owns that one-shot enter/exit transform; the inner motion.img owns the perpetual
          idle bob independently, so the two animations don't fight over the same transform.
          mode="wait" serializes exit-then-enter, which is what gives the "drives off, then next
-         one drives in" feel — but if the tier changes again before the exit finishes, a second
-         overlapping transition can leave one of them stuck without ever reaching its target
-         opacity/position. The debug Prev/Next buttons guard against that below by disabling
-         themselves for the transition's duration; a real trade-in only ever fires once per
-         upgrade so it can't retrigger mid-flight. */}
+         one drives in" feel — a real trade-in (or an admin car switch from ProfileScreen, which
+         remounts this component fresh since the two screens are mutually exclusive) only ever
+         fires once per transition, so there's no overlapping-retrigger case to guard against
+         here. */}
       <AnimatePresence mode="wait">
         <motion.div
           key={carTier}
@@ -666,9 +454,6 @@ function TradeInPanel({ installedUpgrades, onTradeIn }: TradeInPanelProps) {
       animate={{ opacity: 1, scale: 1 }}
       className="panel-cut relative flex flex-col items-center gap-4 border border-neon-cyan/50 bg-bg-panel p-6 text-center"
     >
-      <span className="pointer-events-none absolute right-2 top-1 select-none font-mono text-[8px] uppercase tracking-widest text-neon-cyan/50">
-        Status.Ready
-      </span>
       <p className="font-display text-lg font-bold tracking-wide text-neon-cyan drop-shadow-[0_0_4px_rgba(0,240,255,0.9)]">
         CAR MASTERED
       </p>
@@ -872,9 +657,6 @@ function AntiStallCalibrationPanel({ partLevel, perk, onComplete }: AntiStallCal
       exit={{ opacity: 0, scale: 0.95, height: 0 }}
       className="panel-cut relative overflow-hidden border border-neon-cyan/50 bg-bg-panel p-4"
     >
-      <span className="pointer-events-none absolute right-2 top-1 select-none font-mono text-[8px] uppercase tracking-widest text-neon-cyan/50">
-        Diag.Active
-      </span>
       <AnimatePresence>
         {stallFlash && (
           <motion.div

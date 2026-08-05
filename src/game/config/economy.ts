@@ -1,6 +1,15 @@
 import type { PartPerk } from './parts';
 import type { CarStats } from '../types';
 
+/** Offline (AFK) progress is capped at this many hours away, so a very stale save (or a
+ * fiddled system clock) can't award an absurd amount. Restricts *time away*, not a flat Scrap
+ * amount — the actual ceiling in Scrap terms still scales with the player's own
+ * scrapPerSecond (see getMaxAfkCapacityScrap below), so raising or lowering this number alone
+ * never needs a matching change per car tier. Exported standalone (not just buried inside
+ * ECONOMY) since the Garage's AFK Storage panel needs the *hours* figure directly to display,
+ * not just the seconds value ECONOMY.MAX_OFFLINE_SECONDS derives from it below. */
+export const MAX_OFFLINE_HOURS = 12;
+
 /** Central tuning knobs for the idle economy. Balance changes should happen here, not in the store logic. */
 export const ECONOMY = {
   /** Starting scrapPerSecond, before any upgrades are purchased. */
@@ -94,8 +103,11 @@ export const ECONOMY = {
   /** Critical taps award scrapPerClick multiplied by this. */
   STARTING_CRIT_MULTIPLIER: 3,
 
-  /** Offline progress is capped at this many seconds, so a very stale save (or a fiddled system clock) can't award an absurd amount. */
-  MAX_OFFLINE_SECONDS: 8 * 60 * 60,
+  /** Offline progress is capped at this many seconds — MAX_OFFLINE_HOURS above converted to
+   * seconds, since applyOfflineProgress() (GameStore.ts) compares against a ms-derived elapsed
+   * time. Every call site already works in seconds, so this stays its own field rather than
+   * making each one re-multiply MAX_OFFLINE_HOURS * 3600 independently. */
+  MAX_OFFLINE_SECONDS: MAX_OFFLINE_HOURS * 60 * 60,
   /** Below this many Scrap, the "Welcome back" toast doesn't bother showing. */
   MIN_OFFLINE_EARNINGS_TO_SHOW: 1,
 
@@ -105,6 +117,18 @@ export const ECONOMY = {
    * transactions — old entries just fall off the end rather than growing the save forever. */
   NEON_HISTORY_MAX_ENTRIES: 50,
 } as const;
+
+/** The most Scrap a player's AFK/offline storage can possibly hold at their *current*
+ * scrapPerSecond — i.e. what MAX_OFFLINE_HOURS away would earn them, back-to-back, with
+ * nothing collected in between. Deliberately a function of scrapPerSecond, not a flat number:
+ * the cap that's actually enforced (see applyOfflineProgress in GameStore.ts) restricts *time*
+ * away, so this figure automatically scales with every scrapPerSecond-boosting upgrade,
+ * calibration, and trade-in without needing a per-tier override anywhere. Used by the Garage's
+ * AFK Storage panel to show the player exactly what they stand to lose by staying away past
+ * the cap. */
+export function getMaxAfkCapacityScrap(scrapPerSecond: number): number {
+  return scrapPerSecond * MAX_OFFLINE_HOURS * 60 * 60;
+}
 
 /**
  * Starting blueprint for the Junkyard's always-visible upgrade list; the store seeds its
@@ -401,19 +425,27 @@ export interface DailyRewardTier {
 }
 
 /** The retention login-streak reward table, keyed by streak day (1-indexed). Days 1-6 escalate
- * in Scrap (sized against the early-game economy above — Tier 1 parts cost ~15-27 Scrap, so
- * even Day 1 is a meaningful chunk of a part), Day 7 pays out in $NEON instead, both a bigger
- * "why bother with the whole week" payoff and a taste of the premium currency for a player who
- * hasn't touched The Streets yet. getDailyRewardForStreak below cycles this table forever past
- * Day 7 (Day 8 repeats Day 1's reward, Day 14 repeats Day 7's, ...) rather than capping — a
- * streak has no defined end. */
+ * in Scrap (sized against the early-game economy above — Tier 1 parts cost ~15-27 Scrap, so Day
+ * 1's 500 is a meaningful multi-part boost, not a whole-tier skip), Day 7 pays out in $NEON
+ * instead, both a bigger "why bother with the whole week" payoff and a taste of the premium
+ * currency for a player who hasn't touched The Streets yet.
+ *
+ * Deliberately kept modest rather than economy-defining: an earlier pass had these at 100x these
+ * numbers (50,000-800,000 Scrap, 25 $NEON), which handed out several car tiers' worth of parts
+ * in one tap and made the streak itself pointless to protect — a reward that big is claimed once
+ * and forgotten, not something a player logs back in for. Scaled down so each day is a genuine,
+ * felt boost (roughly a double-digit-to-low-hundreds multiple of a Tier 1 part's price) without
+ * ever being the fastest way to progress — that's still buying parts/calibrating/trading in.
+ *
+ * getDailyRewardForStreak below cycles this table forever past Day 7 (Day 8 repeats Day 1's
+ * reward, Day 14 repeats Day 7's, ...) rather than capping — a streak has no defined end. */
 export const DAILY_REWARDS: readonly DailyRewardTier[] = [
   { day: 1, scrap: 500 },
-  { day: 2, scrap: 1000 },
-  { day: 3, scrap: 2000 },
-  { day: 4, scrap: 3500 },
-  { day: 5, scrap: 5500 },
-  { day: 6, scrap: 8000 },
+  { day: 2, scrap: 1_000 },
+  { day: 3, scrap: 2_000 },
+  { day: 4, scrap: 3_500 },
+  { day: 5, scrap: 5_500 },
+  { day: 6, scrap: 8_000 },
   { day: 7, neon: 25 },
 ] as const;
 
@@ -462,6 +494,52 @@ export const OVERCLOCK = {
 /** Whether the Overclock boost is currently active. */
 export function isOverclockActive(boostEndsAt: number | null, now: number): boolean {
   return boostEndsAt !== null && boostEndsAt > now;
+}
+
+/** Tuning for the Shop's premium "Mega Overclock" tier — the same passive-income multiplier
+ * mechanic as OVERCLOCK above (it extends the exact same `boostEndsAt` clock, so the two stack
+ * into one shared countdown regardless of which tier a purchase was), just a 3-day (72h)
+ * duration instead of 24h for a correspondingly bigger Stars price. What makes this tier
+ * genuinely different, not just "the same boost, longer": for as long as *this* purchase's own
+ * effect is active (see megaBoostEndsAt in game/types/index.ts, tracked separately from
+ * boostEndsAt), the AFK/offline cap is also raised from the normal ECONOMY.MAX_OFFLINE_SECONDS to
+ * EXTENDED_OFFLINE_HOURS — see getEffectiveMaxOfflineSeconds below — so a player about to be away
+ * for a multi-day trip doesn't lose out on offline earnings past the normal 12h ceiling. Buying a
+ * *regular* 24h Overclock on top of an active Mega Overclock only extends the shared multiplier
+ * clock; it does not touch megaBoostEndsAt, so the extended AFK cap still expires on its own
+ * original schedule — that privilege is specific to what was actually paid for. */
+export const MEGA_OVERCLOCK = {
+  DURATION_HOURS: 72,
+  /** The AFK/offline cap while this boost is active, in hours — see
+   * getEffectiveMaxOfflineSeconds below. */
+  EXTENDED_OFFLINE_HOURS: 72,
+  /** Price in Telegram Stars (XTR) — see ITEM_CONFIG in netlify/functions/create-invoice.mts. */
+  STARS_PRICE: 300,
+} as const;
+
+/** Whether the Mega Overclock's own extended-AFK-cap privilege is currently active — distinct
+ * from isOverclockActive, which only tracks the shared scrap-multiplier clock both tiers write
+ * into. */
+export function isMegaOverclockActive(megaBoostEndsAt: number | null, now: number): boolean {
+  return megaBoostEndsAt !== null && megaBoostEndsAt > now;
+}
+
+/** The AFK/offline cap (in seconds) that actually applies to a given offline gap: the normal
+ * ECONOMY.MAX_OFFLINE_SECONDS, unless a Mega Overclock was still active at the exact moment this
+ * device went offline (`megaBoostEndsAt` newer than `lastSaved`), in which case the whole gap is
+ * capped at MEGA_OVERCLOCK.EXTENDED_OFFLINE_HOURS instead. Deliberately a single either/or answer
+ * for the whole gap rather than splitting it into boosted/non-boosted sub-windows (the way
+ * getBoostedScrapEarned splits the *scrap* multiplier) — the AFK cap is a coarse anti-abuse
+ * ceiling, not a precise economic lever, so "was Mega Overclock running when you left" is a
+ * simple, defensible rule that doesn't need that level of precision. */
+export function getEffectiveMaxOfflineSeconds(
+  megaBoostEndsAt: number | null,
+  lastSaved: number,
+): number {
+  if (megaBoostEndsAt !== null && megaBoostEndsAt > lastSaved) {
+    return MEGA_OVERCLOCK.EXTENDED_OFFLINE_HOURS * 60 * 60;
+  }
+  return ECONOMY.MAX_OFFLINE_SECONDS;
 }
 
 /** Scrap earned over a `[windowStart, now]` span, honoring the Overclock multiplier for exactly
@@ -533,6 +611,26 @@ export function isNeonSyphonClaimable(lastClaim: number | null, now: number): bo
   return now - lastClaim >= NEON_SYPHON.COOLDOWN_MS;
 }
 
+/** Tuning for the milestone-based Referral System (see netlify/functions/referrals.mts). An
+ * invitee reaching MILESTONE_CAR_TIER credits *both* sides — but only for a genuine referral: an
+ * account with no inviter on record gets nothing from this system at all, regardless of its own
+ * tier. Rewards never land directly in `neon`/`scrap`; they accumulate in
+ * `unclaimedNeon`/`unclaimedScrap` until the player manually claims them from the REF tab's
+ * Vault (see claimReferralRewards in GameStore.ts) — a deliberate "manual claim" mechanic, not a
+ * bug where rewards seem to vanish. */
+export const REFERRAL = {
+  /** $NEON credited to *each* side (invitee's own pool, and separately the inviter's) once a
+   * genuinely-referred invitee reaches MILESTONE_CAR_TIER. */
+  MILESTONE_NEON_REWARD: 10,
+  /** Scrap credited alongside MILESTONE_NEON_REWARD, same both-sides rule. */
+  MILESTONE_SCRAP_REWARD: 25_000,
+  /** The car tier that fires the milestone credit — see tradeInCar in GameStore.ts. */
+  MILESTONE_CAR_TIER: 5,
+  /** How many of an account's own invitees must individually reach MILESTONE_CAR_TIER before
+   * the invite-3-friends Airdrop quest below counts as complete. */
+  QUEST_REQUIRED_VALID_REFERRALS: 3,
+} as const;
+
 /** One Airdrop quest — a one-time $NEON reward for hitting a specific, checkable milestone.
  * Completion is derived (see isQuestComplete below), never stored directly, so it can never
  * drift out of sync with the actual state it's checking; only *claiming* it is stored (see
@@ -552,16 +650,33 @@ export const QUESTS: readonly QuestDefinition[] = [
     neonReward: 10,
   },
   {
-    id: 'reach-tier-5',
-    title: 'Reach Tier 5 Car',
-    description: 'Trade in for a Tier 5 or higher car in the Garage.',
+    // Was 'reach-tier-5' (Tier 5), raised to Tier 10 — kept a distinct id rather than reusing
+    // the old one so this reads unambiguously as its own milestone; a save that already
+    // claimed the old Tier 5 version simply keeps that claimedQuests entry as a harmless
+    // orphan (it no longer matches anything in this list), same as a retired Junkyard upgrade
+    // id falling out of UPGRADE_BLUEPRINTS (see reconcileUpgrades in GameStore.ts).
+    id: 'reach-tier-10',
+    title: 'Reach Tier 10 Car',
+    description: 'Trade in for a Tier 10 or higher car in the Garage.',
     neonReward: 25,
   },
   {
     id: 'win-10-races',
     title: 'Win 10 Races',
-    description: "Win 10 races in Auto-Drag (Race vs Player or Syndicate Bot).",
+    description: 'Win 10 races in Auto-Drag (Race vs Player or Syndicate Bot).',
     neonReward: 50,
+  },
+  {
+    id: 'join-syndicate',
+    title: 'Join or Create a Syndicate',
+    description: 'Team up — join an existing Syndicate or start your own from the Syndicate Hub.',
+    neonReward: 15,
+  },
+  {
+    id: 'invite-3-friends',
+    title: 'Invite 3 Friends (Tier 5 required)',
+    description: 'Get 3 invited friends to reach Tier 5 — see the REF tab for your link and progress.',
+    neonReward: 75,
   },
 ] as const;
 
@@ -572,6 +687,8 @@ export interface QuestProgress {
   walletAddress: string | null;
   carTier: number;
   racesWon: number;
+  syndicateId: string | null;
+  validReferralsCount: number;
 }
 
 /** Whether a given quest's milestone has been reached — independent of whether it's already
@@ -581,11 +698,46 @@ export function isQuestComplete(questId: string, progress: QuestProgress): boole
   switch (questId) {
     case 'connect-wallet':
       return progress.walletAddress !== null;
-    case 'reach-tier-5':
-      return progress.carTier >= 5;
+    case 'reach-tier-10':
+      return progress.carTier >= 10;
     case 'win-10-races':
       return progress.racesWon >= 10;
+    case 'join-syndicate':
+      return progress.syndicateId !== null;
+    case 'invite-3-friends':
+      return progress.validReferralsCount >= REFERRAL.QUEST_REQUIRED_VALID_REFERRALS;
     default:
       return false;
+  }
+}
+
+/** A quest's progress as a plain `current`/`target` pair, for AirdropScreen.tsx's per-quest
+ * progress bar — `target` is always 1 for the two boolean milestones (connect a wallet, join a
+ * Syndicate), so their bar is either empty or full with no fraction worth printing; the other
+ * three have a real target above 1. `current` is clamped to `target` so an already-complete
+ * quest's bar reads as a clean 100% rather than, say, "14 / 10" once racesWon keeps climbing
+ * past the milestone. */
+export interface QuestProgressValue {
+  current: number;
+  target: number;
+}
+
+export function getQuestProgressValue(questId: string, progress: QuestProgress): QuestProgressValue {
+  switch (questId) {
+    case 'connect-wallet':
+      return { current: progress.walletAddress !== null ? 1 : 0, target: 1 };
+    case 'reach-tier-10':
+      return { current: Math.min(progress.carTier, 10), target: 10 };
+    case 'win-10-races':
+      return { current: Math.min(progress.racesWon, 10), target: 10 };
+    case 'join-syndicate':
+      return { current: progress.syndicateId !== null ? 1 : 0, target: 1 };
+    case 'invite-3-friends':
+      return {
+        current: Math.min(progress.validReferralsCount, REFERRAL.QUEST_REQUIRED_VALID_REFERRALS),
+        target: REFERRAL.QUEST_REQUIRED_VALID_REFERRALS,
+      };
+    default:
+      return { current: 0, target: 1 };
   }
 }

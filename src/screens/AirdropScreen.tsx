@@ -1,37 +1,34 @@
-import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Check, Copy, Lock, Rocket, Send, Users } from 'lucide-react';
-import { useGameStore, getTelegramUserId } from '../game/store/GameStore';
-import { QUESTS, isQuestComplete, type QuestDefinition } from '../game/config/economy';
-import { WebApp } from '../lib/telegram';
-
-/** Your bot's @username (no leading @, no https://t.me/ prefix) — REQUIRED for the referral
- * link below to actually resolve to your Mini App. Replace this before shipping; left as a
- * placeholder here since it isn't something derivable from anywhere else in this codebase. */
-const BOT_USERNAME = 'YourBotUsername';
-
-function buildReferralLink(userId: string): string {
-  return `https://t.me/${BOT_USERNAME}/app?startapp=ref_${userId}`;
-}
-
-const REFERRAL_SHARE_TEXT =
-  "Join me in Cyber-Garage — build your rig, race The Streets, and stack $NEON before the airdrop. Tap in:";
+import { ArrowLeft, Check, Lock, Rocket } from 'lucide-react';
+import { useGameStore } from '../game/store/GameStore';
+import {
+  QUESTS,
+  isQuestComplete,
+  getQuestProgressValue,
+  type QuestDefinition,
+  type QuestProgress,
+} from '../game/config/economy';
 
 interface AirdropScreenProps {
   onBack: () => void;
 }
 
-/** The $NEON Airdrop hub — a TGE announcement banner and the 3 Airdrop quests. Reached from the
- * header (see App.tsx's AirdropEntryButton), same pattern as ProfileScreen: outside the bottom-
- * nav tab system entirely, not one of BottomNav's ScreenId values. */
+/** The $NEON Airdrop hub — a TGE announcement banner and the Airdrop quests (including the
+ * Referral System's own "Join or Create a Syndicate" / "Invite 3 Friends" milestones — see the
+ * dedicated REF tab, reached from its own header button, for the actual invite link/Vault/claim
+ * flow those two quests track). Reached from the header (see App.tsx's AirdropEntryButton), same
+ * pattern as ProfileScreen/ReferralsScreen: outside the bottom-nav tab system entirely, not one
+ * of BottomNav's ScreenId values. */
 export function AirdropScreen({ onBack }: AirdropScreenProps) {
   const walletAddress = useGameStore((state) => state.walletAddress);
   const carTier = useGameStore((state) => state.carTier);
   const racesWon = useGameStore((state) => state.racesWon);
+  const syndicateId = useGameStore((state) => state.syndicateId);
+  const validReferralsCount = useGameStore((state) => state.validReferralsCount);
   const claimedQuests = useGameStore((state) => state.claimedQuests);
   const claimQuest = useGameStore((state) => state.claimQuest);
 
-  const progress = { walletAddress, carTier, racesWon };
+  const progress: QuestProgress = { walletAddress, carTier, racesWon, syndicateId, validReferralsCount };
   // "Complete" means the on-chain/in-game milestone is met, not that its small NEON bonus has
   // been clicked-and-claimed yet — qualifying for the airdrop allocation is about having done
   // the thing, independent of whether the player remembered to collect the reward for it.
@@ -74,14 +71,33 @@ export function AirdropScreen({ onBack }: AirdropScreenProps) {
         </p>
       </div>
 
-      <div className="flex items-center justify-between rounded-lg border border-neutral-800 bg-bg-panel/60 px-4 py-2.5">
-        <p className="font-mono text-[11px] uppercase tracking-wide text-neutral-400">
-          Quest Progress
-        </p>
-        <p className="font-display text-sm font-bold tabular-nums text-neon-cyan">
-          {completedCount}/{totalCount} Quests
-        </p>
-      </div>
+      <motion.div
+        animate={{
+          boxShadow: [
+            '0 0 10px 2px rgba(0,240,255,0.3)',
+            '0 0 22px 4px rgba(0,240,255,0.55)',
+            '0 0 10px 2px rgba(0,240,255,0.3)',
+          ],
+        }}
+        transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+        className="panel-cut relative overflow-hidden border-2 border-neon-cyan bg-neon-cyan/10 p-4"
+      >
+        <div className="flex items-center justify-between">
+          <p className="font-display text-xs font-bold uppercase tracking-widest text-neon-cyan drop-shadow-[0_0_8px_rgba(0,240,255,0.6)]">
+            Quests Completed
+          </p>
+          <p className="font-display text-xl font-black tabular-nums text-neon-cyan drop-shadow-[0_0_10px_rgba(0,240,255,0.7)]">
+            {completedCount} / {totalCount}
+          </p>
+        </div>
+        <div className="mt-2.5 h-3 w-full overflow-hidden rounded-full border border-neon-cyan/40 bg-black/40">
+          <motion.div
+            className="h-full rounded-full bg-gradient-to-r from-neon-cyan to-neon-magenta"
+            animate={{ width: `${(completedCount / totalCount) * 100}%` }}
+            transition={{ duration: 0.4, ease: 'easeOut' }}
+          />
+        </div>
+      </motion.div>
 
       <div className="flex flex-col gap-3">
         {allQuestsComplete ? (
@@ -106,105 +122,13 @@ export function AirdropScreen({ onBack }: AirdropScreenProps) {
               quest={quest}
               isComplete={isQuestComplete(quest.id, progress)}
               isClaimed={claimedQuests.includes(quest.id)}
+              progressValue={getQuestProgressValue(quest.id, progress)}
               onClaim={() => claimQuest(quest.id)}
             />
           ))
         )}
-        <InviteFriendsCard />
       </div>
     </motion.div>
-  );
-}
-
-/** Not one of QUESTS (no isComplete/claimedQuests entry, no NEON reward button) — attributing a
- * real referral (crediting the *inviter* once someone actually joins via their link) needs
- * server-side tracking this doesn't have yet: whoever opens the app with `?startapp=ref_X` would
- * have to be verified and matched back to X on the backend, the same way Syndicates/Matchmaking
- * moved off client-trusted state earlier. Until that exists, this is honestly just the share
- * surface — Share and Copy actually work right now, a reward for successful invites doesn't. */
-function InviteFriendsCard() {
-  const [copied, setCopied] = useState(false);
-  const userId = getTelegramUserId();
-
-  if (!userId) {
-    return (
-      <div className="rounded-xl border border-neutral-800 bg-bg-panel/60 p-4">
-        <div className="flex items-center gap-1.5 text-neutral-400">
-          <Users className="h-4 w-4" strokeWidth={2} />
-          <p className="font-display text-sm font-bold uppercase tracking-wide">Invite Friends</p>
-        </div>
-        <p className="mt-1 text-xs text-neutral-500">
-          Open this from Telegram to get your referral link.
-        </p>
-      </div>
-    );
-  }
-
-  const referralLink = buildReferralLink(userId);
-
-  const handleShare = () => {
-    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(referralLink)}&text=${encodeURIComponent(REFERRAL_SHARE_TEXT)}`;
-    WebApp.openTelegramLink(shareUrl);
-  };
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(referralLink);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Clipboard access can be blocked (permissions, insecure context) — Share is still a
-      // fully working fallback, so this fails silently rather than surfacing an error.
-    }
-  };
-
-  return (
-    <div className="rounded-xl border border-neon-magenta/50 bg-neon-magenta/10 p-4">
-      <div className="flex items-center gap-1.5 text-neon-magenta">
-        <Users className="h-4 w-4" strokeWidth={2} />
-        <p className="font-display text-sm font-bold uppercase tracking-wide">Invite Friends</p>
-      </div>
-      <p className="mt-1 text-xs text-neutral-400">
-        Bring your crew into the Syndicate — every runner you pull in raises your standing before
-        the TGE.
-      </p>
-
-      <div className="mt-3 flex gap-2">
-        <motion.button
-          type="button"
-          onClick={handleShare}
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.97 }}
-          className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border-2 border-neon-magenta bg-neon-magenta/15 py-2.5 font-display text-xs font-black uppercase tracking-widest text-neon-magenta shadow-[0_0_16px_rgba(255,46,230,0.35)]"
-        >
-          <Send className="h-3.5 w-3.5" strokeWidth={2} />
-          Share
-        </motion.button>
-        <motion.button
-          type="button"
-          onClick={handleCopy}
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.97 }}
-          className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg border-2 py-2.5 font-display text-xs font-black uppercase tracking-widest transition-colors ${
-            copied
-              ? 'border-toxic-green bg-toxic-green/15 text-toxic-green'
-              : 'border-neutral-700 bg-black/20 text-neutral-300'
-          }`}
-        >
-          {copied ? (
-            <>
-              <Check className="h-3.5 w-3.5" strokeWidth={2.5} />
-              Copied!
-            </>
-          ) : (
-            <>
-              <Copy className="h-3.5 w-3.5" strokeWidth={2} />
-              Copy Link
-            </>
-          )}
-        </motion.button>
-      </div>
-    </div>
   );
 }
 
@@ -212,11 +136,19 @@ interface QuestCardProps {
   quest: QuestDefinition;
   isComplete: boolean;
   isClaimed: boolean;
+  progressValue: { current: number; target: number };
   onClaim: () => void;
 }
 
-function QuestCard({ quest, isComplete, isClaimed, onClaim }: QuestCardProps) {
+function QuestCard({ quest, isComplete, isClaimed, progressValue, onClaim }: QuestCardProps) {
   const canClaim = isComplete && !isClaimed;
+  const barColorClass = isClaimed
+    ? 'bg-toxic-green'
+    : isComplete
+      ? 'bg-neon-magenta'
+      : 'bg-neutral-600';
+  const fillPercent =
+    progressValue.target > 0 ? Math.min(100, (progressValue.current / progressValue.target) * 100) : 0;
 
   return (
     <div
@@ -242,6 +174,28 @@ function QuestCard({ quest, isComplete, isClaimed, onClaim }: QuestCardProps) {
         <span className="shrink-0 font-display text-sm font-bold tabular-nums text-neon-magenta">
           +{quest.neonReward}
         </span>
+      </div>
+
+      {/* Per-quest completion indicator — a plain progress bar for every quest, plus a
+         current/target fraction for the three quests whose target is more than a single
+         boolean flip (Tier 10, 10 Wins, 3 Friends); the two boolean milestones (wallet
+         connected, Syndicate joined) just show the bar itself, empty or full. */}
+      <div className="mt-2.5">
+        {progressValue.target > 1 && (
+          <div className="mb-1 flex items-center justify-between font-mono text-[10px] uppercase tracking-wide text-neutral-500">
+            <span>Progress</span>
+            <span className="tabular-nums text-neutral-400">
+              {progressValue.current} / {progressValue.target}
+            </span>
+          </div>
+        )}
+        <div className="h-1.5 w-full overflow-hidden rounded-full border border-neutral-800 bg-black/30">
+          <motion.div
+            className={`h-full rounded-full ${barColorClass}`}
+            animate={{ width: `${fillPercent}%` }}
+            transition={{ duration: 0.4, ease: 'easeOut' }}
+          />
+        </div>
       </div>
 
       <motion.button

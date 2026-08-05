@@ -14,6 +14,8 @@ import {
   isNeonSyphonClaimable,
   QUESTS,
   isQuestComplete,
+  REFERRAL,
+  getEffectiveMaxOfflineSeconds,
 } from '../config/economy';
 import { getPartTier, rollPartPerk, type PartPerk } from '../config/parts';
 import { CAR_TIERS, getCarTier, getUpgradeRequirement } from '../config/carTiers';
@@ -23,6 +25,7 @@ import {
   trackCarUpgraded,
   trackRacePlayed,
 } from '../../utils/analytics';
+import { notifyReferralMilestone } from '../mock/referralsApi';
 
 const LEGACY_STORAGE_KEY = 'cyber-garage-save';
 
@@ -65,6 +68,28 @@ function migrateLegacySave(storageKey: string) {
 const STORAGE_KEY = getStorageKey();
 migrateLegacySave(STORAGE_KEY);
 
+/** Whether this device already had *something* persisted for this account before this
+ * session's store hydration ran — read directly off localStorage, before `persist`'s own
+ * hydrate call has a chance to touch it. False on a genuinely fresh install, but also false
+ * whenever Telegram has wiped the WebView's storage overnight, which is exactly the scenario
+ * that caused a real data-wipe incident: a wiped-storage load falls back to
+ * createInitialPlayerState()'s all-default state, whose `lastSaved: Date.now()` gets stamped
+ * to "now" — making a completely empty local state look *newer* than a perfectly legitimate
+ * but older cloud save under a naive last-write-wins timestamp comparison. useCloudSync reads
+ * this flag to know its very first pull can't trust that comparison: there is nothing genuine
+ * in local state yet for a timestamp to protect, so the cloud save must win outright. */
+export const hadLocalSaveAtLoad = (() => {
+  try {
+    return localStorage.getItem(STORAGE_KEY) !== null;
+  } catch {
+    // localStorage can throw in privacy modes / disabled storage. Fail closed (treat as "had
+    // a save") so a storage read error can never be misread as "definitely a wipe" and cause
+    // a cloud save to be adopted over local state that might, for all this code can tell, be
+    // perfectly fine.
+    return true;
+  }
+})();
+
 /** This device's persisted `lastSaved`, captured the moment it's rehydrated — *before*
  * applyOfflineProgress() re-stamps `lastSaved` to "now" on every single app open. useCloudSync
  * compares this frozen value (not the live store's `lastSaved`, which is now effectively
@@ -79,9 +104,19 @@ export let localLastSavedAtLoad = Date.now();
 // have that account's own client apply the grant to itself the next time it loads. Guarded by
 // checking neonHistory for the grant label already being present, so re-opening the app
 // doesn't re-grant it.
-const ADMIN_TELEGRAM_ID = '8280101176';
+export const ADMIN_TELEGRAM_ID = '8280101176';
 const ADMIN_GRANT_AMOUNT = 10000;
 const ADMIN_GRANT_LABEL = 'Admin Bonus';
+
+/** True only for the single hardcoded admin Telegram id above — gates ProfileScreen.tsx's Admin
+ * Panel and the adminGrantNeon/adminGrantScrap/adminNextCar/adminPrevCar actions below. Purely a
+ * client-side convenience gate, same trust model as the one-time admin grants already applied in
+ * applyOfflineProgress(): there's no backend account system here for a "real" permission check to
+ * live in — every save is just this one player's own browser/Telegram-client storage, so an
+ * ungated client has nothing cross-account to reach anyway. */
+export function isAdminAccount(): boolean {
+  return getTelegramUserId() === ADMIN_TELEGRAM_ID;
+}
 
 /** One-time admin Scrap grant, same rationale as the $NEON one above but guarded by its own
  * `hasReceivedAdminScrapGrant` flag instead of a neonHistory label — Scrap has no equivalent
@@ -134,13 +169,19 @@ interface GameActions {
   buyUpgrade: (id: string) => boolean;
   /** Once installedUpgrades reaches getUpgradeRequirement(carTier), resets installedUpgrades/partsPurchased and advances to the next car tier. No-op otherwise. */
   tradeInCar: () => void;
-  /** TEMP DEBUG — jumps straight to the next/previous car tier's art/name for a free look at
-   * the new 20-car roster, bypassing installedUpgrades/cost entirely (doesn't touch
-   * scrapPerSecond, partsPurchased, or installedUpgrades, so it can't be used to cheese the
-   * real economy). Remove these two actions, their buttons in GarageScreen, and this comment
-   * once the roster's been reviewed. */
-  debugPreviewNextCar: () => void;
-  debugPreviewPrevCar: () => void;
+  /** Admin-only (see isAdminAccount) — grants `amount` $NEON directly, for testing/support.
+   * A silent no-op for every other account, and for a non-finite or non-positive amount. */
+  adminGrantNeon: (amount: number) => void;
+  /** Admin-only (see isAdminAccount) — grants `amount` Scrap directly, same guard as
+   * adminGrantNeon. */
+  adminGrantScrap: (amount: number) => void;
+  /** Admin-only (see isAdminAccount) — jumps straight to the next/previous car tier's art/name,
+   * bypassing installedUpgrades/cost entirely (doesn't touch scrapPerSecond, partsPurchased, or
+   * installedUpgrades, so it can't be used to cheese the real economy). Replaces the old
+   * always-visible debug Prev/Next buttons in GarageScreen — now only reachable from
+   * ProfileScreen.tsx's Admin Panel, gated by the same isAdminAccount() check. */
+  adminNextCar: () => void;
+  adminPrevCar: () => void;
   /** Fast-forwards Scrap/Energy for time elapsed since lastSaved, run once after the persisted save is rehydrated. */
   applyOfflineProgress: () => void;
   dismissOfflineEarnings: () => void;
@@ -186,6 +227,37 @@ interface GameActions {
    * already accepted the attack — same fast-local-mirror pattern as creditBossKillReward, the
    * server's own cooldown record is what actually enforces the gate. */
   recordBossAttack: (timestamp: number) => void;
+  /** Mirrors this account's current Syndicate id (or null once solo again) — call from
+   * SyndicateHub.tsx whenever its own create/join/leave/restore-on-load flow settles, so the
+   * "Join or Create a Syndicate" Airdrop quest has a synchronous field to check without this
+   * store needing to know anything else about Syndicates. */
+  setSyndicateId: (syndicateId: string | null) => void;
+  /** Adds `neonCredited`/`scrapCredited` to the Referral System's unclaimed pools — call only
+   * with the amounts netlify/functions/referrals.mts's milestone-reached action actually
+   * reports back after tradeInCar reaches REFERRAL.MILESTONE_CAR_TIER, never optimistically:
+   * whether this account gets anything at all (and how much) depends entirely on whether it was
+   * actually invited by someone, which only the backend's referral-links record knows. Both
+   * amounts are 0 for an organic, unreferred Tier-5 crossing, in which case this is a safe no-op. */
+  creditReferralMilestoneReward: (neonCredited: number, scrapCredited: number) => void;
+  /** Moves exactly `neonClaimed`/`scrapClaimed` from the Referral System's unclaimed pools into
+   * the real neon/scrap balances and zeroes both pools — call only with the amounts
+   * netlify/functions/referrals.mts's claim-rewards action reports as *actually* claimed, never
+   * with whatever unclaimedNeon/unclaimedScrap happened to be showing on screen right before
+   * the request: those can differ if a fresh milestone credit landed in the gap between this
+   * account's last poll and the claim itself, and the server's reported amount is what's
+   * actually authoritative. */
+  claimReferralRewards: (neonClaimed: number, scrapClaimed: number) => void;
+  /** Force-refreshes just the Referral System's Vault numbers from
+   * netlify/functions/referrals.mts's get-referrals-data action — used by ReferralsScreen.tsx
+   * on mount so the REF tab doesn't have to wait for useCloudSync's next scheduled ~2s poll to
+   * show numbers another device's activity (or this account's own inviter crediting) may have
+   * just changed. */
+  refreshReferralsData: (data: {
+    unclaimedNeon: number;
+    unclaimedScrap: number;
+    validReferralsCount: number;
+    totalReferralsCount: number;
+  }) => void;
 }
 
 type GameStore = PlayerState & GameActions;
@@ -243,16 +315,23 @@ function createInitialPlayerState(): PlayerState {
     critChance: ECONOMY.STARTING_CRIT_CHANCE,
     critMultiplier: ECONOMY.STARTING_CRIT_MULTIPLIER,
     offlineEarnings: null,
+    lastOfflineCapacityRatio: 0,
     lastSaved: Date.now(),
     dailyRewardStreak: 0,
     lastDailyRewardClaim: null,
     boostEndsAt: null,
+    megaBoostEndsAt: null,
     lastNeonSyphonTime: null,
     walletAddress: null,
     racesWon: 0,
     claimedQuests: [],
     lastClaimedBossId: null,
     lastBossAttackTime: null,
+    syndicateId: null,
+    unclaimedNeon: 0,
+    unclaimedScrap: 0,
+    validReferralsCount: 0,
+    totalReferralsCount: 0,
   };
 }
 
@@ -577,16 +656,41 @@ export const useGameStore = create<GameStore>()(
           scrapPerSecond: state.scrapPerSecond * (1 + ECONOMY.TRADE_IN_SCRAP_PER_SECOND_GROWTH),
         }));
         trackCarUpgraded(newTier);
+        if (newTier === REFERRAL.MILESTONE_CAR_TIER) {
+          // Silently in the background — but no optimistic local credit here: whether this
+          // account gets anything at all depends entirely on whether it was actually invited by
+          // someone (see referrals.mts's handleMilestoneReached), which only the backend's
+          // referral-links record knows. creditReferralMilestoneReward applies exactly whatever
+          // the server reports back, including "nothing" for an organic, unreferred Tier-5.
+          notifyReferralMilestone(newTier)
+            .then((result) => get().creditReferralMilestoneReward(result.neonCredited, result.scrapCredited))
+            .catch(() => {});
+        }
       },
 
-      debugPreviewNextCar: () => {
+      adminGrantNeon: (amount) => {
+        if (!isAdminAccount() || !Number.isFinite(amount) || amount <= 0) return;
+        set((state) => ({
+          neon: state.neon + amount,
+          neonHistory: withNeonTransaction(state.neonHistory, 'Admin Grant', amount),
+        }));
+      },
+
+      adminGrantScrap: (amount) => {
+        if (!isAdminAccount() || !Number.isFinite(amount) || amount <= 0) return;
+        set((state) => ({ scrap: state.scrap + amount }));
+      },
+
+      adminNextCar: () => {
+        if (!isAdminAccount()) return;
         set((state) => {
           const nextTier = Math.min(state.carTier + 1, CAR_TIERS.length);
           return { carTier: nextTier, car: { ...state.car, name: getCarTier(nextTier).name } };
         });
       },
 
-      debugPreviewPrevCar: () => {
+      adminPrevCar: () => {
+        if (!isAdminAccount()) return;
         set((state) => {
           const prevTier = Math.max(state.carTier - 1, 1);
           return { carTier: prevTier, car: { ...state.car, name: getCarTier(prevTier).name } };
@@ -623,13 +727,22 @@ export const useGameStore = create<GameStore>()(
           };
         });
 
-        const { lastSaved, scrapPerSecond, boostEndsAt } = get();
-        const elapsedSeconds = Math.min(
-          Math.max(0, (now - lastSaved) / 1000),
-          ECONOMY.MAX_OFFLINE_SECONDS,
-        );
+        const { lastSaved, scrapPerSecond, boostEndsAt, megaBoostEndsAt } = get();
+        // Uncapped — used only to measure how much of the AFK cap the time away actually used
+        // up (see lastOfflineCapacityRatio's doc comment in types/index.ts), never to pay out
+        // Scrap directly. `elapsedSeconds` below is the one that's actually capped and paid.
+        const rawElapsedSeconds = Math.max(0, (now - lastSaved) / 1000);
+        // A Mega Overclock (see MEGA_OVERCLOCK in economy.ts) still active at the moment this
+        // device went offline raises the applicable cap for this entire gap from the normal
+        // ECONOMY.MAX_OFFLINE_SECONDS to its own longer one.
+        const effectiveMaxOfflineSeconds = getEffectiveMaxOfflineSeconds(megaBoostEndsAt, lastSaved);
+        const offlineCapacityRatio =
+          effectiveMaxOfflineSeconds > 0
+            ? Math.min(1, rawElapsedSeconds / effectiveMaxOfflineSeconds)
+            : 1;
+        const elapsedSeconds = Math.min(rawElapsedSeconds, effectiveMaxOfflineSeconds);
         if (elapsedSeconds <= 0) {
-          set({ lastSaved: now });
+          set({ lastSaved: now, lastOfflineCapacityRatio: offlineCapacityRatio });
           return;
         }
 
@@ -642,6 +755,7 @@ export const useGameStore = create<GameStore>()(
         set((state) => ({
           scrap: state.scrap + earnedScrap,
           lastSaved: now,
+          lastOfflineCapacityRatio: offlineCapacityRatio,
           offlineEarnings:
             earnedScrap >= ECONOMY.MIN_OFFLINE_EARNINGS_TO_SHOW
               ? earnedScrap
@@ -718,12 +832,22 @@ export const useGameStore = create<GameStore>()(
       },
 
       claimQuest: (questId) => {
-        const { claimedQuests, walletAddress, carTier, racesWon } = get();
+        const { claimedQuests, walletAddress, carTier, racesWon, syndicateId, validReferralsCount } = get();
         if (claimedQuests.includes(questId)) return false;
 
         const quest = QUESTS.find((q) => q.id === questId);
         if (!quest) return false;
-        if (!isQuestComplete(questId, { walletAddress, carTier, racesWon })) return false;
+        if (
+          !isQuestComplete(questId, {
+            walletAddress,
+            carTier,
+            racesWon,
+            syndicateId,
+            validReferralsCount,
+          })
+        ) {
+          return false;
+        }
 
         set((state) => ({
           claimedQuests: [...state.claimedQuests, questId],
@@ -750,6 +874,37 @@ export const useGameStore = create<GameStore>()(
       },
 
       recordBossAttack: (timestamp) => set({ lastBossAttackTime: timestamp }),
+
+      setSyndicateId: (syndicateId) => set({ syndicateId }),
+
+      creditReferralMilestoneReward: (neonCredited, scrapCredited) => {
+        if (neonCredited <= 0 && scrapCredited <= 0) return;
+        set((state) => ({
+          unclaimedNeon: state.unclaimedNeon + neonCredited,
+          unclaimedScrap: state.unclaimedScrap + scrapCredited,
+        }));
+      },
+
+      claimReferralRewards: (neonClaimed, scrapClaimed) => {
+        if (neonClaimed <= 0 && scrapClaimed <= 0) return;
+        set((state) => ({
+          neon: state.neon + neonClaimed,
+          scrap: state.scrap + scrapClaimed,
+          unclaimedNeon: 0,
+          unclaimedScrap: 0,
+          ...(neonClaimed > 0 && {
+            neonHistory: withNeonTransaction(state.neonHistory, 'Referral Rewards Claimed', neonClaimed),
+          }),
+        }));
+      },
+
+      refreshReferralsData: (data) =>
+        set({
+          unclaimedNeon: data.unclaimedNeon,
+          unclaimedScrap: data.unclaimedScrap,
+          validReferralsCount: data.validReferralsCount,
+          totalReferralsCount: data.totalReferralsCount,
+        }),
     }),
     {
       name: STORAGE_KEY,
@@ -784,11 +939,16 @@ export const useGameStore = create<GameStore>()(
 );
 
 /** Strips the non-persistable parts of a GameStore snapshot (store actions aren't JSON-
- * serializable and get dropped on their own, but `offlineEarnings` needs an explicit
- * exclusion) down to just the plain PlayerState fields — shared by both the localStorage
- * `partialize` above and useCloudSync's push-to-backend payload, so the two storage layers
- * can never drift into syncing different shapes. */
+ * serializable and get dropped on their own, but `offlineEarnings`/`lastOfflineCapacityRatio`
+ * need an explicit exclusion) down to just the plain PlayerState fields — shared by both the
+ * localStorage `partialize` above and useCloudSync's push-to-backend payload, so the two
+ * storage layers can never drift into syncing different shapes. `lastOfflineCapacityRatio` is
+ * reset to 0 same as `offlineEarnings` resets to null: both are recomputed fresh by
+ * applyOfflineProgress() on every load/remote-hydrate, so persisting or syncing whatever value
+ * happened to be sitting in memory would just be a stale number from one specific device
+ * showing up somewhere it means nothing. */
 export function getSyncableState(state: GameStore): PlayerState {
-  const { offlineEarnings: _offlineEarnings, ...persisted } = state;
-  return { ...persisted, offlineEarnings: null };
+  const { offlineEarnings: _offlineEarnings, lastOfflineCapacityRatio: _lastOfflineCapacityRatio, ...persisted } =
+    state;
+  return { ...persisted, offlineEarnings: null, lastOfflineCapacityRatio: 0 };
 }

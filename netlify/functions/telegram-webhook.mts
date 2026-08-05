@@ -1,7 +1,7 @@
 import type { Context } from '@netlify/functions';
 import { getStore } from '@netlify/blobs';
 import { answerPreCheckoutQuery } from './_shared/telegramBotApi';
-import { OVERCLOCK } from '../../src/game/config/economy';
+import { OVERCLOCK, MEGA_OVERCLOCK } from '../../src/game/config/economy';
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 /** Set this to the same value passed as `secret_token` when registering the webhook with
@@ -11,6 +11,20 @@ const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET;
 
 const ITEM_PRICES_STARS: Record<string, number> = {
   overclock_24h: OVERCLOCK.STARS_PRICE,
+  mega_overclock_72h: MEGA_OVERCLOCK.STARS_PRICE,
+};
+
+/** What each Stars item actually grants once paid — both tiers extend the same shared
+ * `boostEndsAt` scrap-multiplier clock (see getBoostedScrapEarned in economy.ts), by however
+ * many hours that specific tier is worth; only the Mega tier *additionally* extends
+ * `megaBoostEndsAt`, which is what raises the AFK/offline cap while it's running (see
+ * getEffectiveMaxOfflineSeconds in economy.ts) — a privilege the plain 24h tier never grants. */
+const ITEM_GRANTS: Record<string, { boostHours: number; alsoExtendsMegaOfflineCap: boolean }> = {
+  overclock_24h: { boostHours: OVERCLOCK.DURATION_HOURS, alsoExtendsMegaOfflineCap: false },
+  mega_overclock_72h: {
+    boostHours: MEGA_OVERCLOCK.DURATION_HOURS,
+    alsoExtendsMegaOfflineCap: true,
+  },
 };
 
 interface PreCheckoutQuery {
@@ -70,13 +84,14 @@ async function handlePreCheckoutQuery(query: PreCheckoutQuery): Promise<void> {
   );
 }
 
-/** The only place in this entire project that actually grants the Overclock boost — everything
- * upstream of this (create-invoice.mts, ShopScreen.tsx's openInvoice callback) either sets up
- * the purchase or just observes it; this function runs only once Telegram itself has told us,
- * via an authenticated webhook call, that a specific charge really happened. */
+/** The only place in this entire project that actually grants an Overclock boost (either tier)
+ * — everything upstream of this (create-invoice.mts, ShopScreen.tsx's openInvoice callback)
+ * either sets up the purchase or just observes it; this function runs only once Telegram itself
+ * has told us, via an authenticated webhook call, that a specific charge really happened. */
 async function handleSuccessfulPayment(payment: SuccessfulPayment, payerId: number): Promise<void> {
   const payload = parsePayload(payment.invoice_payload);
-  if (!payload?.item || payload.item !== 'overclock_24h') return; // unrecognized item, nothing to grant
+  const grant = payload?.item ? ITEM_GRANTS[payload.item] : undefined;
+  if (!grant) return; // unrecognized item, nothing to grant
 
   // Idempotency: Telegram redelivers an update if this endpoint doesn't ack fast enough, and a
   // naive "just extend boostEndsAt" would double- (or triple-, ...) grant on every redelivery of
@@ -99,12 +114,23 @@ async function handleSuccessfulPayment(payment: SuccessfulPayment, payerId: numb
   // to merge a boost into, so this deliberately does nothing rather than fabricate a save.
   if (!existing) return;
 
-  const record = existing.data as { boostEndsAt?: number | null; [key: string]: unknown };
+  const record = existing.data as {
+    boostEndsAt?: number | null;
+    megaBoostEndsAt?: number | null;
+    [key: string]: unknown;
+  };
   const now = Date.now();
-  const durationMs = OVERCLOCK.DURATION_HOURS * 60 * 60 * 1000;
+  const durationMs = grant.boostHours * 60 * 60 * 1000;
   const updated = {
     ...record,
+    // Both tiers extend this same shared multiplier clock, by however many hours their own
+    // tier is worth.
     boostEndsAt: Math.max(now, record.boostEndsAt ?? 0) + durationMs,
+    // Only the Mega tier also extends this — see ITEM_GRANTS' own doc comment above for why
+    // it's tracked as its own field rather than reusing boostEndsAt for the AFK-cap decision.
+    ...(grant.alsoExtendsMegaOfflineCap && {
+      megaBoostEndsAt: Math.max(now, record.megaBoostEndsAt ?? 0) + durationMs,
+    }),
     // Bumping lastSaved is what makes useCloudSync.ts's "only adopt remote if newer than
     // local" check actually pick this up on the player's next pull — without it, this write
     // would sit in Blobs forever, invisible to a client that already has an equal/newer save.

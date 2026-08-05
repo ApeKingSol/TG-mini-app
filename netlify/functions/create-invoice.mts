@@ -1,21 +1,27 @@
 import type { Context } from '@netlify/functions';
 import { extractInitData, verifyInitData } from './_shared/verifyInitData';
 import { createInvoiceLink } from './_shared/telegramBotApi';
-import { OVERCLOCK } from '../../src/game/config/economy';
+import { OVERCLOCK, MEGA_OVERCLOCK } from '../../src/game/config/economy';
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
-/** The only Stars-purchasable item right now. Widen this union (and ITEM_CONFIG below) if more
- * Stars items get added later. Price/duration for `overclock_24h` come straight from
- * OVERCLOCK in src/game/config/economy.ts — the same source the client reads to display them —
- * rather than being re-declared here, so the two can never drift apart. */
-type InvoiceItem = 'overclock_24h';
+/** The two Stars-purchasable items right now. Widen this union (and ITEM_CONFIG below) if more
+ * Stars items get added later. Price/duration for each come straight from OVERCLOCK/
+ * MEGA_OVERCLOCK in src/game/config/economy.ts — the same source the client reads to display
+ * them — rather than being re-declared here, so the two can never drift apart. */
+type InvoiceItem = 'overclock_24h' | 'mega_overclock_72h';
 
 const ITEM_CONFIG: Record<InvoiceItem, { title: string; description: string; priceStars: number }> = {
   overclock_24h: {
     title: 'Overclock: 24h Auto-Mechanic',
     description: 'Triples your passive Scrap income for 24 hours.',
     priceStars: OVERCLOCK.STARS_PRICE,
+  },
+  mega_overclock_72h: {
+    title: 'Mega Overclock (72H)',
+    description:
+      'Triples your passive Scrap income for 72 hours and raises your AFK offline cap to 72 hours while active.',
+    priceStars: MEGA_OVERCLOCK.STARS_PRICE,
   },
 };
 

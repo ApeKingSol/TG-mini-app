@@ -9,12 +9,15 @@ import {
   Coins,
   Sparkles,
   Loader2,
+  Zap,
 } from 'lucide-react';
 import { useGameStore } from '../game/store/GameStore';
 import { WebApp, isRunningInTelegram } from '../lib/telegram';
 import {
   OVERCLOCK,
+  MEGA_OVERCLOCK,
   isOverclockActive,
+  isMegaOverclockActive,
   NEON_TO_SCRAP_RATE,
   NEON_EXCHANGE_PACKAGES,
 } from '../game/config/economy';
@@ -24,6 +27,10 @@ const CREATE_INVOICE_ENDPOINT = '/api/create-invoice';
 interface ShopModalProps {
   onClose: () => void;
 }
+
+/** One of the two Stars-purchasable boost tiers — see create-invoice.mts/telegram-webhook.mts
+ * for the matching server-side item ids. */
+type BoostItem = 'overclock_24h' | 'mega_overclock_72h';
 
 function formatDuration(ms: number): string {
   const totalMinutes = Math.max(0, Math.ceil(ms / 60000));
@@ -39,55 +46,75 @@ function formatDuration(ms: number): string {
  * is, the overwhelming majority of the time, just two or three ordinary poll cycles. */
 const CONFIRMATION_TIMEOUT_MS = 20_000;
 
-/** The Shop: the premium "Overclock: 24h Auto-Mechanic" Telegram Stars boost, and the NEON →
- * Scrap Exchange grid. Replaces the old cosmetic Skin Shop entirely (skins were never actually
- * purchasable — see the removed getCarSkins/CarSkin in carTiers.ts). Mirrors the Garage's other
- * modals (SkinShopModal used to, DailyRewardModal still does) for a visually consistent overlay/
- * panel structure. */
+/** The Shop: the premium "Overclock: 24h Auto-Mechanic" and "Mega Overclock (72h)" Telegram
+ * Stars boosts, and the NEON → Scrap Exchange grid. Both boost tiers extend the exact same
+ * `boostEndsAt` clock (see getBoostedScrapEarned in economy.ts) — buying either one, in either
+ * order, just pushes that one shared countdown further out. Mega Overclock *additionally* tracks
+ * its own `megaBoostEndsAt`, which is what raises the AFK/offline cap to 72h for as long as it's
+ * running (see getEffectiveMaxOfflineSeconds in economy.ts) — a privilege the plain 24h tier
+ * never grants, even if bought while a Mega boost is already active. Mirrors the Garage's other
+ * modals (DailyRewardScreen) for a visually consistent overlay/panel structure. */
 export function ShopModal({ onClose }: ShopModalProps) {
   const neon = useGameStore((state) => state.neon);
   const boostEndsAt = useGameStore((state) => state.boostEndsAt);
+  const megaBoostEndsAt = useGameStore((state) => state.megaBoostEndsAt);
   const exchangeNeonForScrap = useGameStore((state) => state.exchangeNeonForScrap);
 
   const [now, setNow] = useState(() => Date.now());
   const [isPurchasing, setIsPurchasing] = useState(false);
-  // Set the instant Telegram's own UI reports the payment succeeded; cleared once boostEndsAt
-  // actually changes (see the effect below). There is deliberately no client-side action that
-  // sets boostEndsAt directly — see its own doc comment in game/types/index.ts — so this is
-  // *waiting for telegram-webhook.mts's write to sync down*, not a fake progress bar standing
-  // in for an instant grant.
+  // Set the instant Telegram's own UI reports the payment succeeded; cleared once the relevant
+  // boost field actually changes (see the effect below). There is deliberately no client-side
+  // action that sets boostEndsAt/megaBoostEndsAt directly — see their own doc comments in
+  // game/types/index.ts — so this is *waiting for telegram-webhook.mts's write to sync down*,
+  // not a fake progress bar standing in for an instant grant.
   const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
   const boostEndsAtBeforePurchaseRef = useRef<number | null>(null);
+  const megaBoostEndsAtBeforePurchaseRef = useRef<number | null>(null);
+  const pendingItemRef = useRef<BoostItem | null>(null);
   const [message, setMessage] = useState<{ text: string; variant: 'error' | 'success' } | null>(
     null,
   );
 
-  // The Overclock countdown (if active) needs a live clock of its own — this modal can be left
-  // open across the boost expiring, or across a purchase's confirmation window.
+  // The Overclock countdowns (if active) need a live clock of their own — this modal can be
+  // left open across either boost expiring, or across a purchase's confirmation window.
   useEffect(() => {
     const interval = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(interval);
   }, []);
 
   const boostActive = isOverclockActive(boostEndsAt, now);
+  const megaActive = isMegaOverclockActive(megaBoostEndsAt, now);
 
   const showMessage = (text: string, variant: 'error' | 'success' = 'error') => {
     setMessage({ text, variant });
     window.setTimeout(() => setMessage(null), 3500);
   };
 
-  // Detects the moment the webhook's grant actually lands: boostEndsAt genuinely moved past
-  // whatever it was right before this purchase. Nothing here *triggers* a sync — useCloudSync's
-  // own interval does that on its own regardless of this modal — this just reacts once it does.
+  // Detects the moment the webhook's grant actually lands: whichever field the *pending*
+  // purchase's item is supposed to move genuinely moved past whatever it was right before this
+  // purchase. Nothing here *triggers* a sync — useCloudSync's own interval does that on its own
+  // regardless of this modal — this just reacts once it does.
   useEffect(() => {
-    if (!isConfirmingPayment) return;
-    const before = boostEndsAtBeforePurchaseRef.current;
-    if (boostEndsAt !== null && (before === null || boostEndsAt > before)) {
+    if (!isConfirmingPayment || !pendingItemRef.current) return;
+    const boostBefore = boostEndsAtBeforePurchaseRef.current;
+    const megaBefore = megaBoostEndsAtBeforePurchaseRef.current;
+    const boostLanded = boostEndsAt !== null && (boostBefore === null || boostEndsAt > boostBefore);
+    const megaLanded =
+      megaBoostEndsAt !== null && (megaBefore === null || megaBoostEndsAt > megaBefore);
+    const landed = pendingItemRef.current === 'mega_overclock_72h' ? megaLanded : boostLanded;
+    if (landed) {
+      const wasMega = pendingItemRef.current === 'mega_overclock_72h';
       setIsConfirmingPayment(false);
-      showMessage('Overclock activated — the Auto-Mechanic is on the clock!', 'success');
+      pendingItemRef.current = null;
+      showMessage(
+        wasMega
+          ? 'Mega Overclock activated — 72h of triple Scrap and an extended AFK cap!'
+          : 'Overclock activated — the Auto-Mechanic is on the clock!',
+        'success',
+      );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isConfirmingPayment, boostEndsAt]);
+  }, [isConfirmingPayment, boostEndsAt, megaBoostEndsAt]);
 
   // Gives up *displaying* the wait after a while — not a claim the payment failed (as far as
   // this client knows, Telegram already reported success on-device), just an acknowledgment that
@@ -97,18 +124,19 @@ export function ShopModal({ onClose }: ShopModalProps) {
     if (!isConfirmingPayment) return;
     const timeoutId = window.setTimeout(() => {
       setIsConfirmingPayment(false);
+      pendingItemRef.current = null;
       showMessage('Payment received — still syncing, check back in a moment.', 'success');
     }, CONFIRMATION_TIMEOUT_MS);
     return () => window.clearTimeout(timeoutId);
   }, [isConfirmingPayment]);
 
-  /** Kicks off the Telegram Stars checkout: asks the backend for a real invoice URL (backed by
-   * Telegram's own createInvoiceLink — see create-invoice.mts), then hands it to Telegram's
-   * native payment sheet via WebApp.openInvoice. That callback reporting 'paid' is *not* itself
-   * proof of payment (it's the client reporting what its own UI did) — the boost is only ever
-   * actually granted server-side, once Telegram separately confirms the charge to
+  /** Kicks off the Telegram Stars checkout for either boost tier: asks the backend for a real
+   * invoice URL (backed by Telegram's own createInvoiceLink — see create-invoice.mts), then hands
+   * it to Telegram's native payment sheet via WebApp.openInvoice. That callback reporting 'paid'
+   * is *not* itself proof of payment (it's the client reporting what its own UI did) — the boost
+   * is only ever actually granted server-side, once Telegram separately confirms the charge to
    * telegram-webhook.mts. This just starts waiting for that to sync down. */
-  const handleBuyOverclock = async () => {
+  const handleBuy = async (item: BoostItem) => {
     if (isPurchasing || isConfirmingPayment) return;
     if (!isRunningInTelegram()) {
       showMessage('Open this from Telegram to buy with Stars.');
@@ -120,7 +148,7 @@ export function ShopModal({ onClose }: ShopModalProps) {
       const res = await fetch(CREATE_INVOICE_ENDPOINT, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ initData: WebApp.initData, item: 'overclock_24h' }),
+        body: JSON.stringify({ initData: WebApp.initData, item }),
         cache: 'no-store',
       });
       const body = (await res.json().catch(() => null)) as
@@ -131,7 +159,9 @@ export function ShopModal({ onClose }: ShopModalProps) {
       }
 
       const invoiceUrl = body.invoiceUrl;
+      pendingItemRef.current = item;
       boostEndsAtBeforePurchaseRef.current = boostEndsAt;
+      megaBoostEndsAtBeforePurchaseRef.current = megaBoostEndsAt;
       WebApp.openInvoice(invoiceUrl, (status) => {
         setIsPurchasing(false);
         if (status === 'paid') {
@@ -159,6 +189,8 @@ export function ShopModal({ onClose }: ShopModalProps) {
     );
   };
 
+  const purchaseDisabled = isPurchasing || isConfirmingPayment;
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -173,7 +205,7 @@ export function ShopModal({ onClose }: ShopModalProps) {
         exit={{ opacity: 0, y: -24, scale: 0.95 }}
         transition={{ duration: 0.25, ease: 'easeOut' }}
         onClick={(event) => event.stopPropagation()}
-        className="panel-cut w-full max-w-sm border border-neon-cyan/50 bg-bg-panel p-4 text-left shadow-lg"
+        className="panel-cut max-h-[85vh] w-full max-w-sm overflow-y-auto border border-neon-cyan/50 bg-bg-panel p-4 text-left shadow-lg"
       >
         <div className="mb-3 flex items-center justify-between">
           <p className="font-display text-sm font-bold uppercase tracking-widest text-neon-cyan">
@@ -217,24 +249,78 @@ export function ShopModal({ onClose }: ShopModalProps) {
 
           <motion.button
             type="button"
-            onClick={handleBuyOverclock}
-            disabled={isPurchasing || isConfirmingPayment}
-            whileHover={!isPurchasing && !isConfirmingPayment ? { scale: 1.02 } : undefined}
-            whileTap={!isPurchasing && !isConfirmingPayment ? { scale: 0.97 } : undefined}
+            onClick={() => handleBuy('overclock_24h')}
+            disabled={purchaseDisabled}
+            whileHover={!purchaseDisabled ? { scale: 1.02 } : undefined}
+            whileTap={!purchaseDisabled ? { scale: 0.97 } : undefined}
             className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border-2 border-amber bg-amber/10 py-2.5 font-display text-sm font-black uppercase tracking-widest text-amber shadow-[0_0_16px_rgba(255,149,0,0.3)] transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {isPurchasing || isConfirmingPayment ? (
+            {isPurchasing || (isConfirmingPayment && pendingItemRef.current === 'overclock_24h') ? (
               <Loader2 className="h-4 w-4 animate-spin" strokeWidth={2} />
             ) : (
               <Star className="h-4 w-4" fill="currentColor" strokeWidth={1.5} />
             )}
             {isPurchasing
               ? 'Processing...'
-              : isConfirmingPayment
+              : isConfirmingPayment && pendingItemRef.current === 'overclock_24h'
                 ? 'Confirming payment...'
                 : boostActive
                   ? `Extend +24h — ${OVERCLOCK.STARS_PRICE}`
                   : `Buy — ${OVERCLOCK.STARS_PRICE}`}
+          </motion.button>
+        </div>
+
+        <div
+          className={`mt-3 rounded-xl border p-4 ${
+            megaActive
+              ? 'border-[#b026ff] bg-[#b026ff]/10 shadow-[0_0_20px_rgba(176,38,255,0.35)]'
+              : 'border-neutral-800 bg-black/20'
+          }`}
+        >
+          <div className="flex items-center gap-1.5 text-[#b026ff]">
+            <Zap className="h-4 w-4" strokeWidth={2} fill="currentColor" />
+            <p className="font-display text-xs font-bold uppercase tracking-widest">
+              Mega Overclock (72H)
+            </p>
+            <span className="rounded-full border border-[#b026ff] px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-widest text-[#b026ff]">
+              Premium
+            </span>
+          </div>
+          <p className="mt-1.5 text-xs text-neutral-400">
+            Triples your passive Scrap income for a full 3 days AND raises your AFK offline cap to
+            72 hours while active — go dark for the whole weekend and come back to a full tank.
+          </p>
+
+          {megaActive && (
+            <div className="mt-3 flex items-center justify-center gap-1.5 rounded-lg border border-[#b026ff]/40 bg-[#b026ff]/5 py-2.5">
+              <Timer className="h-3.5 w-3.5 text-[#b026ff]" strokeWidth={2} />
+              <span className="font-display text-sm font-bold tabular-nums text-[#b026ff]">
+                Active — {formatDuration((megaBoostEndsAt as number) - now)} left
+              </span>
+            </div>
+          )}
+
+          <motion.button
+            type="button"
+            onClick={() => handleBuy('mega_overclock_72h')}
+            disabled={purchaseDisabled}
+            whileHover={!purchaseDisabled ? { scale: 1.02 } : undefined}
+            whileTap={!purchaseDisabled ? { scale: 0.97 } : undefined}
+            className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border-2 border-[#b026ff] bg-[#b026ff]/10 py-2.5 font-display text-sm font-black uppercase tracking-widest text-[#b026ff] shadow-[0_0_16px_rgba(176,38,255,0.3)] transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isPurchasing ||
+            (isConfirmingPayment && pendingItemRef.current === 'mega_overclock_72h') ? (
+              <Loader2 className="h-4 w-4 animate-spin" strokeWidth={2} />
+            ) : (
+              <Star className="h-4 w-4" fill="currentColor" strokeWidth={1.5} />
+            )}
+            {isPurchasing
+              ? 'Processing...'
+              : isConfirmingPayment && pendingItemRef.current === 'mega_overclock_72h'
+                ? 'Confirming payment...'
+                : megaActive
+                  ? `Extend +72h — ${MEGA_OVERCLOCK.STARS_PRICE}`
+                  : `Buy — ${MEGA_OVERCLOCK.STARS_PRICE}`}
           </motion.button>
         </div>
 
