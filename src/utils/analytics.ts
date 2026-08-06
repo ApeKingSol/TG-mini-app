@@ -24,12 +24,12 @@ const ANALYTICS_ENDPOINT: string =
 
 function sendEvent(eventName: string, properties: Record<string, unknown> = {}): void {
   if (!ANALYTICS_TOKEN) {
-    alert("ERROR: MIXPANEL TOKEN MISSING IN BUILD!");
     console.log('[analytics]', eventName, properties);
     return;
   }
 
-  alert("ANALYTICS SENT: " + eventName);
+  const telegramUserId = (window as any).Telegram?.WebApp?.initDataUnsafe?.user?.id;
+  const distinctId = telegramUserId ? String(telegramUserId) : 'anonymous_user';
 
   const payload = [
     {
@@ -37,7 +37,7 @@ function sendEvent(eventName: string, properties: Record<string, unknown> = {}):
       properties: {
         ...properties,
         token: ANALYTICS_TOKEN,
-        time: Date.now(),
+        distinct_id: distinctId,
       },
     },
   ];
@@ -50,9 +50,12 @@ function sendEvent(eventName: string, properties: Record<string, unknown> = {}):
     // unloads/backgrounds — the same reasoning as sendBeacon elsewhere in this project
     // (useCloudSync.ts), but fetch's own keepalive flag is enough for a payload this small.
     keepalive: true,
-  }).catch(() => {
-    // See the file-level doc comment — deliberately silent.
-  });
+  })
+    .then(res => res.text())
+    .then(text => console.log("Mixpanel response:", text))
+    .catch(() => {
+      // See the file-level doc comment — deliberately silent.
+    });
 }
 
 export function trackAppOpened(): void {
