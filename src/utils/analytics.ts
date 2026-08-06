@@ -44,8 +44,8 @@ function sendEvent(eventName: string, properties: Record<string, unknown> = {}):
 
   fetch(ANALYTICS_ENDPOINT, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(payload),
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ data: JSON.stringify(payload) }).toString(),
     // Gives the request a chance to actually leave even if it's fired right before the page
     // unloads/backgrounds — the same reasoning as sendBeacon elsewhere in this project
     // (useCloudSync.ts), but fetch's own keepalive flag is enough for a payload this small.
