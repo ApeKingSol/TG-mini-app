@@ -20,7 +20,7 @@
 
 const ANALYTICS_TOKEN: string | undefined = import.meta.env.VITE_ANALYTICS_TOKEN;
 const ANALYTICS_ENDPOINT: string =
-  (import.meta.env.VITE_ANALYTICS_ENDPOINT as string | undefined) ?? 'https://api.mixpanel.com/track';
+  (import.meta.env.VITE_ANALYTICS_ENDPOINT as string | undefined) ?? 'https://api-eu.mixpanel.com/track';
 
 function sendEvent(eventName: string, properties: Record<string, unknown> = {}): void {
   if (!ANALYTICS_TOKEN) {
