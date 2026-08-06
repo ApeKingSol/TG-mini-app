@@ -24,9 +24,12 @@ const ANALYTICS_ENDPOINT: string =
 
 function sendEvent(eventName: string, properties: Record<string, unknown> = {}): void {
   if (!ANALYTICS_TOKEN) {
+    alert("ERROR: MIXPANEL TOKEN MISSING IN BUILD!");
     console.log('[analytics]', eventName, properties);
     return;
   }
+
+  alert("ANALYTICS SENT: " + eventName);
 
   const payload = [
     {
