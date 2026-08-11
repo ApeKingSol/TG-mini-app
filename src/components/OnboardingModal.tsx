@@ -71,7 +71,7 @@ export function OnboardingModal({ onComplete }: OnboardingModalProps) {
 
   return (
     <div
-      className="fixed inset-0 z-[5000] flex items-center justify-center overflow-hidden bg-black/88 px-4 py-6 backdrop-blur-xl"
+      className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/95 backdrop-blur-xl"
       role="dialog"
       aria-modal="true"
       aria-labelledby="onboarding-title"

@@ -65,8 +65,9 @@ function App() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-cyber-grid">
-      <ScreenBackground activeScreen={activeScreen} />
+    <>
+      <div className="flex min-h-screen flex-col bg-cyber-grid">
+        <ScreenBackground activeScreen={activeScreen} />
       <OfflineEarningsToast />
       <div className="flex-1 px-4 pb-[120px] pt-6">
         {!isTelegram && (
@@ -122,8 +123,9 @@ function App() {
         <BottomNav active={activeScreen} onChange={setActiveScreen} />
       )}
 
+      </div>
       {(!hasCompletedTutorial || forceTutorialOpen) && <OnboardingModal onComplete={handleTutorialComplete} />}
-    </div>
+    </>
   );
 }
 
