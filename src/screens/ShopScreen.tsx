@@ -55,6 +55,13 @@ const CONFIRMATION_TIMEOUT_MS = 20_000;
  * never grants, even if bought while a Mega boost is already active. Mirrors the Garage's other
  * modals (DailyRewardScreen) for a visually consistent overlay/panel structure. */
 export function ShopModal({ onClose }: ShopModalProps) {
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, []);
+
   const neon = useGameStore((state) => state.neon);
   const boostEndsAt = useGameStore((state) => state.boostEndsAt);
   const megaBoostEndsAt = useGameStore((state) => state.megaBoostEndsAt);

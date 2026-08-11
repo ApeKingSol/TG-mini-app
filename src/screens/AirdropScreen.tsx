@@ -35,7 +35,7 @@ export function AirdropScreen({ onBack }: AirdropScreenProps) {
   // "Complete" means the on-chain/in-game milestone is met, not that its small NEON bonus has
   // been clicked-and-claimed yet — qualifying for the airdrop allocation is about having done
   // the thing, independent of whether the player remembered to collect the reward for it.
-  const completedCount = QUESTS.filter((quest) => isQuestComplete(quest.id, progress)).length;
+  const completedCount = claimedQuests.length;
   const totalCount = QUESTS.length;
   const allQuestsComplete = completedCount === totalCount;
 
@@ -178,12 +178,16 @@ function QuestCard({ quest, isComplete, isClaimed, progressValue, onClaim }: Que
   };
 
   const [isVerifying, setIsVerifying] = useState(false);
+  const hasJoinedChannel = useGameStore((state) => state.hasJoinedChannel);
+  const verifyChannelSubscription = useGameStore((state) => state.verifyChannelSubscription);
+
+  const canInteract = canClaim || (!isComplete && hasActionLink);
 
   const handleQuestAction = async () => {
-    if (!canClaim || isVerifying) return;
+    if (!canInteract || isVerifying) return;
     
     if (quest.id === 'subscribe_telegram_channel') {
-      if (!hasJoinedChannel) {
+      if (!isComplete) {
         openQuestLink();
         setIsVerifying(true);
         // Simulate calling a backend API like getChatMember
@@ -250,15 +254,17 @@ function QuestCard({ quest, isComplete, isClaimed, progressValue, onClaim }: Que
       <motion.button
         type="button"
         onClick={handleQuestAction}
-        disabled={!canClaim}
-        whileHover={canClaim ? { scale: 1.02 } : undefined}
-        whileTap={canClaim ? { scale: 0.97 } : undefined}
+        disabled={!canInteract}
+        whileHover={canInteract ? { scale: 1.02 } : undefined}
+        whileTap={canInteract ? { scale: 0.97 } : undefined}
         className={`mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border-2 py-2 font-display text-xs font-black uppercase tracking-widest transition-colors disabled:cursor-not-allowed ${
           isClaimed
             ? 'border-toxic-green/40 bg-toxic-green/5 text-toxic-green/70'
             : isComplete
               ? 'border-neon-magenta bg-neon-magenta/15 text-neon-magenta shadow-[0_0_16px_rgba(255,46,230,0.35)]'
-              : 'border-neutral-700 bg-black/20 text-neutral-500'
+              : hasActionLink
+                ? 'border-amber/80 bg-amber/15 text-amber shadow-[0_0_12px_rgba(255,149,0,0.2)]'
+                : 'border-neutral-700 bg-black/20 text-neutral-500'
         }`}
       >
         {isVerifying ? (
@@ -268,17 +274,17 @@ function QuestCard({ quest, isComplete, isClaimed, progressValue, onClaim }: Que
             <Check className="h-3.5 w-3.5" strokeWidth={2.5} />
             Claimed
           </>
-        ) : hasActionLink && isComplete ? (
+        ) : hasActionLink && !isComplete ? (
           <>
             <ExternalLink className="h-3.5 w-3.5" strokeWidth={2.5} />
-            Subscribe
+            Verify
           </>
         ) : isComplete ? (
           'Claim Reward'
         ) : (
           <>
             <Lock className="h-3.5 w-3.5" strokeWidth={2} />
-            Locked
+            In Progress
           </>
         )}
       </motion.button>

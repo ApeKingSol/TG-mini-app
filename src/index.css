@@ -29,10 +29,23 @@ body,
   height: 100%;
   margin: 0;
   color: #e5e5e5;
-  font-family: var(--font-sans);
+  font-family: 'Rajdhani', system-ui, 'Segoe UI', Roboto, sans-serif !important;
   /* Prevent Telegram's pull-to-refresh / bounce scrolling from fighting the app UI */
   overscroll-behavior-y: none;
   -webkit-font-smoothing: antialiased;
+}
+
+/* Force custom fonts to override Telegram's global injections */
+.font-display {
+  font-family: 'Orbitron', system-ui, sans-serif !important;
+}
+
+.font-mono {
+  font-family: 'Share Tech Mono', 'Courier New', monospace !important;
+}
+
+.font-sans {
+  font-family: 'Rajdhani', system-ui, 'Segoe UI', Roboto, sans-serif !important;
 }
 
 /* Base page shell: a plain-black fallback so nothing flashes white behind the photo layers

@@ -305,10 +305,10 @@ export interface SmugglersRunSector {
 export const SMUGGLERS_RUN = {
   ENTRY_FEE_NEON: 15,
   SECTORS: [
-    { successChance: 0.85, rewardMultiplier: 1.5 },
-    { successChance: 0.65, rewardMultiplier: 3.0 },
-    { successChance: 0.4, rewardMultiplier: 5.0 },
-    { successChance: 0.15, rewardMultiplier: 10.0 },
+    { successChance: 0.65, rewardMultiplier: 1.5 },
+    { successChance: 0.40, rewardMultiplier: 3.0 },
+    { successChance: 0.15, rewardMultiplier: 5.0 },
+    { successChance: 0.05, rewardMultiplier: 10.0 },
   ] satisfies SmugglersRunSector[],
   /** How long the "Evading Cops..." tense loading state holds before a sector's result reveals
    * — purely dramatic pacing, has no bearing on the RNG roll itself (already resolved server-
