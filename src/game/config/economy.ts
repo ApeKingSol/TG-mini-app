@@ -704,6 +704,7 @@ export interface QuestProgress {
   racesWon: number;
   syndicateId: string | null;
   validReferralsCount: number;
+  hasJoinedChannel: boolean;
 }
 
 /** Whether a given quest's milestone has been reached — independent of whether it's already
@@ -712,7 +713,7 @@ export interface QuestProgress {
 export function isQuestComplete(questId: string, progress: QuestProgress): boolean {
   switch (questId) {
     case 'subscribe_telegram_channel':
-      return true;
+      return progress.hasJoinedChannel;
     case 'connect-wallet':
       return progress.walletAddress !== null;
     case 'reach-tier-10':
@@ -742,7 +743,7 @@ export interface QuestProgressValue {
 export function getQuestProgressValue(questId: string, progress: QuestProgress): QuestProgressValue {
   switch (questId) {
     case 'subscribe_telegram_channel':
-      return { current: 1, target: 1 };
+      return { current: progress.hasJoinedChannel ? 1 : 0, target: 1 };
     case 'connect-wallet':
       return { current: progress.walletAddress !== null ? 1 : 0, target: 1 };
     case 'reach-tier-10':

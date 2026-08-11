@@ -26,10 +26,12 @@ export function AirdropScreen({ onBack }: AirdropScreenProps) {
   const racesWon = useGameStore((state) => state.racesWon);
   const syndicateId = useGameStore((state) => state.syndicateId);
   const validReferralsCount = useGameStore((state) => state.validReferralsCount);
+  const hasJoinedChannel = useGameStore((state) => state.hasJoinedChannel);
+  const verifyChannelSubscription = useGameStore((state) => state.verifyChannelSubscription);
   const claimedQuests = useGameStore((state) => state.claimedQuests);
   const claimQuest = useGameStore((state) => state.claimQuest);
 
-  const progress: QuestProgress = { walletAddress, carTier, racesWon, syndicateId, validReferralsCount };
+  const progress: QuestProgress = { walletAddress, carTier, racesWon, syndicateId, validReferralsCount, hasJoinedChannel };
   // "Complete" means the on-chain/in-game milestone is met, not that its small NEON bonus has
   // been clicked-and-claimed yet — qualifying for the airdrop allocation is about having done
   // the thing, independent of whether the player remembered to collect the reward for it.
@@ -181,12 +183,16 @@ function QuestCard({ quest, isComplete, isClaimed, progressValue, onClaim }: Que
     if (!canClaim || isVerifying) return;
     
     if (quest.id === 'subscribe_telegram_channel') {
-      openQuestLink();
-      setIsVerifying(true);
-      // Simulate calling a backend API like getChatMember
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      setIsVerifying(false);
-      onClaim();
+      if (!hasJoinedChannel) {
+        openQuestLink();
+        setIsVerifying(true);
+        // Simulate calling a backend API like getChatMember
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        setIsVerifying(false);
+        verifyChannelSubscription();
+      } else {
+        onClaim();
+      }
     } else {
       openQuestLink();
       onClaim();

@@ -259,6 +259,7 @@ interface GameActions {
     totalReferralsCount: number;
   }) => void;
   completeTutorial: () => void;
+  verifyChannelSubscription: () => void;
 }
 
 type GameStore = PlayerState & GameActions;
@@ -334,6 +335,7 @@ function createInitialPlayerState(): PlayerState {
     validReferralsCount: 0,
     totalReferralsCount: 0,
     hasCompletedTutorial: false,
+    hasJoinedChannel: false,
   };
 }
 
@@ -834,7 +836,7 @@ export const useGameStore = create<GameStore>()(
       },
 
       claimQuest: (questId) => {
-        const { claimedQuests, walletAddress, carTier, racesWon, syndicateId, validReferralsCount } = get();
+        const { claimedQuests, walletAddress, carTier, racesWon, syndicateId, validReferralsCount, hasJoinedChannel } = get();
         if (claimedQuests.includes(questId)) return false;
 
         const quest = QUESTS.find((q) => q.id === questId);
@@ -846,6 +848,7 @@ export const useGameStore = create<GameStore>()(
             racesWon,
             syndicateId,
             validReferralsCount,
+            hasJoinedChannel,
           })
         ) {
           return false;
@@ -917,6 +920,7 @@ export const useGameStore = create<GameStore>()(
         }),
         
       completeTutorial: () => set({ hasCompletedTutorial: true }),
+      verifyChannelSubscription: () => set({ hasJoinedChannel: true }),
     }),
     {
       name: STORAGE_KEY,

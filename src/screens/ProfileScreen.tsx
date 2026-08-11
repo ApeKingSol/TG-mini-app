@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   ArrowUpFromLine,
   Clock,
+  HelpCircle,
   Lock,
   ShieldAlert,
   Wallet,
@@ -102,7 +103,7 @@ export function ProfileScreen({ onBack, onReplayTutorial }: ProfileScreenProps &
         <button
           type="button"
           onClick={onBack}
-          className="flex items-center gap-1 text-xs font-bold text-neutral-300"
+          className="flex w-10 items-center gap-1 text-xs font-bold text-neutral-300"
         >
           <ArrowLeft className="h-3.5 w-3.5" strokeWidth={2.5} />
           Back
@@ -110,7 +111,18 @@ export function ProfileScreen({ onBack, onReplayTutorial }: ProfileScreenProps &
         <p className="flex-1 text-center font-display text-sm font-bold uppercase tracking-wide text-neon-cyan">
           Player Profile
         </p>
-        <span className="w-10" aria-hidden="true" />
+        <div className="flex w-10 justify-end">
+          {onReplayTutorial && (
+            <button
+              type="button"
+              onClick={onReplayTutorial}
+              className="p-1 text-neutral-500 transition-colors hover:text-neon-cyan"
+              aria-label="Replay Tutorial"
+            >
+              <HelpCircle className="h-4 w-4" strokeWidth={2.5} />
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="rounded-xl border border-neon-magenta/40 bg-neon-magenta/10 p-4 text-center">
@@ -217,18 +229,6 @@ export function ProfileScreen({ onBack, onReplayTutorial }: ProfileScreenProps &
             )}
           </div>
         )}
-      </div>
-
-      <div>
-        <motion.button
-          type="button"
-          onClick={onReplayTutorial}
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.97 }}
-          className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg border border-neutral-700 bg-black/40 py-2.5 font-display text-[11px] font-bold uppercase tracking-[0.2em] text-neutral-400 transition-colors hover:border-neon-cyan/50 hover:bg-neon-cyan/10 hover:text-neon-cyan"
-        >
-          Replay Tutorial
-        </motion.button>
       </div>
 
       {isAdminAccount() && <AdminPanel />}

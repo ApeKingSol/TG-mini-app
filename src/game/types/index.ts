@@ -196,4 +196,5 @@ export interface PlayerState {
   totalReferralsCount: number;
   /** Whether the user has completed the initial tutorial flow. */
   hasCompletedTutorial: boolean;
+  hasJoinedChannel: boolean;
 }
