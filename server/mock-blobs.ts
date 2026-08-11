@@ -8,7 +8,14 @@ export function getStore(nameOrOptions: string | { name: string, consistency?: s
   const store = stores.get(name)!;
   return {
     get: async (key: string, options?: any) => store.get(key) ?? null,
-    setJSON: async (key: string, value: any, options?: any) => { 
+    setJSON: async (key: string, value: any, options?: any) => {
+         if (options?.onlyIfNew && store.has(key)) return { modified: false };
+         if (options?.onlyIfMatch && options.onlyIfMatch !== 'mock-etag') return { modified: false };
+        store.set(key, value); 
+         return { modified: true }; 
+     },
+    set: async (key: string, value: any, options?: any) => {
+         if (options?.onlyIfNew && store.has(key)) return { modified: false }; 
         if (options?.onlyIfMatch && options.onlyIfMatch !== 'mock-etag') return { modified: false };
         store.set(key, value); 
         return { modified: true }; 

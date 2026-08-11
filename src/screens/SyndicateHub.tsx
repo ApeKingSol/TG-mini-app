@@ -219,7 +219,7 @@ function CreateScreen({ onBack, onCreated }: CreateScreenProps) {
     setIsSubmitting(true);
 
     if (!spendNeon(CREATE_COST_NEON, 'Syndicate Charter')) {
-      setError('INSUFFICIENT NEON');
+      setError(`INSUFFICIENT NEON (${CREATE_COST_NEON} REQUIRED)`);
       setIsSubmitting(false);
       return;
     }

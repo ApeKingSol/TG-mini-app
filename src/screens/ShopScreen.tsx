@@ -204,7 +204,7 @@ export function ShopModal({ onClose }: ShopModalProps) {
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       onClick={onClose}
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/70 px-4 pt-20 backdrop-blur-sm"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm"
     >
       <motion.div
         initial={{ opacity: 0, y: -24, scale: 0.95 }}
@@ -212,7 +212,7 @@ export function ShopModal({ onClose }: ShopModalProps) {
         exit={{ opacity: 0, y: -24, scale: 0.95 }}
         transition={{ duration: 0.25, ease: 'easeOut' }}
         onClick={(event) => event.stopPropagation()}
-        className="panel-cut max-h-[85vh] w-full max-w-sm overflow-y-auto border border-neon-cyan/50 bg-bg-panel p-4 text-left shadow-lg"
+        className="panel-cut max-h-[85vh] w-full max-w-sm overflow-y-auto border border-neon-cyan/50 bg-bg-panel p-4 text-left shadow-lg scrollbar-hide"
       >
         <div className="mb-3 flex items-center justify-between">
           <p className="font-display text-sm font-bold uppercase tracking-widest text-neon-cyan">
