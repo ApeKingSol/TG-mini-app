@@ -1,0 +1,621 @@
+@import "tailwindcss";
+
+@theme {
+  --color-neon-cyan: #00f0ff;
+  --color-neon-magenta: #ff2ee6;
+  /* Industrial warning-orange accent — used sparingly (thin borders, small decorative bits)
+     to break up the cyan/magenta duotone and read as "hazard tape on a junkyard rig" rather
+     than another clean neon. */
+  --color-amber: #ff9500;
+  --color-scrap: #b8b3a3;
+  /* Smuggler's Run's push-your-luck palette — toxic green for success/cash-out, danger red for
+     risk/bust. Deliberately more saturated/alarming than the cyan/magenta duotone elsewhere so
+     this mode reads as its own tense, hazardous space rather than another Race Hub screen. */
+  --color-toxic-green: #39ff14;
+  --color-danger-red: #ff003c;
+  --color-bg-deep: #08080a;
+  --color-bg-panel: #16161a;
+
+  --font-sans: 'Rajdhani', system-ui, 'Segoe UI', Roboto, sans-serif;
+  --font-display: 'Orbitron', system-ui, sans-serif;
+  /* Small labels, stat readouts, and corner greebles — a monospaced terminal face so those
+     bits read as "diagnostic readout" instead of body copy. */
+  --font-mono: 'Share Tech Mono', 'Courier New', monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  color: #e5e5e5;
+  font-family: var(--font-sans);
+  /* Prevent Telegram's pull-to-refresh / bounce scrolling from fighting the app UI */
+  overscroll-behavior-y: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Base page shell: a plain-black fallback so nothing flashes white behind the photo layers
+   below while they're loading. The photo itself, the darkening gradient, and the grain/
+   scanline texture all used to live on this single element's own `background-image` stack,
+   but a plain CSS background can't cross-fade between two different `url()`s when the active
+   screen changes — it just cuts instantly. They're now separate real elements (ScreenBackground
+   in App.tsx) stacked in DOM order behind everything else, so the photo layer specifically can
+   run a Framer Motion opacity transition while the gradient/grain/scanline stay put on top of
+   it, unaffected. */
+.bg-cyber-grid {
+  position: relative;
+  background-color: var(--color-bg-deep);
+}
+
+/* Fixed, viewport-pinned container for the two stacked layers below — sits behind every real
+   `bg-cyber-grid > *` (they get lifted to z-index 1+ below) but must NOT be caught by that
+   same lifting rule itself, or its z-index:0 here would get overridden back up to 1 and land
+   on top of the noise/scanline layer instead of under it. */
+.bg-screen-layers {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+}
+
+/* One per screen, cross-faded by Framer Motion (see ScreenBackground) — plain absolute fill,
+   no transition of its own here since the animation is handled in JS via motion props. */
+.bg-photo-layer {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+/* Darkens the photo top-to-bottom for UI readability — light enough at the top to show the
+   art, nearly opaque by the bottom where the floating nav sits. A static layer on top of the
+   photo stack (not baked into it) so it never needs to participate in the cross-fade itself. */
+.bg-gradient-overlay {
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(to bottom, rgba(10, 10, 15, 0.74) 0%, rgba(5, 5, 10, 0.97) 100%);
+}
+
+.bg-cyber-grid::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.05;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.bg-cyber-grid::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.035) 0px,
+    rgba(255, 255, 255, 0.035) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  mix-blend-mode: overlay;
+}
+
+/* Excludes `nav` (needs to stay `position: fixed`, or this unlayered rule would win over that
+   utility class and silently demote it to `relative`) and `.bg-screen-layers` (needs to stay
+   pinned at z-index 0, underneath the noise/scanline pseudo-elements above, rather than lifted
+   above them). */
+.bg-cyber-grid > *:not(nav):not(.bg-screen-layers) {
+  position: relative;
+  z-index: 1;
+}
+
+/* Angled, chamfered corners in place of border-radius — the two-corner-cut "HUD panel" shape
+   used for every major card. clip-path clips the border along with the box, so a plain
+   `border` still reads as a clean mitred edge on the cut corners in every engine this app
+   ships to (confirmed in WebKit, which is what Telegram's iOS/macOS clients embed). Two sizes
+   for the app's two panel scales; use whichever roughly matches the panel's padding. */
+.panel-cut {
+  clip-path: polygon(
+    14px 0%,
+    100% 0%,
+    100% calc(100% - 14px),
+    calc(100% - 14px) 100%,
+    0% 100%,
+    0% 14px
+  );
+}
+.panel-cut-sm {
+  clip-path: polygon(
+    8px 0%,
+    100% 0%,
+    100% calc(100% - 8px),
+    calc(100% - 8px) 100%,
+    0% 100%,
+    0% 8px
+  );
+}
+
+/* Floating glassmorphism dock: a heavily-blurred translucent pill detached from the screen
+   edges (positioned via left/right/bottom on the `nav` element itself, not here) rather than
+   a bolted-on full-width bar. backdrop-filter blurs whatever's showing through from the
+   atmospheric background behind it; the faint cyan border + soft drop shadow read as "high-
+   tech glass," not just a frosted rectangle. Doesn't clip the Garage FAB above it — that
+   button lives as a DOM sibling of this element, not a child, specifically so it can float
+   above this panel's rounded top edge unclipped (see BottomNav.tsx). */
+.nav-glass {
+  border-radius: 24px;
+  background: rgba(20, 20, 30, 0.45);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(0, 243, 255, 0.15);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+/* Auto-Drag's "bumpy road" wobble — a car riding a rough surface, not a smooth float — applied
+   to a wrapper *around* the car <img> for the whole race. Sits on its own element, separate
+   from the img's `.car-boost` (below) and the outer lane's translateX progress-creep, so none
+   of the three ever fight over the same `transform` property at once. */
+@keyframes road-bump {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  30% {
+    transform: translateY(-3px) rotate(-1.5deg);
+  }
+  60% {
+    transform: translateY(1px) rotate(1deg);
+  }
+}
+
+.animate-road-bump {
+  animation: road-bump 0.35s ease-in-out infinite;
+}
+
+/* NITRO! pulse — a brightness flash + drop-shadow glow + "wheelie" tilt, toggled via a plain
+   class (not a keyframe) so the existing `transition` on the img eases it in and back out over
+   ~0.3s on its own, without needing a second animation to manage. */
+.car-boost {
+  filter: brightness(1.6) drop-shadow(0 0 14px rgba(0, 240, 255, 0.85));
+  transform: translateY(-4px) rotate(-12deg);
+}
+
+/* The Active Race card's "at speed" backdrop: two layers of dashed streaks at different speeds
+   and angles for a cheap parallax feel, both pure CSS (no images, no extra DOM nodes — they're
+   pseudo-elements of whatever `.auto-drag-track` div sits behind the cars). Scrolls via
+   `background-position`, looping seamlessly because each keyframe travels exactly one repeat
+   tile's width. */
+.auto-drag-track {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  opacity: 0.7;
+}
+
+.auto-drag-track::before,
+.auto-drag-track::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-repeat: repeat;
+}
+
+.auto-drag-track::before {
+  background-image: repeating-linear-gradient(
+    100deg,
+    rgba(0, 240, 255, 0.09) 0px,
+    rgba(0, 240, 255, 0.09) 3px,
+    transparent 3px,
+    transparent 90px
+  );
+  animation: track-scroll-a 0.9s linear infinite;
+}
+
+.auto-drag-track::after {
+  background-image: repeating-linear-gradient(
+    100deg,
+    rgba(255, 46, 230, 0.06) 0px,
+    rgba(255, 46, 230, 0.06) 2px,
+    transparent 2px,
+    transparent 140px
+  );
+  animation: track-scroll-b 1.6s linear infinite;
+}
+
+@keyframes track-scroll-a {
+  from {
+    background-position-x: 0;
+  }
+  to {
+    background-position-x: -90px;
+  }
+}
+
+@keyframes track-scroll-b {
+  from {
+    background-position-x: 0;
+  }
+  to {
+    background-position-x: -140px;
+  }
+}
+
+/* --- Smuggler's Run --------------------------------------------------------------------- */
+
+/* The convoy car's resting state — a gentle hover/idle drift so it never looks like a static
+   product shot. Runs everywhere except the 'rolling' state, which swaps it for
+   .animate-car-shake instead (both animate `transform`, so only one is ever active at once). */
+@keyframes car-idle-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+.animate-car-idle {
+  animation: car-idle-float 2.4s ease-in-out infinite;
+}
+
+/* A rapid, jittery vibration for the "outcome unknown, engine redlining" tension of the rolling
+   state — deliberately irregular (uneven translate/rotate steps) rather than a smooth sine wave,
+   so it reads as barely-under-control rather than a polished bounce. */
+@keyframes intense-shake {
+  0%,
+  100% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  10% {
+    transform: translate(-2px, 1px) rotate(-1deg);
+  }
+  20% {
+    transform: translate(2px, -1px) rotate(1deg);
+  }
+  30% {
+    transform: translate(-3px, 0) rotate(-1.5deg);
+  }
+  40% {
+    transform: translate(3px, 1px) rotate(1.5deg);
+  }
+  50% {
+    transform: translate(-2px, -1px) rotate(-1deg);
+  }
+  60% {
+    transform: translate(2px, 1px) rotate(1deg);
+  }
+  70% {
+    transform: translate(-1px, 0) rotate(-0.5deg);
+  }
+  80% {
+    transform: translate(1px, 1px) rotate(0.5deg);
+  }
+  90% {
+    transform: translate(-1px, -1px) rotate(0deg);
+  }
+}
+.animate-car-shake {
+  animation: intense-shake 0.15s linear infinite;
+}
+
+/* The rolling-state panel's background — an alternating red/blue police-strobe wash. Uses
+   `steps(1)` so each half snaps instantly (a strobe, not a smooth crossfade) rather than
+   tweening through a muddy purple in between. */
+@keyframes siren-flash {
+  0%,
+  49% {
+    background-color: rgba(255, 0, 60, 0.16);
+    border-color: rgba(255, 0, 60, 0.55);
+  }
+  50%,
+  99% {
+    background-color: rgba(0, 140, 255, 0.16);
+    border-color: rgba(0, 140, 255, 0.55);
+  }
+  100% {
+    background-color: rgba(255, 0, 60, 0.16);
+    border-color: rgba(255, 0, 60, 0.55);
+  }
+}
+.animate-siren-flash {
+  animation: siren-flash 0.7s steps(1) infinite;
+}
+
+/* A stuttering, RGB-split flicker for distressed terminal readouts (the "EVADING CORP-SEC
+   SCANNERS" line, Busted's warning) — cheap CHROMATIC-aberration-style glitch via offset
+   text-shadows rather than a real pseudo-element split, swapped on hard steps so it reads as
+   signal interference instead of a smooth wobble. */
+@keyframes text-glitch-flicker {
+  0%,
+  100% {
+    transform: translateX(0);
+    text-shadow:
+      2px 0 rgba(255, 0, 60, 0.7),
+      -2px 0 rgba(0, 240, 255, 0.7);
+  }
+  20% {
+    transform: translateX(-1px);
+    text-shadow:
+      -2px 0 rgba(255, 0, 60, 0.7),
+      2px 0 rgba(0, 240, 255, 0.7);
+  }
+  40% {
+    transform: translateX(1px);
+    text-shadow: none;
+  }
+  60% {
+    transform: translateX(0);
+    text-shadow:
+      1px 0 rgba(255, 0, 60, 0.6),
+      -1px 0 rgba(0, 240, 255, 0.6);
+  }
+  80% {
+    transform: translateX(-2px);
+    text-shadow:
+      -1px 0 rgba(255, 0, 60, 0.6),
+      1px 0 rgba(0, 240, 255, 0.6);
+  }
+}
+.animate-text-glitch {
+  animation: text-glitch-flicker 0.4s steps(1) infinite;
+}
+
+/* The sector track's currently-resolving node — a stronger, faster pulse than a plain
+   `animate-pulse` opacity fade, so the one node whose outcome is still unknown visibly reads as
+   "hotter" than the calm, already-cleared ones beside it. */
+@keyframes node-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 10px rgba(255, 149, 0, 0.5),
+      0 0 0 0 rgba(255, 149, 0, 0.35);
+  }
+  50% {
+    box-shadow:
+      0 0 22px rgba(255, 149, 0, 0.9),
+      0 0 0 6px rgba(255, 149, 0, 0.12);
+  }
+}
+.animate-node-pulse {
+  animation: node-pulse 0.9s ease-in-out infinite;
+}
+
+/* Cash Out's "safe, inviting" glow — slower and softer than Push's, so the two buttons read as
+   opposite temperaments (calm/safe vs. urgent/dangerous) at a glance, not just different colors. */
+@keyframes safe-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 16px rgba(57, 255, 20, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 32px rgba(57, 255, 20, 0.75);
+  }
+}
+.animate-safe-pulse {
+  animation: safe-pulse 1.7s ease-in-out infinite;
+}
+
+/* Push's "this is a bad idea" glow — quicker and harsher than Cash Out's safe-pulse, deliberately
+   a bit alarming. */
+@keyframes danger-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 14px rgba(255, 0, 60, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(255, 0, 60, 0.7);
+  }
+}
+.animate-danger-pulse {
+  animation: danger-pulse 1s ease-in-out infinite;
+}
+
+/* The car stage's "Mirrored Seamless Track" — public/bg-tunnel.jpg isn't a genuinely tileable
+   pattern, so a plain `background-repeat: repeat-x` exposed a hard seam every tile. Instead, two
+   copies of the image sit side by side (see SmugglersRun.tsx's CarStage — the second copy
+   mirrored via `-scale-x-100`) inside this flex strip, which is exactly double the stage's width
+   and just translates from 0% to -50% (exactly one copy's width) on a loop. This class only owns
+   that translate animation; every other visual property (background-image/size/position on the
+   two child divs, the vignette, the car) lives in the JSX/Tailwind classes. */
+.smuggler-track {
+  animation: smuggler-track-scroll 20s linear infinite;
+}
+
+@keyframes smuggler-track-scroll {
+  from {
+    transform: translateX(0%);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+/* Rolling: the track is floored — the convoy is being chased. */
+.smuggler-track.is-rolling {
+  animation-duration: 3s;
+}
+
+/* Busted: the world has stopped dead, mid-frame, same beat as the car's own shake cutting out. */
+.smuggler-track.is-stopped {
+  animation-play-state: paused;
+}
+
+/* Rolling's reaction on the stage container itself — a faint inset glow low in the box (near
+   the road), not a full-panel color flash. Subtle by design: a hint of red/blue at the edges,
+   not an overwhelming wash. */
+@keyframes smuggler-stage-siren {
+  0%,
+  49% {
+    box-shadow: inset 0 -18px 26px -16px rgba(255, 0, 60, 0.5);
+  }
+  50%,
+  99% {
+    box-shadow: inset 0 -18px 26px -16px rgba(0, 140, 255, 0.5);
+  }
+  100% {
+    box-shadow: inset 0 -18px 26px -16px rgba(255, 0, 60, 0.5);
+  }
+}
+.smuggler-stage-siren {
+  animation: smuggler-stage-siren 0.7s steps(1) infinite;
+}
+
+/* The convoy car's grounding shadow — a squashed, heavily blurred glow directly under the tires
+   anchoring it to the road instead of floating. Same siren sync as the two above, just tinting
+   a solid color instead of a gradient/box-shadow. */
+@keyframes smuggler-shadow-siren {
+  0%,
+  49% {
+    background-color: rgba(255, 0, 60, 0.45);
+  }
+  50%,
+  99% {
+    background-color: rgba(0, 140, 255, 0.45);
+  }
+  100% {
+    background-color: rgba(255, 0, 60, 0.45);
+  }
+}
+.smuggler-shadow-siren {
+  animation: smuggler-shadow-siren 0.7s steps(1) infinite;
+}
+
+/* --- Night Siege ------------------------------------------------------------------------- */
+
+/* Each tap's damage number — spawns at the tap point, kicks up and slightly outward, then
+   drifts further up while fading. `forwards` holds the fully-transparent end state until React
+   unmounts the element (see the matching setTimeout in NightSiege.tsx), so it never snaps back
+   to visible for a frame first. */
+@keyframes float-up {
+  0% {
+    transform: translate(-50%, -50%) scale(0.85);
+    opacity: 0;
+  }
+  15% {
+    transform: translate(-50%, -70%) scale(1.15);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -180%) scale(1);
+    opacity: 0;
+  }
+}
+.animate-float-up {
+  animation: float-up 0.8s ease-out forwards;
+}
+
+/* The boss's "just got hit" jolt — short, sharp, and considerably harder than a subtle wobble
+   (large translate + rotate swings), re-triggered on every tap by remounting the element via a
+   changing `key` in NightSiege.tsx rather than toggling a class, so rapid-fire taps each restart
+   the animation cleanly instead of the second tap landing mid-animation and being ignored. */
+@keyframes heavy-shake {
+  0%,
+  100% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  10% {
+    transform: translate(-10px, 6px) rotate(-3deg);
+  }
+  20% {
+    transform: translate(9px, -7px) rotate(3deg);
+  }
+  30% {
+    transform: translate(-8px, 5px) rotate(-2.5deg);
+  }
+  40% {
+    transform: translate(8px, -6px) rotate(2.5deg);
+  }
+  50% {
+    transform: translate(-6px, 4px) rotate(-2deg);
+  }
+  60% {
+    transform: translate(6px, -4px) rotate(2deg);
+  }
+  70% {
+    transform: translate(-4px, 3px) rotate(-1deg);
+  }
+  80% {
+    transform: translate(4px, -2px) rotate(1deg);
+  }
+  90% {
+    transform: translate(-2px, 1px) rotate(-0.5deg);
+  }
+}
+.animate-heavy-shake {
+  animation: heavy-shake 0.3s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+}
+
+/* A tap's impact spark — a small shard that snaps to full size almost instantly, glows hard,
+   spins to a random angle (via the `--spark-rotation` custom property, set inline per-instance
+   in NightSiege.tsx since a single shared keyframe can't otherwise vary the angle per spawn),
+   then burns out over ~250ms. The element's own centering offset is a plain Tailwind
+   `-translate-x-1/2 -translate-y-1/2` (the modern standalone `translate` CSS property) so it
+   never fights with this keyframe's own `transform` (scale + rotate) — the same "separate
+   properties, no conflict" trick used for Smuggler's Run's car. */
+@keyframes spark-explode {
+  0% {
+    transform: scale(0.3) rotate(var(--spark-rotation, 0deg));
+    opacity: 1;
+    box-shadow:
+      0 0 6px 2px rgba(255, 210, 60, 0.9),
+      0 0 16px 5px rgba(255, 140, 0, 0.6);
+  }
+  35% {
+    transform: scale(1.5) rotate(var(--spark-rotation, 0deg));
+    opacity: 1;
+    box-shadow:
+      0 0 12px 4px rgba(255, 210, 60, 0.95),
+      0 0 24px 9px rgba(255, 120, 0, 0.75);
+  }
+  100% {
+    transform: scale(1.1) rotate(var(--spark-rotation, 0deg));
+    opacity: 0;
+    box-shadow: 0 0 2px 0 rgba(255, 140, 0, 0);
+  }
+}
+.animate-spark-explode {
+  animation: spark-explode 0.25s ease-out forwards;
+}
+
+/* A tap's red hit-glow — a soft radial burst behind the boss, purely reactive (no ambient/
+   looping version of this exists). The element it's applied to sits permanently at `opacity-0`
+   in its base class; this animation is the only thing that ever makes it visible, and only for
+   its own brief duration, snapping back to invisible afterward since there's no `forwards` hold. */
+@keyframes hit-glow {
+  0% {
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.animate-hit-glow {
+  animation: hit-glow 0.35s ease-out;
+}
+
+/* Night Siege's combat backdrop — background_syndicat.jpg rushing past behind the boss. Same
+   "Mirrored Seamless Track" fix as Smuggler's Run's tunnel (see that file's CSS comments for
+   the full rationale): two copies of the image side by side, the second mirrored via
+   `-scale-x-100` in NightSiege.tsx, so the seam between them is the image meeting its own
+   reflection instead of two unrelated edges. `furious-scroll` is deliberately fast (a couple of
+   seconds per full loop, not Smuggler's Run's idle 10-20s) — Night Siege's backdrop is *always*
+   supposed to feel like the convoy is being chased, there's no calmer "idle" variant of it. */
+.siege-scroll-track {
+  animation: furious-scroll 1.4s linear infinite;
+}
+
+@keyframes furious-scroll {
+  from {
+    transform: translateX(0%);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}

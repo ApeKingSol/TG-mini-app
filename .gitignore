@@ -1,0 +1,44 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Netlify CLI site-linkage state (created by `netlify link`/`netlify dev`)
+.netlify
+
+# Local Claude Code settings can accumulate secrets in the permission-rule history
+# (e.g. API tokens embedded in previously-allowed Bash commands) — never share these.
+.claude/settings.local.json
+
+# Environment variables (keep .env.example tracked, everything else local-only)
+.env
+.env.*
+!.env.example
+
+# Scratch dirs for one-off Python image-processing scripts (watermark removal, crops, etc.) —
+# raw inputs/outputs, not app source; the app only ever reads finished assets from public/
+__pycache__/
+input/
+input_cars/
+output/
+output_cars/
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
