@@ -155,7 +155,7 @@ async function verifyMembership(
   membership: ReturnType<typeof getStore>,
   syndicates?: ReturnType<typeof getStore>,
 ): Promise<boolean> {
-  const mySyndicateId = await membership.get(user.id, { type: 'text' });
+  const mySyndicateId = await membership.get(String(user.id), { type: 'text' });
   if (String(mySyndicateId) === String(syndicateId)) return true;
 
   if (syndicates) {
@@ -571,7 +571,7 @@ export default async (req: Request) => {
   const cooldowns = getStore({ name: 'night-siege-attack-cooldown', consistency: 'strong' });
   const syndicates = getStore({ name: 'syndicates', consistency: 'strong' });
 
-  if (req.method === 'GET') return handleGet(req, bosses, membership, cooldowns);
+  if (req.method === 'GET') return handleGet(req, bosses, membership, cooldowns, syndicates);
   if (req.method === 'POST') return handlePost(req, bosses, membership, cooldowns, syndicates);
   return new Response('Method Not Allowed', { status: 405 });
 };
