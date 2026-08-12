@@ -533,8 +533,9 @@ function AutoDragRace({ onExit }: AutoDragRaceProps) {
     setBetAmount(bet);
     setRivalCarImage(rivalImage);
 
-    const chance = computeWinChancePercent(playerPower, rivalPowerValue);
-    const winnerSide: RaceSide = Math.random() * 100 < chance ? 'player' : 'rival';
+    const playerScore = playerPower + (Math.random() * 100);
+    const opponentScore = rivalPowerValue + (Math.random() * 100);
+    const winnerSide: RaceSide = playerScore > opponentScore ? 'player' : 'rival';
     winnerRef.current = winnerSide;
 
     const boostIndex = 3 + Math.floor(Math.random() * 3);

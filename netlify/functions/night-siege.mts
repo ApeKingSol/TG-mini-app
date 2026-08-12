@@ -155,7 +155,7 @@ async function verifyMembership(
   membership: ReturnType<typeof getStore>,
 ): Promise<boolean> {
   const mySyndicateId = await membership.get(user.id, { type: 'text' });
-  return mySyndicateId === syndicateId;
+  return String(mySyndicateId) === String(syndicateId);
 }
 
 /** Just the fields this file needs off a Syndicate record (see syndicates.mts's own
@@ -164,8 +164,8 @@ async function verifyMembership(
  * `coLeaderIds` is optional here for the same reason syndicates.mts normalizes it: a Syndicate
  * created before Co-Leader roles existed won't have this key in Blobs at all. */
 interface MinimalSyndicateRecord {
-  leaderId: string;
-  coLeaderIds?: string[];
+  leaderId: string | number;
+  coLeaderIds?: (string | number)[];
 }
 
 /** Resolves `userId`'s standing within `syndicateId` — Leader, Co-Leader, or a regular member.
@@ -179,8 +179,8 @@ async function getSyndicateRole(
 ): Promise<SyndicateRole> {
   const record = (await syndicates.get(syndicateId, { type: 'json' })) as MinimalSyndicateRecord | null;
   if (!record) return 'member';
-  if (record.leaderId === userId) return 'leader';
-  if ((record.coLeaderIds ?? []).includes(userId)) return 'co-leader';
+  if (String(record.leaderId) === String(userId)) return 'leader';
+  if ((record.coLeaderIds ?? []).map(String).includes(String(userId))) return 'co-leader';
   return 'member';
 }
 

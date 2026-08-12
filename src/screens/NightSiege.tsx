@@ -486,7 +486,7 @@ function NoActiveRaidPanel({
           <p className="text-xs text-neutral-500">
             Rally the Syndicate — start a raid on the next Corporate Convoy.
           </p>
-          {startRaidError && (
+          {startRaidError && startRaidError !== loadError && (
             <p className="text-xs font-bold uppercase tracking-widest text-danger-red">
               {startRaidError}
             </p>
