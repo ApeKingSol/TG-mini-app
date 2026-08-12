@@ -153,9 +153,19 @@ async function verifyMembership(
   user: VerifiedTelegramUser,
   syndicateId: string,
   membership: ReturnType<typeof getStore>,
+  syndicates?: ReturnType<typeof getStore>,
 ): Promise<boolean> {
   const mySyndicateId = await membership.get(user.id, { type: 'text' });
-  return String(mySyndicateId) === String(syndicateId);
+  if (String(mySyndicateId) === String(syndicateId)) return true;
+
+  if (syndicates) {
+    const record = (await syndicates.get(syndicateId, { type: 'json' })) as MinimalSyndicateRecord | null;
+    if (record && (record.memberIds ?? []).map(String).includes(String(user.id))) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 /** Just the fields this file needs off a Syndicate record (see syndicates.mts's own
@@ -166,6 +176,7 @@ async function verifyMembership(
 interface MinimalSyndicateRecord {
   leaderId: string | number;
   coLeaderIds?: (string | number)[];
+  memberIds?: (string | number)[];
 }
 
 /** Resolves `userId`'s standing within `syndicateId` — Leader, Co-Leader, or a regular member.
