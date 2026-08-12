@@ -115,7 +115,7 @@ function formatCountdown(ms: number): string {
  * current member can claim their role-tiered $NEON reward exactly once for that kill. */
 export function NightSiege({ syndicateId, myRole, onDamageLogUpdate }: NightSiegeProps) {
   const storeSyndicateId = useGameStore((state) => state.syndicateId);
-  const activeSyndicateId = storeSyndicateId || syndicateId;
+  const activeSyndicateId = syndicateId;
   const carTier = useGameStore((state) => state.carTier);
   const lastBossAttackTime = useGameStore((state) => state.lastBossAttackTime);
   const recordBossAttack = useGameStore((state) => state.recordBossAttack);

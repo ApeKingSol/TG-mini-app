@@ -161,6 +161,7 @@ async function verifyMembership(
   if (syndicates) {
     const record = (await syndicates.get(syndicateId, { type: 'json' })) as MinimalSyndicateRecord | null;
     if (record && (record.memberIds ?? []).map(String).includes(String(user.id))) {
+      await membership.set(String(user.id), syndicateId);
       return true;
     }
   }
