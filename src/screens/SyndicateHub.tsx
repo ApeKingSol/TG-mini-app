@@ -476,9 +476,9 @@ function ActiveScreen({ syndicate, onLeft, onSyndicateUpdate }: ActiveScreenProp
   // now backfills coLeaderIds itself too (see normalizeSyndicateRecord in syndicates.mts), but
   // this render should never trust a network response's shape unconditionally either.
   const myRole: MyRole =
-    myId !== null && myId === syndicate.leaderId
+    myId !== null && String(myId) === String(syndicate.leaderId)
       ? 'leader'
-      : myId !== null && (syndicate.coLeaderIds ?? []).includes(myId)
+      : myId !== null && (syndicate.coLeaderIds ?? []).map(String).includes(String(myId))
         ? 'co-leader'
         : 'member';
 
@@ -659,7 +659,7 @@ function MemberRosterCard({
                  or a boss whose damageLog hasn't been fetched yet — this render must never
                  crash regardless of what shape a legacy record or an in-flight fetch hands it. */}
               {(syndicate.members ?? []).map((member) => {
-                const isSelf = member.id === myId;
+                const isSelf = String(member.id) === String(myId);
                 const canPromote =
                   myRole === 'leader' && !isSelf && !member.isLeader && !member.isCoLeader;
                 const canDemote = myRole === 'leader' && !isSelf && member.isCoLeader;

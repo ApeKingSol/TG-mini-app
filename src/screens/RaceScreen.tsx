@@ -527,15 +527,22 @@ function AutoDragRace({ onExit }: AutoDragRaceProps) {
     rivalPowerValue: number,
     rivalImage: string,
     betLabel: string,
+    forcedWinnerId?: string,
   ): boolean => {
     if (neon < bet || !spendNeon(bet, betLabel)) return false;
 
     setBetAmount(bet);
     setRivalCarImage(rivalImage);
 
-    const playerScore = playerPower + (Math.random() * 100);
-    const opponentScore = rivalPowerValue + (Math.random() * 100);
-    const winnerSide: RaceSide = playerScore > opponentScore ? 'player' : 'rival';
+    let winnerSide: RaceSide;
+    if (forcedWinnerId) {
+      winnerSide = forcedWinnerId === getTelegramUserId() ? 'player' : 'rival';
+    } else {
+      let playerScore = playerPower + (Math.random() * 100);
+      const opponentScore = rivalPowerValue + (Math.random() * 100);
+      if (playerScore === opponentScore) playerScore += 1;
+      winnerSide = playerScore > opponentScore ? 'player' : 'rival';
+    }
     winnerRef.current = winnerSide;
 
     const boostIndex = 3 + Math.floor(Math.random() * 3);
@@ -640,6 +647,7 @@ function AutoDragRace({ onExit }: AutoDragRaceProps) {
       rivalPowerValue,
       rivalImage,
       `Auto-Drag — Bet (vs ${opponent.opponentName})`,
+      opponent.winnerId,
     );
   };
 

@@ -18,6 +18,7 @@ export interface OpenChallenge {
   opponentName: string;
   opponentCarTier: number;
   betAmount: number;
+  winnerId?: string;
 }
 
 const MATCHMAKING_ENDPOINT = '/api/matchmaking';

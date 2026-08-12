@@ -2,6 +2,11 @@ import type { Context } from '@netlify/functions';
 import { getStore } from '../../server/mock-blobs';
 import { extractInitData, verifyInitData } from './_shared/verifyInitData';
 import { getLeagueForTier, type LeagueId } from '../../src/game/config/carTiers';
+import { getCarStats } from '../../src/game/config/economy';
+
+function getStatPower(stats: { topSpeed: number; acceleration: number; handling: number }): number {
+  return stats.topSpeed + stats.acceleration + stats.handling;
+}
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 /** An open race nobody accepted within this window is treated as abandoned (the host closed the
@@ -25,6 +30,7 @@ interface StoredRace {
   accepterId?: string;
   accepterName?: string;
   accepterCarTier?: number;
+  winnerId?: string;
 }
 
 /** The shape src/game/mock/matchmaking.ts's OpenChallenge already expects — describes "the other
@@ -35,6 +41,7 @@ interface OpenChallenge {
   opponentName: string;
   opponentCarTier: number;
   betAmount: number;
+  winnerId?: string;
 }
 
 function toOpenChallengeFromHost(record: StoredRace): OpenChallenge {
@@ -43,6 +50,7 @@ function toOpenChallengeFromHost(record: StoredRace): OpenChallenge {
     opponentName: record.hostName,
     opponentCarTier: record.hostCarTier,
     betAmount: record.betAmount,
+    winnerId: record.winnerId,
   };
 }
 
@@ -53,6 +61,7 @@ function toOpenChallengeFromAccepter(record: StoredRace): OpenChallenge | null {
     opponentName: record.accepterName,
     opponentCarTier: record.accepterCarTier,
     betAmount: record.betAmount,
+    winnerId: record.winnerId,
   };
 }
 
@@ -218,12 +227,20 @@ async function handleAccept(
     const existing = await races.getWithMetadata(found.key, { type: 'json' });
     if (!existing) return jsonResponse({ error: 'This match is no longer available.' }, 404);
 
+    const hostPower = getStatPower(getCarStats(found.record.hostCarTier, []));
+    const accepterPower = getStatPower(getCarStats(carTier, []));
+    let hostScore = hostPower + (Math.random() * 100);
+    const accepterScore = accepterPower + (Math.random() * 100);
+    if (hostScore === accepterScore) hostScore += 1;
+    const winnerId = hostScore > accepterScore ? found.record.hostId : user.id;
+
     const updated: StoredRace = {
       ...found.record,
       status: 'matched',
       accepterId: user.id,
       accepterName: user.firstName,
       accepterCarTier: carTier,
+      winnerId,
     };
     const result = await races.setJSON(found.key, updated, { onlyIfMatch: existing.etag });
     if (result.modified) return jsonResponse({ opponent: toOpenChallengeFromHost(updated) });
