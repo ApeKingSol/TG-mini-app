@@ -153,20 +153,9 @@ async function verifyMembership(
   user: VerifiedTelegramUser,
   syndicateId: string,
   membership: ReturnType<typeof getStore>,
-  syndicates?: ReturnType<typeof getStore>,
 ): Promise<boolean> {
-  const mySyndicateId = await membership.get(String(user.id), { type: 'text' });
-  if (String(mySyndicateId) === String(syndicateId)) return true;
-
-  if (syndicates) {
-    const record = (await syndicates.get(syndicateId, { type: 'json' })) as MinimalSyndicateRecord | null;
-    if (record && (record.memberIds ?? []).map(String).includes(String(user.id))) {
-      await membership.set(String(user.id), syndicateId);
-      return true;
-    }
-  }
-
-  return false;
+  const mySyndicateId = await membership.get(user.id, { type: 'text' });
+  return String(mySyndicateId) === String(syndicateId);
 }
 
 /** Just the fields this file needs off a Syndicate record (see syndicates.mts's own
@@ -177,7 +166,6 @@ async function verifyMembership(
 interface MinimalSyndicateRecord {
   leaderId: string | number;
   coLeaderIds?: (string | number)[];
-  memberIds?: (string | number)[];
 }
 
 /** Resolves `userId`'s standing within `syndicateId` — Leader, Co-Leader, or a regular member.
@@ -223,14 +211,13 @@ async function handleGet(
   bosses: ReturnType<typeof getStore>,
   membership: ReturnType<typeof getStore>,
   cooldowns: ReturnType<typeof getStore>,
-  syndicates: ReturnType<typeof getStore>,
 ): Promise<Response> {
   const user = verifyInitData(req.headers.get('x-telegram-init-data') ?? '', BOT_TOKEN);
   if (!user) return jsonResponse({ error: 'invalid or missing Telegram initData' }, 401);
 
   const syndicateId = new URL(req.url).searchParams.get('syndicateId') ?? '';
   if (!syndicateId) return jsonResponse({ error: 'syndicateId is required.' }, 400);
-  if (!(await verifyMembership(user, syndicateId, membership, syndicates))) {
+  if (!(await verifyMembership(user, syndicateId, membership))) {
     return jsonResponse({ error: 'You are not a member of this Syndicate.' }, 403);
   }
 
@@ -278,7 +265,7 @@ async function handleStartRaid(
 ): Promise<Response> {
   const syndicateId = typeof body.syndicateId === 'string' ? body.syndicateId : '';
   if (!syndicateId) return jsonResponse({ error: 'syndicateId is required.' }, 400);
-  if (!(await verifyMembership(user, syndicateId, membership, syndicates))) {
+  if (!(await verifyMembership(user, syndicateId, membership))) {
     return jsonResponse({ error: 'You are not a member of this Syndicate.' }, 403);
   }
 
@@ -341,7 +328,6 @@ async function handleSubmitDamage(
   bosses: ReturnType<typeof getStore>,
   membership: ReturnType<typeof getStore>,
   cooldowns: ReturnType<typeof getStore>,
-  syndicates: ReturnType<typeof getStore>,
 ): Promise<Response> {
   const syndicateId = typeof body.syndicateId === 'string' ? body.syndicateId : '';
   const rawDamage = typeof body.totalSessionDamage === 'number' ? body.totalSessionDamage : NaN;
@@ -353,7 +339,7 @@ async function handleSubmitDamage(
   if (!Number.isFinite(rawCarTier) || rawCarTier < 1) {
     return jsonResponse({ error: 'carTier must be a positive number.' }, 400);
   }
-  if (!(await verifyMembership(user, syndicateId, membership, syndicates))) {
+  if (!(await verifyMembership(user, syndicateId, membership))) {
     return jsonResponse({ error: 'You are not a member of this Syndicate.' }, 403);
   }
 
@@ -493,7 +479,7 @@ async function handleClaim(
 ): Promise<Response> {
   const syndicateId = typeof body.syndicateId === 'string' ? body.syndicateId : '';
   if (!syndicateId) return jsonResponse({ error: 'syndicateId is required.' }, 400);
-  if (!(await verifyMembership(user, syndicateId, membership, syndicates))) {
+  if (!(await verifyMembership(user, syndicateId, membership))) {
     return jsonResponse({ error: 'You are not a member of this Syndicate.' }, 403);
   }
 
@@ -554,7 +540,7 @@ async function handlePost(
     case 'start-raid':
       return handleStartRaid(user, payload as StartRaidBody, bosses, membership, syndicates, cooldowns);
     case 'submit-damage':
-      return handleSubmitDamage(user, payload as SubmitDamageBody, bosses, membership, cooldowns, syndicates);
+      return handleSubmitDamage(user, payload as SubmitDamageBody, bosses, membership, cooldowns);
     case 'claim':
       return handleClaim(user, payload as ClaimBody, bosses, membership, syndicates);
     default:
@@ -572,7 +558,7 @@ export default async (req: Request) => {
   const cooldowns = getStore({ name: 'night-siege-attack-cooldown', consistency: 'strong' });
   const syndicates = getStore({ name: 'syndicates', consistency: 'strong' });
 
-  if (req.method === 'GET') return handleGet(req, bosses, membership, cooldowns, syndicates);
+  if (req.method === 'GET') return handleGet(req, bosses, membership, cooldowns);
   if (req.method === 'POST') return handlePost(req, bosses, membership, cooldowns, syndicates);
   return new Response('Method Not Allowed', { status: 405 });
 };

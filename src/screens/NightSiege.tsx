@@ -114,8 +114,6 @@ function formatCountdown(ms: number): string {
  * once the timer runs out, rather than one request per tap. Once the shared HP reaches 0, every
  * current member can claim their role-tiered $NEON reward exactly once for that kill. */
 export function NightSiege({ syndicateId, myRole, onDamageLogUpdate }: NightSiegeProps) {
-  const storeSyndicateId = useGameStore((state) => state.syndicateId);
-  const activeSyndicateId = syndicateId;
   const carTier = useGameStore((state) => state.carTier);
   const lastBossAttackTime = useGameStore((state) => state.lastBossAttackTime);
   const recordBossAttack = useGameStore((state) => state.recordBossAttack);
@@ -175,9 +173,9 @@ export function NightSiege({ syndicateId, myRole, onDamageLogUpdate }: NightSieg
   };
 
   useEffect(() => {
-    fetchNightSiegeStatus(activeSyndicateId).then(applyStatus).catch(handleFetchError);
+    fetchNightSiegeStatus(syndicateId).then(applyStatus).catch(handleFetchError);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeSyndicateId]);
+  }, [syndicateId]);
 
   // Keeps the shared status honest while sitting idle — another member's session, a Leader/
   // Co-Leader starting/restarting the raid, a kill, or an expiry should all show up on their
@@ -189,11 +187,11 @@ export function NightSiege({ syndicateId, myRole, onDamageLogUpdate }: NightSieg
   useEffect(() => {
     if (tapPhase !== 'idle') return;
     const intervalId = window.setInterval(() => {
-      fetchNightSiegeStatus(activeSyndicateId).then(applyStatus).catch(handleFetchError);
+      fetchNightSiegeStatus(syndicateId).then(applyStatus).catch(handleFetchError);
     }, IDLE_POLL_INTERVAL_MS);
     return () => window.clearInterval(intervalId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeSyndicateId, tapPhase]);
+  }, [syndicateId, tapPhase]);
 
   const isBossDefeated = boss !== null && boss.currentHp <= 0;
   const alreadyClaimed =
@@ -224,7 +222,7 @@ export function NightSiege({ syndicateId, myRole, onDamageLogUpdate }: NightSieg
     setStartRaidError(null);
     setIsStartingRaid(true);
     try {
-      const status = await startRaid(activeSyndicateId);
+      const status = await startRaid(syndicateId);
       applyStatus(status);
     } catch (err) {
       setStartRaidError(err instanceof Error ? err.message.toUpperCase() : 'START FAILED');
@@ -299,7 +297,7 @@ export function NightSiege({ syndicateId, myRole, onDamageLogUpdate }: NightSieg
     setTapPhase('submitting');
     const finalDamage = sessionDamageRef.current;
     try {
-      const status = await submitDamage(activeSyndicateId, finalDamage, carTier);
+      const status = await submitDamage(syndicateId, finalDamage, carTier);
       applyStatus(status);
       recordBossAttack(Date.now());
     } catch (err) {
@@ -314,7 +312,7 @@ export function NightSiege({ syndicateId, myRole, onDamageLogUpdate }: NightSieg
     setClaimError(null);
     setIsClaiming(true);
     try {
-      const result = await claimBossReward(activeSyndicateId);
+      const result = await claimBossReward(syndicateId);
       creditBossKillReward(result.bossId, result.rewardNeon);
       setBoss((prev) => (prev ? { ...prev, alreadyClaimed: true } : prev));
     } catch (err) {
