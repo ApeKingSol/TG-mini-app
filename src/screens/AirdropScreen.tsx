@@ -27,15 +27,11 @@ export function AirdropScreen({ onBack }: AirdropScreenProps) {
   const syndicateId = useGameStore((state) => state.syndicateId);
   const validReferralsCount = useGameStore((state) => state.validReferralsCount);
   const hasJoinedChannel = useGameStore((state) => state.hasJoinedChannel);
-  const verifyChannelSubscription = useGameStore((state) => state.verifyChannelSubscription);
   const claimedQuests = useGameStore((state) => state.claimedQuests);
   const claimQuest = useGameStore((state) => state.claimQuest);
 
   const progress: QuestProgress = { walletAddress, carTier, racesWon, syndicateId, validReferralsCount, hasJoinedChannel };
-  // "Complete" means the on-chain/in-game milestone is met, not that its small NEON bonus has
-  // been clicked-and-claimed yet — qualifying for the airdrop allocation is about having done
-  // the thing, independent of whether the player remembered to collect the reward for it.
-  const completedCount = claimedQuests.length;
+  const completedCount = QUESTS.filter((quest) => claimedQuests.includes(quest.id)).length;
   const totalCount = QUESTS.length;
   const allQuestsComplete = completedCount === totalCount;
 
@@ -178,14 +174,13 @@ function QuestCard({ quest, isComplete, isClaimed, progressValue, onClaim }: Que
   };
 
   const [isVerifying, setIsVerifying] = useState(false);
-  const hasJoinedChannel = useGameStore((state) => state.hasJoinedChannel);
   const verifyChannelSubscription = useGameStore((state) => state.verifyChannelSubscription);
 
   const canInteract = canClaim || (!isComplete && hasActionLink);
 
   const handleQuestAction = async () => {
     if (!canInteract || isVerifying) return;
-    
+
     if (quest.id === 'subscribe_telegram_channel') {
       if (!isComplete) {
         openQuestLink();
@@ -197,10 +192,10 @@ function QuestCard({ quest, isComplete, isClaimed, progressValue, onClaim }: Que
       } else {
         onClaim();
       }
-    } else {
-      openQuestLink();
-      onClaim();
+      return;
     }
+
+    if (canClaim) onClaim();
   };
 
   return (
@@ -254,14 +249,14 @@ function QuestCard({ quest, isComplete, isClaimed, progressValue, onClaim }: Que
       <motion.button
         type="button"
         onClick={handleQuestAction}
-        disabled={!canInteract}
+        disabled={!canInteract || isVerifying}
         whileHover={canInteract ? { scale: 1.02 } : undefined}
         whileTap={canInteract ? { scale: 0.97 } : undefined}
         className={`mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border-2 py-2 font-display text-xs font-black uppercase tracking-widest transition-colors disabled:cursor-not-allowed ${
           isClaimed
             ? 'border-toxic-green/40 bg-toxic-green/5 text-toxic-green/70'
             : isComplete
-              ? 'border-neon-magenta bg-neon-magenta/15 text-neon-magenta shadow-[0_0_16px_rgba(255,46,230,0.35)]'
+              ? 'border-toxic-green bg-toxic-green/15 text-toxic-green shadow-[0_0_16px_rgba(57,255,20,0.35)]'
               : hasActionLink
                 ? 'border-amber/80 bg-amber/15 text-amber shadow-[0_0_12px_rgba(255,149,0,0.2)]'
                 : 'border-neutral-700 bg-black/20 text-neutral-500'
@@ -272,7 +267,7 @@ function QuestCard({ quest, isComplete, isClaimed, progressValue, onClaim }: Que
         ) : isClaimed ? (
           <>
             <Check className="h-3.5 w-3.5" strokeWidth={2.5} />
-            Claimed
+            CLAIMED
           </>
         ) : hasActionLink && !isComplete ? (
           <>
@@ -280,7 +275,7 @@ function QuestCard({ quest, isComplete, isClaimed, progressValue, onClaim }: Que
             Verify
           </>
         ) : isComplete ? (
-          'Claim Reward'
+          'CLAIM REWARD'
         ) : (
           <>
             <Lock className="h-3.5 w-3.5" strokeWidth={2} />

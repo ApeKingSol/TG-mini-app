@@ -23,9 +23,9 @@ import { useGameStore } from './game/store/GameStore';
 function App() {
   // Drives passive Scrap generation in the background; store stays a pure state container.
   useGameLoop();
+  const { isReady: isTelegramReady, isTelegram, userFirstName, userPhotoUrl } = useTelegram();
   // Cross-device sync (Netlify Function + Blobs) — a no-op outside an actual Telegram client.
-  const cloudSync = useCloudSync();
-  const { isTelegram, userFirstName, userPhotoUrl } = useTelegram();
+  const cloudSync = useCloudSync(isTelegramReady);
   const [activeScreen, setActiveScreen] = useState<ScreenId>('garage');
   const hasCompletedTutorial = useGameStore((state) => state.hasCompletedTutorial);
   const completeTutorial = useGameStore((state) => state.completeTutorial);
@@ -60,7 +60,7 @@ function App() {
   // that first check had already settled) worked fine. useGameLoop/useCloudSync/useTelegram
   // themselves still have to run unconditionally above this, per the rules of hooks — only the
   // JSX they'd otherwise feed is held back.
-  if (!cloudSync.status.isInitialized) {
+  if (!isTelegramReady || !cloudSync.status.isInitialized) {
     return <UplinkingScreen />;
   }
 
@@ -68,62 +68,69 @@ function App() {
     <>
       <div className="flex min-h-screen flex-col bg-cyber-grid">
         <ScreenBackground activeScreen={activeScreen} />
-      <OfflineEarningsToast />
-      <div className="flex-1 px-4 pb-[120px] pt-6">
-        {!isTelegram && (
-          <div className="panel-cut-sm mb-4 border border-amber/40 bg-amber/[0.06] px-3 py-2 font-mono text-[11px] uppercase tracking-wide text-amber">
-            [!] Running outside Telegram — open via a bot link for the full uplink
-          </div>
-        )}
-
-        <header className="relative mb-6 text-center">
-          {/* Explicit z-index, not just DOM order: the h1 below has a `drop-shadow` filter,
-             and per the CSS filter-effects spec any element with a filter is treated as if
-             `position: relative` for stacking purposes — that silently promoted it into the
-             same "positioned, z-index:auto" paint layer as this absolutely-positioned button,
-             and being later in the DOM it painted on top, swallowing every tap even though
-             the button itself was never broken. A real (non-auto) z-index wins regardless of
-             DOM order or sibling filters. */}
-          <AirdropEntryButton onClick={() => setActiveOverlay('airdrop')} />
-          <ProfileAvatarButton photoUrl={userPhotoUrl} onClick={() => setActiveOverlay('profile')} />
-          <h1 className="font-display text-2xl font-bold tracking-wide text-neon-cyan drop-shadow-[0_0_4px_rgba(0,240,255,0.85)]">
-            Cyber-Garage
-          </h1>
-          {userFirstName && (
-            <p className="mt-1 font-mono text-xs text-neutral-500">
-              &gt; Welcome, {userFirstName}_
-            </p>
+        <OfflineEarningsToast />
+        <div className="flex-1 px-4 pb-[120px] pt-6">
+          {!isTelegram && (
+            <div className="panel-cut-sm mb-4 border border-amber/40 bg-amber/[0.06] px-3 py-2 font-mono text-[11px] uppercase tracking-wide text-amber">
+              [!] Running outside Telegram — open via a bot link for the full uplink
+            </div>
           )}
-        </header>
 
-        <ReferralsEntryButton onClick={() => setActiveOverlay('referrals')} />
-
-        <CurrencyBar />
-
-        <main className="mt-6">
-          <AnimatePresence mode="wait">
-            {activeOverlay === 'profile' ? (
-              <ProfileScreen key="profile" onBack={() => setActiveOverlay(null)} onReplayTutorial={() => { setActiveOverlay(null); setForceTutorialOpen(true); }} />
-            ) : activeOverlay === 'airdrop' ? (
-              <AirdropScreen key="airdrop" onBack={() => setActiveOverlay(null)} />
-            ) : activeOverlay === 'referrals' ? (
-              <ReferralsScreen key="referrals" onBack={() => setActiveOverlay(null)} />
-            ) : (
-              <>
-                {activeScreen === 'junkyard' && <JunkyardScreen key="junkyard" />}
-                {activeScreen === 'garage' && <GarageScreen key="garage" />}
-                {activeScreen === 'race' && <RaceScreen key="race" />}
-              </>
+          <header className="relative mb-6 text-center">
+            {/* Explicit z-index, not just DOM order: the h1 below has a `drop-shadow` filter,
+               and per the CSS filter-effects spec any element with a filter is treated as if
+               `position: relative` for stacking purposes — that silently promoted it into the
+               same "positioned, z-index:auto" paint layer as this absolutely-positioned button,
+               and being later in the DOM it painted on top, swallowing every tap even though
+               the button itself was never broken. A real (non-auto) z-index wins regardless of
+               DOM order or sibling filters. */}
+            <AirdropEntryButton onClick={() => setActiveOverlay('airdrop')} />
+            <ProfileAvatarButton photoUrl={userPhotoUrl} onClick={() => setActiveOverlay('profile')} />
+            <h1 className="font-display text-2xl font-bold tracking-wide text-neon-cyan drop-shadow-[0_0_4px_rgba(0,240,255,0.85)]">
+              Cyber-Garage
+            </h1>
+            {userFirstName && (
+              <p className="mt-1 font-mono text-xs text-neutral-500">
+                &gt; Welcome, {userFirstName}_
+              </p>
             )}
-          </AnimatePresence>
-        </main>
+          </header>
+
+          <ReferralsEntryButton onClick={() => setActiveOverlay('referrals')} />
+
+          <CurrencyBar />
+
+          <main className="mt-6">
+            <AnimatePresence mode="wait">
+              {activeOverlay === 'profile' ? (
+                <ProfileScreen
+                  key="profile"
+                  onBack={() => setActiveOverlay(null)}
+                  onReplayTutorial={() => {
+                    setActiveOverlay(null);
+                    setForceTutorialOpen(true);
+                  }}
+                />
+              ) : activeOverlay === 'airdrop' ? (
+                <AirdropScreen key="airdrop" onBack={() => setActiveOverlay(null)} />
+              ) : activeOverlay === 'referrals' ? (
+                <ReferralsScreen key="referrals" onBack={() => setActiveOverlay(null)} />
+              ) : (
+                <>
+                  {activeScreen === 'junkyard' && <JunkyardScreen key="junkyard" />}
+                  {activeScreen === 'garage' && <GarageScreen key="garage" />}
+                  {activeScreen === 'race' && <RaceScreen key="race" />}
+                </>
+              )}
+            </AnimatePresence>
+          </main>
+        </div>
+
+        {activeOverlay === null && (
+          <BottomNav active={activeScreen} onChange={setActiveScreen} />
+        )}
       </div>
 
-      {activeOverlay === null && (
-        <BottomNav active={activeScreen} onChange={setActiveScreen} />
-      )}
-
-      </div>
       {(!hasCompletedTutorial || forceTutorialOpen) && <OnboardingModal onComplete={handleTutorialComplete} />}
     </>
   );

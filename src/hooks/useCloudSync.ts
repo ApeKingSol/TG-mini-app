@@ -179,7 +179,7 @@ function pushStateReliably(initData: string, state: PlayerState) {
  * happily sent this device's untouched, all-default local state (freshly reset because
  * Telegram had wiped the WebView's storage overnight) up to the backend, permanently
  * overwriting the player's real save before the pull ever got a chance to bring it down. */
-export function useCloudSync(): { status: CloudSyncStatus; syncNow: () => void } {
+export function useCloudSync(telegramReady: boolean): { status: CloudSyncStatus; syncNow: () => void } {
   const [status, setStatus] = useState<CloudSyncStatus>(initialStatus);
   const lastPushedAtRef = useRef(0);
   const pullRemoteRef = useRef<() => void>(() => {});
@@ -200,6 +200,8 @@ export function useCloudSync(): { status: CloudSyncStatus; syncNow: () => void }
   const isApplyingRemoteUpdateRef = useRef(false);
 
   useEffect(() => {
+    if (!telegramReady) return;
+
     if (!isRunningInTelegram()) {
       setStatus((s) => ({ ...s, isInitialized: true }));
       return;
@@ -364,7 +366,7 @@ export function useCloudSync(): { status: CloudSyncStatus; syncNow: () => void }
       window.removeEventListener('pagehide', handlePageHide);
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, []);
+  }, [telegramReady]);
 
   const syncNow = () => {
     pullRemoteRef.current();
