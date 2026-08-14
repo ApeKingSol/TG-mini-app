@@ -35,6 +35,7 @@ export function SmugglersRun({ onExit }: SmugglersRunProps) {
 
   const [gameState, setGameState] = useState<GameState>('idle');
   const [currentSector, setCurrentSector] = useState(0);
+  const [runId, setRunId] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [finalPayout, setFinalPayout] = useState(0);
   const [flash, setFlash] = useState<{ id: string; color: 'green' | 'red' } | null>(null);
@@ -61,10 +62,19 @@ export function SmugglersRun({ onExit }: SmugglersRunProps) {
     setIsBusy(true);
     setGameState('rolling');
     setCurrentSector(1);
-    await startConvoy(SMUGGLERS_RUN.ENTRY_FEE_NEON);
-    const { success } = await resolveSector(1);
-    setGameState(success ? 'decision' : 'busted');
-    setIsBusy(false);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      const { runId: newRunId } = await startConvoy(SMUGGLERS_RUN.ENTRY_FEE_NEON);
+      setRunId(newRunId);
+      const { success } = await resolveSector(1, newRunId);
+      setGameState(success ? 'decision' : 'busted');
+    } catch (err) {
+      console.error(err);
+      setGameState('idle');
+      addNeon(SMUGGLERS_RUN.ENTRY_FEE_NEON, "Smuggler's Run — Refund");
+    } finally {
+      setIsBusy(false);
+    }
   };
 
   const handlePushToNextSector = async () => {
@@ -73,20 +83,37 @@ export function SmugglersRun({ onExit }: SmugglersRunProps) {
     setIsBusy(true);
     setGameState('rolling');
     setCurrentSector(nextSector);
-    const { success } = await resolveSector(nextSector);
-    setGameState(success ? 'decision' : 'busted');
-    setIsBusy(false);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      const { success } = await resolveSector(nextSector, runId!);
+      setGameState(success ? 'decision' : 'busted');
+    } catch (err) {
+      console.error(err);
+      setGameState('busted'); // Treat failure as busted to escape infinite loading
+    } finally {
+      setIsBusy(false);
+    }
   };
 
   const handleCashOut = async () => {
     if (isBusy || !currentSectorConfig) return;
     setIsBusy(true);
-    const { finalMultiplier } = await cashOutConvoy(currentSectorConfig.rewardMultiplier);
-    const payout = Math.round(SMUGGLERS_RUN.ENTRY_FEE_NEON * finalMultiplier);
-    addNeon(payout, "Smuggler's Run — Cash Out");
-    setFinalPayout(payout);
-    setGameState('cashed_out');
-    setIsBusy(false);
+    try {
+      const { finalMultiplier, payout } = await cashOutConvoy(currentSectorConfig.rewardMultiplier, runId!);
+      const finalPayout = payout ?? Math.round(SMUGGLERS_RUN.ENTRY_FEE_NEON * finalMultiplier);
+      addNeon(finalPayout, "Smuggler's Run — Cash Out");
+      setFinalPayout(finalPayout);
+      setGameState('cashed_out');
+    } catch (err) {
+      console.error(err);
+      // Fallback
+      const finalPayout = Math.round(SMUGGLERS_RUN.ENTRY_FEE_NEON * currentSectorConfig.rewardMultiplier);
+      addNeon(finalPayout, "Smuggler's Run — Cash Out (Fallback)");
+      setFinalPayout(finalPayout);
+      setGameState('cashed_out');
+    } finally {
+      setIsBusy(false);
+    }
   };
 
   const handleRunItBack = () => {

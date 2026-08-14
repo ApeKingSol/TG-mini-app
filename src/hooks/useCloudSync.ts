@@ -4,9 +4,12 @@ import {
   getSyncableState,
   localLastSavedAtLoad,
   hadLocalSaveAtLoad,
+  getTelegramUserId
 } from '../game/store/GameStore';
 import { WebApp, isRunningInTelegram } from '../lib/telegram';
 import { registerReferralIfNewPlayer } from '../game/mock/referralsApi';
+import { fetchMySyndicate } from '../game/mock/syndicateApi';
+import { supabase } from '../lib/supabase';
 import type { PlayerState } from '../game/types';
 
 const SYNC_ENDPOINT = '/api/sync';
@@ -179,7 +182,7 @@ function pushStateReliably(initData: string, state: PlayerState) {
  * happily sent this device's untouched, all-default local state (freshly reset because
  * Telegram had wiped the WebView's storage overnight) up to the backend, permanently
  * overwriting the player's real save before the pull ever got a chance to bring it down. */
-export function useCloudSync(telegramReady: boolean): { status: CloudSyncStatus; syncNow: () => void } {
+export function useCloudSync(): { status: CloudSyncStatus; syncNow: () => void } {
   const [status, setStatus] = useState<CloudSyncStatus>(initialStatus);
   const lastPushedAtRef = useRef(0);
   const pullRemoteRef = useRef<() => void>(() => {});
@@ -200,8 +203,6 @@ export function useCloudSync(telegramReady: boolean): { status: CloudSyncStatus;
   const isApplyingRemoteUpdateRef = useRef(false);
 
   useEffect(() => {
-    if (!telegramReady) return;
-
     if (!isRunningInTelegram()) {
       setStatus((s) => ({ ...s, isInitialized: true }));
       return;
@@ -217,10 +218,37 @@ export function useCloudSync(telegramReady: boolean): { status: CloudSyncStatus;
     };
 
     const pullRemote = () => {
-      fetchRemoteState(initData)
-        .then((remote) => {
+      Promise.all([
+        fetchRemoteState(initData), 
+        fetchMySyndicate(),
+        (async () => {
+          if (supabase) {
+            const userId = getTelegramUserId();
+            if (userId) {
+              const { data, error } = await supabase.from('profiles').select('syndicate_id').eq('id', userId).maybeSingle();
+              if (error) {
+                console.warn('Error fetching Supabase profile:', error);
+              }
+              if (!data && !error) {
+                await supabase.from('profiles').upsert({ id: userId, syndicate_id: null }, { onConflict: 'id' }).catch((e) => {
+                  console.warn('Profile creation failed:', e);
+                });
+              }
+              return data?.syndicate_id || null;
+            }
+          }
+          return null;
+        })()
+      ])
+        .then(([remote, syndicate, supabaseSyndicateId]) => {
           if (cancelled) return;
           const isInitialPull = !hasPulledInitialStateRef.current;
+          
+          const remoteSyndicateId = supabaseSyndicateId || (syndicate ? syndicate.id : null) || (remote ? remote.syndicateId : null);
+          if (useGameStore.getState().syndicateId !== remoteSyndicateId) {
+            useGameStore.getState().setSyndicateId(remoteSyndicateId);
+          }
+
           setStatus((s) => ({
             ...s,
             isInitialized: true,
@@ -230,24 +258,14 @@ export function useCloudSync(telegramReady: boolean): { status: CloudSyncStatus;
             remoteScrapAtLastPull: remote ? remote.scrap : s.remoteScrapAtLastPull,
           }));
           if (remote) {
-            // Never adopt something older than what this device already knows about —
-            // either from its own load-time snapshot or from its own more recent push.
-            // Comparing only against the load-time snapshot (as the very first version of
-            // this hook did) meant a later periodic re-pull could wrongly downgrade local
-            // progress made *after* that snapshot if it happened to see a slightly stale
-            // remote read.
+            remote.syndicateId = remoteSyndicateId;
             const localBaseline = Math.max(localLastSavedAtLoad, lastPushedAtRef.current);
-            // On the very first pull of this session, that timestamp comparison can't be
-            // trusted on its own: if this device's storage was wiped (or this is a brand-new
-            // device), local state is 100% defaults whose `lastSaved` just got stamped to
-            // "now" at store-creation time — which reads as *newer* than a perfectly
-            // legitimate but older cloud save. `hadLocalSaveAtLoad` (captured directly off
-            // localStorage before any hydration touched it) is what tells them apart: no real
-            // local save existed, so there is nothing for a timestamp to protect and the
-            // cloud save wins outright.
             const shouldAdopt =
               (isInitialPull && !hadLocalSaveAtLoad) || remote.lastSaved > localBaseline;
-            if (shouldAdopt) applyRemoteState(remote);
+            
+            if (shouldAdopt) {
+              applyRemoteState(remote);
+            }
           } else if (isInitialPull) {
             // No save on file at all, on this session's very first pull — a genuinely new
             // account. This is the one moment a `?startapp=ref_X` launch can be safely linked:
@@ -366,7 +384,7 @@ export function useCloudSync(telegramReady: boolean): { status: CloudSyncStatus;
       window.removeEventListener('pagehide', handlePageHide);
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [telegramReady]);
+  }, []);
 
   const syncNow = () => {
     pullRemoteRef.current();

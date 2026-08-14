@@ -32,15 +32,21 @@ function saveToDisk() {
     }
     fs.writeFileSync(DATA_FILE, JSON.stringify(obj, null, 2));
   } catch (err) {
-    console.error('Failed to save blobs to disk:', err);
+    // silently fail in read-only lambda environments
   }
 }
 
 loadFromDisk();
 
 export function getStore(nameOrOptions: string | { name: string, consistency?: string }) {
-  if (process.env.NETLIFY) {
-    return getNetlifyStore(nameOrOptions);
+  // Always attempt to use the real Netlify Blobs first.
+  // In production Netlify Functions, this succeeds automatically.
+  // In local dev without netlify cli, this synchronously throws MissingBlobsEnvironmentError.
+  try {
+    const realStore = getNetlifyStore(nameOrOptions as any);
+    return realStore;
+  } catch (err) {
+    // Fall back to local mock store
   }
 
   const name = typeof nameOrOptions === 'string' ? nameOrOptions : nameOrOptions.name;

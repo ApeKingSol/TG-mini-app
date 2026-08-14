@@ -888,7 +888,7 @@ export const useGameStore = create<GameStore>()(
 
       recordBossAttack: (timestamp) => set({ lastBossAttackTime: timestamp }),
 
-      setSyndicateId: (syndicateId) => set({ syndicateId }),
+      setSyndicateId: (syndicateId) => set({ syndicateId, lastSaved: Date.now() }),
 
       creditReferralMilestoneReward: (neonCredited, scrapCredited) => {
         if (neonCredited <= 0 && scrapCredited <= 0) return;

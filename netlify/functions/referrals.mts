@@ -349,6 +349,7 @@ async function handlePost(
 }
 
 export default async (req: Request) => {
+  try {
   // 'strong' consistency throughout: every write in this file is a CAS read-modify-write (etag
   // or onlyIfNew) that depends on seeing the *current* value to correctly detect a conflict —
   // same reasoning night-siege.mts documents for its own use of 'strong' against this identical
@@ -360,6 +361,9 @@ export default async (req: Request) => {
   if (req.method === 'GET') return handleGet(req, saves);
   if (req.method === 'POST') return handlePost(req, saves, referralLinks, referralMilestones);
   return new Response('Method Not Allowed', { status: 405 });
+  } catch (e: any) {
+    return new Response(JSON.stringify({ error: e.message || String(e), stack: e.stack }), { status: 500 });
+  }
 };
 
 export const config = {

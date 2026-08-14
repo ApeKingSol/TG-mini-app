@@ -50,6 +50,7 @@ async function startServer() {
     'matchmaking',
     'night-siege',
     'referrals',
+    'smugglers-run',
     'sync',
     'syndicates',
     'telegram-webhook'

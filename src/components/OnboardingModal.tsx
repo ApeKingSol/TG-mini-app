@@ -1,9 +1,9 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { Car, ChevronRight, Gauge, Wallet, Wrench } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 
 interface OnboardingModalProps {
-  onComplete?: () => void;
+  onComplete: () => void;
 }
 
 const STEPS = [
@@ -56,30 +56,16 @@ const ACCENT_CLASSES = {
 
 export function OnboardingModal({ onComplete }: OnboardingModalProps) {
   const [currentStep, setCurrentStep] = useState(0);
-  const [isVisible, setIsVisible] = useState(false);
-
-  const STORAGE_KEY = 'cyber_garage_ftue_completed_v2';
-
-  useEffect(() => {
-    const hasCompleted = localStorage.getItem(STORAGE_KEY);
-    if (!hasCompleted) {
-      setIsVisible(true);
-    }
-  }, []);
-
-  if (!isVisible) return null;
-
   const step = STEPS[currentStep];
   const accent = ACCENT_CLASSES[step.accent];
   const isFinalStep = currentStep === STEPS.length - 1;
 
   const handlePrimaryAction = () => {
     if (isFinalStep) {
-      localStorage.setItem(STORAGE_KEY, 'true');
-      setIsVisible(false);
-      if (onComplete) onComplete();
+      onComplete();
       return;
     }
+
     setCurrentStep((value) => value + 1);
   };
 
@@ -93,7 +79,7 @@ export function OnboardingModal({ onComplete }: OnboardingModalProps) {
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(0,240,255,0.14),transparent_36%),radial-gradient(circle_at_bottom_right,rgba(255,149,0,0.12),transparent_34%)]" />
       <div className="pointer-events-none absolute inset-0 opacity-30 [background-image:linear-gradient(rgba(0,240,255,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(0,240,255,0.06)_1px,transparent_1px)] [background-size:28px_28px]" />
 
-      <section className="panel-cut relative mx-4 w-full max-w-md overflow-hidden border border-neon-cyan/35 bg-bg-deep/95 shadow-[0_0_60px_rgba(0,0,0,0.75)]">
+      <section className="panel-cut relative w-full max-w-md overflow-hidden border border-neon-cyan/35 bg-bg-deep/95 shadow-[0_0_60px_rgba(0,0,0,0.75)]">
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-neon-cyan to-transparent" />
         <div className="absolute inset-x-8 bottom-0 h-px bg-gradient-to-r from-transparent via-amber/70 to-transparent" />
 

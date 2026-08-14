@@ -1,4 +1,6 @@
 import { WebApp, isRunningInTelegram } from '../../lib/telegram';
+import { supabase } from '../../lib/supabase';
+import { getTelegramUserId, useGameStore, getSyncableState } from '../store/GameStore';
 
 /**
  * Syndicate API surface — backed by netlify/functions/syndicates.mts (Netlify Blobs, keyed by
@@ -107,44 +109,90 @@ export function fetchMySyndicate(): Promise<Syndicate | null> {
     .then((body) => body.syndicate);
 }
 
+/** Helper to forcefully save the GameStore to /api/sync and Supabase so the UI blocks until success */
+async function forceSyncGameState(newSyndicateId: string | null): Promise<void> {
+  const store = useGameStore.getState();
+  store.setSyndicateId(newSyndicateId);
+  
+  const now = Date.now();
+  const rawState = getSyncableState(useGameStore.getState());
+  const syncPayloadState = {
+    ...rawState,
+    syndicateId: newSyndicateId,
+    lastSaved: now,
+  };
+
+  useGameStore.setState({ syndicateId: newSyndicateId, lastSaved: now });
+
+  if (supabase) {
+    const userId = getTelegramUserId();
+    if (userId) {
+      const { error } = await supabase
+        .from('profiles')
+        .upsert({ id: userId, syndicate_id: newSyndicateId, updated_at: new Date(now).toISOString() }, { onConflict: 'id' });
+      if (error) {
+        console.warn('Supabase profile upsert warning:', error);
+      }
+    }
+  }
+
+  const response = await fetch('/api/sync', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ initData: WebApp.initData, state: syncPayloadState }),
+    cache: 'no-store',
+  });
+  
+  if (!response.ok) {
+    const errBody = await response.json().catch(() => ({}));
+    throw new Error(`Failed to synchronize player save state: ${response.status} ${JSON.stringify(errBody)}`);
+  }
+}
+
 /** Charters a brand-new Syndicate with the current player as its leader and sole member. The
  * server derives the leader's identity from validated initData, never from anything this
  * function sends — see netlify/functions/syndicates.mts's handleCreate. */
-export function createSyndicate(name: string, tag: string): Promise<Syndicate> {
+export async function createSyndicate(name: string, tag: string): Promise<Syndicate> {
   if (!isRunningInTelegram()) return requireTelegram();
-  return fetch(SYNDICATES_ENDPOINT, {
+  const response = await fetch(SYNDICATES_ENDPOINT, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ initData: WebApp.initData, action: 'create', name, tag }),
     cache: 'no-store',
-  }).then((response) => parseJsonOrThrow<Syndicate>(response));
+  });
+  const syndicate = await parseJsonOrThrow<Syndicate>(response);
+  await forceSyncGameState(syndicate.id);
+  return syndicate;
 }
 
 /** Adds the current player to an existing Syndicate by id. The server checks capacity/membership
  * atomically (compare-and-swap against the Blobs entry's etag) so two players joining a
  * near-full Syndicate at the same instant can't both succeed past its cap. */
-export function joinSyndicate(syndicateId: string): Promise<Syndicate> {
+export async function joinSyndicate(syndicateId: string): Promise<Syndicate> {
   if (!isRunningInTelegram()) return requireTelegram();
-  return fetch(SYNDICATES_ENDPOINT, {
+  const response = await fetch(SYNDICATES_ENDPOINT, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ initData: WebApp.initData, action: 'join', syndicateId }),
     cache: 'no-store',
-  }).then((response) => parseJsonOrThrow<Syndicate>(response));
+  });
+  const syndicate = await parseJsonOrThrow<Syndicate>(response);
+  await forceSyncGameState(syndicate.id);
+  return syndicate;
 }
 
 /** Removes the current player from whichever Syndicate they're in. A no-op (not an error) if
  * they aren't in one, same as the previous localStorage-backed version. */
-export function leaveSyndicate(): Promise<void> {
+export async function leaveSyndicate(): Promise<void> {
   if (!isRunningInTelegram()) return requireTelegram();
-  return fetch(SYNDICATES_ENDPOINT, {
+  const response = await fetch(SYNDICATES_ENDPOINT, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ initData: WebApp.initData, action: 'leave' }),
     cache: 'no-store',
-  })
-    .then((response) => parseJsonOrThrow<{ ok: true }>(response))
-    .then(() => undefined);
+  });
+  await parseJsonOrThrow<{ ok: true }>(response);
+  await forceSyncGameState(null);
 }
 
 /** Promotes a regular member to Co-Leader. Server-enforced: only the Leader can call this

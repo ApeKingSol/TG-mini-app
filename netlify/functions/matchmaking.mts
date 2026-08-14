@@ -152,7 +152,7 @@ async function handleHost(
 
   const league = getLeagueForTier(carTier).id;
   const record: StoredRace = {
-    id: crypto.randomUUID(),
+    id: (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)),
     league,
     status: 'open',
     hostId: user.id,
@@ -295,6 +295,7 @@ async function handlePost(req: Request, races: ReturnType<typeof getStore>): Pro
 }
 
 export default async (req: Request) => {
+  try {
   // 'strong' consistency trades a little latency for always reading the very latest write,
   // regardless of which region/instance served it — required here because a lobby browse is a
   // one-shot read with nothing to retry it (unlike sync.mts's save data, re-polled every 2s):
@@ -306,6 +307,9 @@ export default async (req: Request) => {
   if (req.method === 'GET') return handleGet(req, races);
   if (req.method === 'POST') return handlePost(req, races);
   return new Response('Method Not Allowed', { status: 405 });
+  } catch (e: any) {
+    return new Response(JSON.stringify({ error: e.message || String(e), stack: e.stack }), { status: 500 });
+  }
 };
 
 export const config = {

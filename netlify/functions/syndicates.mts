@@ -78,7 +78,7 @@ function toPublicSyndicate(record: StoredSyndicate): Syndicate {
     coLeaderIds,
     members: record.memberIds.map((id) => ({
       id,
-      name: memberNames[id] ?? `Runner #${id.slice(-4)}`,
+      name: memberNames[id] ?? `Runner #${String(id).slice(-4)}`,
       isLeader: id === record.leaderId,
       isCoLeader: coLeaderIds.includes(id),
     })),
@@ -185,7 +185,7 @@ async function handleCreate(
   // pointer) — this is the operation that has to be exclusive, not the Syndicate record itself,
   // since a brand-new random id can never collide with an existing one.
   const record: StoredSyndicate = {
-    id: crypto.randomUUID(),
+    id: typeof crypto !== "undefined" && crypto.randomUUID ? (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)) : Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15),
     name,
     tag,
     memberIds: [user.id],
@@ -473,6 +473,7 @@ async function handlePost(
 }
 
 export default async (req: Request) => {
+  try {
   // 'strong' consistency trades a little latency for always reading the very latest write,
   // regardless of which region/instance served it — required here because, unlike sync.mts's
   // save data (which tolerates a few seconds of eventual-consistency lag since it's re-polled
@@ -486,6 +487,9 @@ export default async (req: Request) => {
   if (req.method === 'GET') return handleGet(req, syndicates, membership);
   if (req.method === 'POST') return handlePost(req, syndicates, membership);
   return new Response('Method Not Allowed', { status: 405 });
+  } catch (e: any) {
+    return new Response(JSON.stringify({ error: e.message || String(e), stack: e.stack }), { status: 500 });
+  }
 };
 
 export const config = {

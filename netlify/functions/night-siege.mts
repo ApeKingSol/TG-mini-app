@@ -71,7 +71,7 @@ function toPublicStatus(record: BossRecord, requesterId: string): PublicBossStat
 
 function createFreshBoss(syndicateId: string, now: number): BossRecord {
   return {
-    bossId: crypto.randomUUID(),
+    bossId: (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)),
     syndicateId,
     maxHp: NIGHT_SIEGE.BOSS_MAX_HP,
     currentHp: NIGHT_SIEGE.BOSS_MAX_HP,
@@ -155,7 +155,8 @@ async function verifyMembership(
   membership: ReturnType<typeof getStore>,
 ): Promise<boolean> {
   const mySyndicateId = await membership.get(user.id, { type: 'text' });
-  return String(mySyndicateId) === String(syndicateId);
+
+  console.log("verifyMembership", { userId: user.id, mySyndicateId, expected: syndicateId }); return String(mySyndicateId) === String(syndicateId);
 }
 
 /** Just the fields this file needs off a Syndicate record (see syndicates.mts's own
@@ -453,7 +454,7 @@ async function creditNeonReward(userId: string, bossId: string, amount: number):
     neon: (record.neon ?? 0) + amount,
     neonHistory: [
       {
-        id: crypto.randomUUID(),
+        id: (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)),
         label: 'Night Siege — Boss Kill Reward',
         amount,
         timestamp: now,
@@ -549,6 +550,7 @@ async function handlePost(
 }
 
 export default async (req: Request) => {
+  try {
   // 'strong' consistency, same reasoning as syndicates.mts: a raid's shared HP is read-then-
   // acted-on with nothing to retry it against if a stale read from a different edge/region
   // showed the wrong number — unlike sync.mts's save data, which tolerates a few seconds of
@@ -561,6 +563,9 @@ export default async (req: Request) => {
   if (req.method === 'GET') return handleGet(req, bosses, membership, cooldowns);
   if (req.method === 'POST') return handlePost(req, bosses, membership, cooldowns, syndicates);
   return new Response('Method Not Allowed', { status: 405 });
+  } catch (e: any) {
+    return new Response(JSON.stringify({ error: e.message || String(e), stack: e.stack }), { status: 500 });
+  }
 };
 
 export const config = {
