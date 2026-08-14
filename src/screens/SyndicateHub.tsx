@@ -454,7 +454,9 @@ interface ActiveScreenProps {
   onSyndicateUpdate: (syndicate: Syndicate) => void;
 }
 
-type MyRole = 'leader' | 'co-leader' | 'member';
+import { type SyndicateRole } from '../game/config/economy';
+
+type MyRole = SyndicateRole;
 
 /** The dashboard — the player's Syndicate up top, the collapsible member roster (with role-gated
  * Promote/Demote/Kick and each member's damage to the current boss), Night Siege underneath so
