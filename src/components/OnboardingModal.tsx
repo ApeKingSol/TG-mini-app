@@ -1,9 +1,9 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { Car, ChevronRight, Gauge, Wallet, Wrench } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 interface OnboardingModalProps {
-  onComplete: () => void;
+  onComplete?: () => void;
 }
 
 const STEPS = [
@@ -56,16 +56,30 @@ const ACCENT_CLASSES = {
 
 export function OnboardingModal({ onComplete }: OnboardingModalProps) {
   const [currentStep, setCurrentStep] = useState(0);
+  const [isVisible, setIsVisible] = useState(false);
+
+  const STORAGE_KEY = 'cyber_garage_ftue_completed_v2';
+
+  useEffect(() => {
+    const hasCompleted = localStorage.getItem(STORAGE_KEY);
+    if (!hasCompleted) {
+      setIsVisible(true);
+    }
+  }, []);
+
+  if (!isVisible) return null;
+
   const step = STEPS[currentStep];
   const accent = ACCENT_CLASSES[step.accent];
   const isFinalStep = currentStep === STEPS.length - 1;
 
   const handlePrimaryAction = () => {
     if (isFinalStep) {
-      onComplete();
+      localStorage.setItem(STORAGE_KEY, 'true');
+      setIsVisible(false);
+      if (onComplete) onComplete();
       return;
     }
-
     setCurrentStep((value) => value + 1);
   };
 
