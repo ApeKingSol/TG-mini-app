@@ -56,3 +56,16 @@ export function answerPreCheckoutQuery(
     ...(errorMessage ? { error_message: errorMessage } : {}),
   });
 }
+
+export function sendMessage(
+  botToken: string,
+  chatId: number,
+  text: string,
+  replyMarkup?: unknown,
+): Promise<unknown> {
+  return callTelegramApi(botToken, 'sendMessage', {
+    chat_id: chatId,
+    text,
+    ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+  });
+}

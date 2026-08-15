@@ -1,6 +1,6 @@
 import type { Context } from '@netlify/functions';
 import { getStore } from '../../server/mock-blobs';
-import { answerPreCheckoutQuery } from './_shared/telegramBotApi';
+import { answerPreCheckoutQuery, sendMessage } from './_shared/telegramBotApi';
 import { OVERCLOCK, MEGA_OVERCLOCK } from '../../src/game/config/economy';
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -47,6 +47,7 @@ interface TelegramUpdate {
   pre_checkout_query?: PreCheckoutQuery;
   message?: {
     from?: { id: number };
+    text?: string;
     successful_payment?: SuccessfulPayment;
   };
 }
@@ -168,6 +169,37 @@ async function handleSuccessfulPayment(payment: SuccessfulPayment, payerId: numb
  * (alongside the existing `TELEGRAM_BOT_TOKEN`) before that call — otherwise every real update
  * Telegram sends will be rejected as unauthorized by the check below.
  */
+async function handleMessage(message: NonNullable<TelegramUpdate['message']>): Promise<void> {
+  if (!message.from) return;
+
+  if (message.successful_payment) {
+    await handleSuccessfulPayment(message.successful_payment, message.from.id);
+    return;
+  }
+
+  if (message.text && message.text.startsWith('/start')) {
+    const parts = message.text.trim().split(/\s+/);
+    const payload = parts.length > 1 ? parts[1] : '';
+
+    const BOT_USERNAME = 'garage_mechanic_bot';
+    let appUrl = `https://t.me/${BOT_USERNAME}/app`;
+    if (payload) {
+      appUrl += `?startapp=${payload}`;
+    }
+
+    const welcomeText = 'Welcome to Cyber-Garage! Build your rig, race The Streets, and stack $NEON before the airdrop.\n\nTap the button below to launch the game:';
+
+    await sendMessage(BOT_TOKEN!, message.from.id, welcomeText, {
+      inline_keyboard: [[
+        {
+          text: "Launch Cyber-Garage 🏁",
+          url: appUrl
+        }
+      ]]
+    }).catch(err => console.error("Failed to send welcome message:", err));
+  }
+}
+
 export default async (req: Request) => {
   if (req.method !== 'POST') return new Response('Method Not Allowed', { status: 405 });
   if (!BOT_TOKEN || !WEBHOOK_SECRET) {
@@ -188,8 +220,8 @@ export default async (req: Request) => {
 
   if (update.pre_checkout_query) {
     await handlePreCheckoutQuery(update.pre_checkout_query);
-  } else if (update.message?.successful_payment && update.message.from) {
-    await handleSuccessfulPayment(update.message.successful_payment, update.message.from.id);
+  } else if (update.message) {
+    await handleMessage(update.message);
   }
 
   // Telegram only needs a 200 to consider this update delivered — always ack, even for update

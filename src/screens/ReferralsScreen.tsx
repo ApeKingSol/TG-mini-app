@@ -12,7 +12,7 @@ const BOT_USERNAME = 'garage_mechanic_bot';
 function buildReferralLink(userId: string): string {
   // Use standard t.me/botname?startapp= syntax so Telegram parses it correctly
   // and displays the bot's custom thumbnail image/title in the chat preview.
-  return `https://t.me/${BOT_USERNAME}?startapp=ref_${userId}`;
+  return `https://t.me/${BOT_USERNAME}?start=ref_${userId}`;
 }
 
 const REFERRAL_SHARE_TEXT =
