@@ -194,7 +194,7 @@ async function handleMessage(message: NonNullable<TelegramUpdate['message']>): P
       inline_keyboard: [[
         {
           text: "Launch Cyber-Garage 🏁",
-          web_app: { url: `https://ais-pre-hab5dwyhgai6yboo6uhynr-789819255337.europe-west2.run.app${payload ? '?tgWebAppStartParam=' + payload : ''}` }
+          url: appUrl
         }
       ]]
     }).catch(err => console.error("Failed to send welcome message:", err));
