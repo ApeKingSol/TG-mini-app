@@ -55,6 +55,9 @@ interface ReferralLink {
  * it — accepting one there would let any account falsely claim to have been invited by (and
  * inflate the validReferralsCount of) any other account it chooses. */
 function parseReferrerIdFromInitData(rawInitData: string): string | null {
+  // Telegram passes startapp param exactly as it is, BUT if the link used was ?start=... 
+  // (which is the standard way a bot starts, and how we generated our link to launch the bot), 
+  // Telegram injects it into initData as start_param.
   const startParam = new URLSearchParams(rawInitData).get('start_param') ?? '';
   const match = /^ref_(\d+)$/.exec(startParam);
   return match ? match[1] : null;

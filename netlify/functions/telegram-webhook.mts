@@ -182,6 +182,7 @@ async function handleMessage(message: NonNullable<TelegramUpdate['message']>): P
     const payload = parts.length > 1 ? parts[1] : '';
 
     const BOT_USERNAME = 'garage_mechanic_bot';
+    // The link that the button should open must be the short link that opens the Mini App
     let appUrl = `https://t.me/${BOT_USERNAME}/app`;
     if (payload) {
       appUrl += `?startapp=${payload}`;
@@ -193,7 +194,7 @@ async function handleMessage(message: NonNullable<TelegramUpdate['message']>): P
       inline_keyboard: [[
         {
           text: "Launch Cyber-Garage 🏁",
-          url: appUrl
+          web_app: { url: `https://ais-pre-hab5dwyhgai6yboo6uhynr-789819255337.europe-west2.run.app${payload ? '?tgWebAppStartParam=' + payload : ''}` }
         }
       ]]
     }).catch(err => console.error("Failed to send welcome message:", err));
