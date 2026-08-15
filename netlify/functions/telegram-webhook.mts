@@ -169,7 +169,7 @@ async function handleSuccessfulPayment(payment: SuccessfulPayment, payerId: numb
  * (alongside the existing `TELEGRAM_BOT_TOKEN`) before that call — otherwise every real update
  * Telegram sends will be rejected as unauthorized by the check below.
  */
-async function handleMessage(message: NonNullable<TelegramUpdate['message']>): Promise<void> {
+async function handleMessage(message: NonNullable<TelegramUpdate['message']>, reqUrl: string): Promise<void> {
   if (!message.from) return;
 
   if (message.successful_payment) {
@@ -181,20 +181,48 @@ async function handleMessage(message: NonNullable<TelegramUpdate['message']>): P
     const parts = message.text.trim().split(/\s+/);
     const payload = parts.length > 1 ? parts[1] : '';
 
-    const BOT_USERNAME = 'garage_mechanic_bot';
-    // The link that the button should open must be the short link that opens the Mini App
-    let appUrl = `https://t.me/${BOT_USERNAME}/app`;
-    if (payload) {
-      appUrl += `?startapp=${payload}`;
+    // Register referral directly on the server if payload starts with ref_
+    if (payload.startsWith('ref_')) {
+      const referrerId = payload.replace('ref_', '');
+      const inviteeId = String(message.from.id);
+      
+      if (referrerId !== inviteeId) {
+        const saves = getStore({ name: 'game-saves', consistency: 'strong' });
+        const referralLinks = getStore({ name: 'referral-links', consistency: 'strong' });
+        
+        const referrerSave = await saves.get(referrerId, { type: 'json' });
+        if (referrerSave) {
+          const link = { inviterId: referrerId, linkedAt: Date.now() };
+          const result = await referralLinks.setJSON(inviteeId, link, { onlyIfNew: true });
+          
+          if (result.modified) {
+            // Increment totalReferralsCount
+            const existing = await saves.getWithMetadata(referrerId, { type: 'json' });
+            if (existing && existing.data) {
+              const record = existing.data as any;
+              const updated = {
+                ...record,
+                totalReferralsCount: (record.totalReferralsCount || 0) + 1,
+                lastSaved: Date.now()
+              };
+              await saves.setJSON(referrerId, updated, { onlyIfMatch: existing.etag });
+            }
+          }
+        }
+      }
     }
 
     const welcomeText = 'Welcome to Cyber-Garage! Build your rig, race The Streets, and stack $NEON before the airdrop.\n\nTap the button below to launch the game:';
+    
+    // We use web_app button using the exact host from the request
+    const origin = new URL(reqUrl).origin;
+    const webAppUrl = `${origin}${payload ? '?tgWebAppStartParam=' + payload : ''}`;
 
     await sendMessage(BOT_TOKEN!, message.from.id, welcomeText, {
       inline_keyboard: [[
         {
           text: "Launch Cyber-Garage 🏁",
-          url: appUrl
+          web_app: { url: webAppUrl }
         }
       ]]
     }).catch(err => console.error("Failed to send welcome message:", err));
@@ -222,7 +250,7 @@ export default async (req: Request) => {
   if (update.pre_checkout_query) {
     await handlePreCheckoutQuery(update.pre_checkout_query);
   } else if (update.message) {
-    await handleMessage(update.message);
+    await handleMessage(update.message, req.url);
   }
 
   // Telegram only needs a 200 to consider this update delivered — always ack, even for update
