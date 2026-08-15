@@ -1,28 +1,7 @@
 {
-  "night-siege": {},
-  "syndicate-membership": {
-    "123456789": "93188a68-72ee-4aa6-8535-572bd99bf043"
-  },
-  "night-siege-attack-cooldown": {},
-  "syndicates": {
-    "93188a68-72ee-4aa6-8535-572bd99bf043": {
-      "id": "93188a68-72ee-4aa6-8535-572bd99bf043",
-      "name": "PersistTest",
-      "tag": "PRST",
-      "memberIds": [
-        "123456789"
-      ],
-      "memberNames": {
-        "123456789": "DevRunner"
-      },
-      "maxMembers": 50,
-      "leaderId": "123456789",
-      "coLeaderIds": []
-    }
-  },
   "game-saves": {
     "123456789": {
-      "scrap": 157081.87555501706,
+      "scrap": 196193.4969950404,
       "neon": 36,
       "car": {
         "id": "starter-rustbucket",
@@ -96,7 +75,7 @@
       "scrapPerSecond": 0.515,
       "critChance": 0.1,
       "critMultiplier": 3,
-      "lastSaved": 1786748962210,
+      "lastSaved": 1786824907106,
       "dailyRewardStreak": 0,
       "lastDailyRewardClaim": null,
       "boostEndsAt": null,
@@ -119,5 +98,7 @@
       "offlineEarnings": null,
       "lastOfflineCapacityRatio": 0
     }
-  }
+  },
+  "syndicates": {},
+  "syndicate-membership": {}
 }

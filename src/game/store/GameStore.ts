@@ -140,7 +140,7 @@ const ADMIN_SCRAP_GRANT_AMOUNT = 5_000_000;
  * corrected curve, same reasoning as v2. (dailyRewardStreak/lastDailyRewardClaim are also new
  * in this version, but those default safely via createInitialPlayerState() on their own and
  * aren't why this bumped.) */
-const SAVE_VERSION = 3;
+const SAVE_VERSION = 4;
 
 interface GameActions {
   /** Advances passive Scrap generation and Energy regen based on real elapsed time since the last save. */
