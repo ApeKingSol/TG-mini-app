@@ -10,11 +10,13 @@ import { WebApp } from '../lib/telegram';
 const BOT_USERNAME = 'garage_mechanic_bot';
 
 function buildReferralLink(userId: string): string {
-  return `https://t.me/${BOT_USERNAME}/app?startapp=ref_${userId}`;
+  // Use standard t.me/botname?startapp= syntax so Telegram parses it correctly
+  // and displays the bot's custom thumbnail image/title in the chat preview.
+  return `https://t.me/${BOT_USERNAME}?startapp=ref_${userId}`;
 }
 
 const REFERRAL_SHARE_TEXT =
-  'Join me in Cyber-Garage — build your rig, race The Streets, and stack $NEON before the airdrop. Tap in:';
+  'Join me in Cyber-Garage — build your rig, race The Streets, and stack $NEON before the airdrop.';
 
 /** Tailwind doesn't ship a vivid enough "neon purple" of its own for this — arbitrary-value hex
  * keeps the Referral System's $NEON profit visually distinct from every other color already in
@@ -65,6 +67,7 @@ export function ReferralsScreen({ onBack }: ReferralsScreenProps) {
   // Invitees who joined via this account's link but haven't (yet) reached Tier 5 — invites
   // themselves have no cap, only the "Invite 3 Friends" Airdrop quest cares about a fixed count,
   // so this is a plain, uncapped pending tally.
+  // Allow negative visual math just in case valid > total during an async fetch gap, but cap visual display at 0
   const pendingReferrals = Math.max(0, (totalReferralsCount || 0) - (validReferralsCount || 0));
 
   const handleClaim = async () => {

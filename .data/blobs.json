@@ -1,8 +1,8 @@
 {
   "game-saves": {
     "123456789": {
-      "scrap": 196193.4969950404,
-      "neon": 36,
+      "scrap": 484.25849999999946,
+      "neon": 50,
       "car": {
         "id": "starter-rustbucket",
         "name": "Rustbucket Mk I"
@@ -10,34 +10,44 @@
       "carTier": 1,
       "inventory": [
         {
-          "id": "8ffbc5af-2413-47d7-a172-c8e2863a7ae0",
-          "level": 3,
-          "name": "Plasma Battery"
+          "id": "00268cfe-3ecd-4e67-87c9-c9364bf7b670",
+          "level": 1,
+          "name": "Scrap Metal"
         },
-        null,
-        null,
-        null,
+        {
+          "id": "d0827420-f7de-45af-a9be-4b94311885d6",
+          "level": 1,
+          "name": "Scrap Metal"
+        },
+        {
+          "id": "9fd4eb00-bd4d-491e-bfdd-c793c84f66e8",
+          "level": 1,
+          "name": "Scrap Metal"
+        },
+        {
+          "id": "988eab11-cd51-4004-ab4f-b79319882c1a",
+          "level": 1,
+          "name": "Scrap Metal"
+        },
         null,
         null,
         null,
         null
       ],
-      "partsPurchased": 6,
+      "partsPurchased": 0,
       "energy": 1000,
       "maxEnergy": 1000,
-      "lastEnergyRegenAt": 1786643932969,
+      "lastEnergyRegenAt": 1786824949135,
       "pendingCalibrationPart": null,
-      "installedUpgrades": [
-        "Syndicate Transponder"
-      ],
+      "installedUpgrades": [],
       "upgrades": [
         {
           "id": "rusty-clicker",
           "name": "Rusty Clicker",
-          "cost": 38,
+          "cost": 25,
           "effect": "scrapPerClick",
           "boost": 1,
-          "owned": 3
+          "owned": 0
         },
         {
           "id": "auto-scrapper",
@@ -56,36 +66,21 @@
           "owned": 0
         }
       ],
-      "neonHistory": [
-        {
-          "id": "4e73cf4b-36de-4bdd-95f1-b053eac5bd67",
-          "label": "Neon Syphon — Passive Extraction",
-          "amount": 1,
-          "timestamp": 1786642148385
-        },
-        {
-          "id": "68defa6f-93bb-4c8a-91c8-c926a9dc3ae2",
-          "label": "Smuggler's Run — Entry Fee",
-          "amount": -15,
-          "timestamp": 1786486630004
-        }
-      ],
+      "neonHistory": [],
       "hasReceivedAdminScrapGrant": false,
-      "scrapPerClick": 4,
-      "scrapPerSecond": 0.515,
+      "scrapPerClick": 1,
+      "scrapPerSecond": 0.5,
       "critChance": 0.1,
       "critMultiplier": 3,
-      "lastSaved": 1786824907106,
+      "lastSaved": 1786825717846,
       "dailyRewardStreak": 0,
       "lastDailyRewardClaim": null,
       "boostEndsAt": null,
       "megaBoostEndsAt": null,
-      "lastNeonSyphonTime": 1786642148385,
+      "lastNeonSyphonTime": null,
       "walletAddress": null,
       "racesWon": 0,
-      "claimedQuests": [
-        "subscribe_telegram_channel"
-      ],
+      "claimedQuests": [],
       "lastClaimedBossId": null,
       "lastBossAttackTime": null,
       "syndicateId": "93188a68-72ee-4aa6-8535-572bd99bf043",
@@ -93,8 +88,8 @@
       "unclaimedScrap": 0,
       "validReferralsCount": 0,
       "totalReferralsCount": 0,
-      "hasCompletedTutorial": true,
-      "hasJoinedChannel": true,
+      "hasCompletedTutorial": false,
+      "hasJoinedChannel": false,
       "offlineEarnings": null,
       "lastOfflineCapacityRatio": 0
     }
