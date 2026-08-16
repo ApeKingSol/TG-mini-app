@@ -17,6 +17,7 @@ import { RaceScreen } from './screens/RaceScreen';
 import { ProfileScreen } from './screens/ProfileScreen';
 import { AirdropScreen } from './screens/AirdropScreen';
 import { ReferralsScreen } from './screens/ReferralsScreen';
+import { LeaderboardScreen } from './screens/LeaderboardScreen';
 import { trackAppOpened } from './utils/analytics';
 import { useGameStore } from './game/store/GameStore';
 
@@ -39,12 +40,16 @@ function App() {
   // true while isProfileOpen stayed true, and the render ternary checked isProfileOpen first —
   // so the Airdrop button silently did nothing whenever Profile was already open, the exact bug
   // this replaced.
-  const [activeOverlay, setActiveOverlay] = useState<'profile' | 'airdrop' | 'referrals' | null>(
+  const [activeOverlay, setActiveOverlay] = useState<'profile' | 'airdrop' | 'referrals' | 'leaderboard' | null>(
     null,
   );
 
   useEffect(() => {
     trackAppOpened();
+    
+    const handleOpenLeaderboard = () => setActiveOverlay('leaderboard');
+    window.addEventListener('openLeaderboard', handleOpenLeaderboard);
+    return () => window.removeEventListener('openLeaderboard', handleOpenLeaderboard);
   }, []);
 
   const handleTutorialComplete = () => {
@@ -108,6 +113,8 @@ function App() {
               <AirdropScreen key="airdrop" onBack={() => setActiveOverlay(null)} />
             ) : activeOverlay === 'referrals' ? (
               <ReferralsScreen key="referrals" onBack={() => setActiveOverlay(null)} />
+            ) : activeOverlay === 'leaderboard' ? (
+              <LeaderboardScreen key="leaderboard" onBack={() => setActiveOverlay(null)} />
             ) : (
               <>
                 {activeScreen === 'junkyard' && <JunkyardScreen key="junkyard" />}

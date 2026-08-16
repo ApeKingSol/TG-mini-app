@@ -234,18 +234,18 @@ export const AUTO_DRAG = {
   /** Gross payout on a win against a real (League-matched) Player opponent is this many times
    * the bet. */
   GROSS_WIN_MULTIPLIER_PLAYER: 2,
-  /** Gross payout on a win against the tougher "Syndicate Bot" rival — bigger, since
+  /** Gross payout on a win against the tougher "AI Racer" rival — bigger, since
    * BOT_RIVAL_STAT_MULTIPLIER makes that win chance lower for the same car. */
   GROSS_WIN_MULTIPLIER_BOT: 2.6,
   /** The Syndicate's cut of the gross payout on a win, either mode — light, since there's no
    * timing skill here to reward, just the bet and opponent choice. */
   SYSTEM_TAX_RATE: 0.05,
 
-  /** "Average street racer" baseline that Syndicate Bot's difficulty multiplier scales up from
+  /** "Average street racer" baseline that AI Racer's difficulty multiplier scales up from
    * below — Race vs Player no longer uses a flat baseline at all (real opponents' stats come
    * from their own tier), so this constant is Bot-only now. */
   BOT_RIVAL_BASE_STAT: 100,
-  /** Syndicate Bot's stats are the baseline above, scaled up by this much — a real, disclosed
+  /** AI Racer's stats are the baseline above, scaled up by this much — a real, disclosed
    * difficulty bump, not a hidden one. */
   BOT_RIVAL_STAT_MULTIPLIER: 1.35,
   /** Win chance (topSpeed+acceleration+handling power ratio) is clamped to this range so
@@ -678,7 +678,7 @@ export const QUESTS: readonly QuestDefinition[] = [
   {
     id: 'win-10-races',
     title: 'Win 10 Races',
-    description: 'Win 10 races in Auto-Drag (Race vs Player or Syndicate Bot).',
+    description: 'Win 10 races in Auto-Drag (Race vs Player only).',
     neonReward: 50,
   },
   {

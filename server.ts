@@ -53,7 +53,9 @@ async function startServer() {
     'smugglers-run',
     'sync',
     'syndicates',
-    'telegram-webhook'
+    'verify-channel',
+    'telegram-webhook',
+    'leaderboard'
   ];
 
   for (const route of routes) {

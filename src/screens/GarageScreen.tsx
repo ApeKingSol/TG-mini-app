@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Zap, Store, Gift } from 'lucide-react';
+import { Zap, Store, Gift, Trophy } from 'lucide-react';
 import {
   DndContext,
   PointerSensor,
@@ -169,7 +169,17 @@ export function GarageScreen() {
       transition={{ duration: 0.2 }}
       className="flex flex-col gap-4 pt-4"
     >
-      <div className="flex w-full items-center justify-end">
+      <div className="flex w-full items-center justify-between mb-2">
+        <motion.button
+          type="button"
+          onClick={() => window.dispatchEvent(new CustomEvent('openLeaderboard'))}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          className="panel-cut-sm flex items-center gap-1 border border-neon-pink/50 bg-neon-pink/10 px-3 py-1.5 font-mono text-xs font-semibold text-neon-pink"
+        >
+          <Trophy className="h-3.5 w-3.5" strokeWidth={2} />
+          EARN
+        </motion.button>
         <div className="flex items-center gap-2">
           <motion.button
             type="button"

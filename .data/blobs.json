@@ -1,8 +1,8 @@
 {
   "game-saves": {
     "123456789": {
-      "scrap": 1753.4370000000001,
-      "neon": 50,
+      "scrap": 51076.02600000014,
+      "neon": 51,
       "car": {
         "id": "starter-rustbucket",
         "name": "Rustbucket Mk I"
@@ -66,34 +66,69 @@
           "owned": 0
         }
       ],
-      "neonHistory": [],
+      "neonHistory": [
+        {
+          "id": "dc506dc5-1b56-4c87-8879-5e45a166066e",
+          "label": "Smuggler's Run — Cash Out",
+          "amount": 45,
+          "timestamp": 1786914686630
+        },
+        {
+          "id": "3e9e88a2-51fc-417d-84f8-1ff5218029c9",
+          "label": "Smuggler's Run — Entry Fee",
+          "amount": -15,
+          "timestamp": 1786914680292
+        },
+        {
+          "id": "0c6a25a9-f7f2-42fc-b1f3-937854aac07f",
+          "label": "Smuggler's Run — Entry Fee",
+          "amount": -15,
+          "timestamp": 1786914676210
+        },
+        {
+          "id": "af95b20b-9abd-4cbc-9597-f4f3bc699cb0",
+          "label": "Smuggler's Run — Entry Fee",
+          "amount": -15,
+          "timestamp": 1786914670093
+        },
+        {
+          "id": "717a4c92-2cd1-444e-b5ce-4b7e3f341143",
+          "label": "Neon Syphon — Passive Extraction",
+          "amount": 1,
+          "timestamp": 1786913844774
+        }
+      ],
       "hasReceivedAdminScrapGrant": false,
       "scrapPerClick": 1,
       "scrapPerSecond": 0.5,
       "critChance": 0.1,
       "critMultiplier": 3,
-      "lastSaved": 1786828256203,
-      "dailyRewardStreak": 0,
-      "lastDailyRewardClaim": null,
+      "lastSaved": 1786915903486,
+      "dailyRewardStreak": 1,
+      "lastDailyRewardClaim": 1786913563479,
       "boostEndsAt": null,
       "megaBoostEndsAt": null,
-      "lastNeonSyphonTime": null,
+      "lastNeonSyphonTime": 1786913844774,
       "walletAddress": null,
       "racesWon": 0,
-      "claimedQuests": [],
+      "claimedQuests": [
+        "subscribe_telegram_channel"
+      ],
       "lastClaimedBossId": null,
       "lastBossAttackTime": null,
-      "syndicateId": "93188a68-72ee-4aa6-8535-572bd99bf043",
+      "syndicateId": null,
       "unclaimedNeon": 0,
       "unclaimedScrap": 0,
       "validReferralsCount": 0,
       "totalReferralsCount": 0,
-      "hasCompletedTutorial": false,
-      "hasJoinedChannel": false,
+      "hasCompletedTutorial": true,
+      "hasJoinedChannel": true,
       "offlineEarnings": null,
       "lastOfflineCapacityRatio": 0
     }
   },
   "syndicates": {},
-  "syndicate-membership": {}
+  "syndicate-membership": {},
+  "referral-links": {},
+  "matchmaking-races": {}
 }

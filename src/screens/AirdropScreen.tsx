@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Check, ExternalLink, Lock, Rocket } from 'lucide-react';
-import { useGameStore } from '../game/store/GameStore';
+import { useGameStore, getTelegramUserId } from '../game/store/GameStore';
 import {
   QUESTS,
   isQuestComplete,
@@ -70,7 +70,7 @@ export function AirdropScreen({ onBack }: AirdropScreenProps) {
           </p>
         </div>
         <p className="mt-1 text-xs text-neon-magenta/70">
-          Complete quests to increase your allocation.
+          Complete all quests to participate in the airdrop.
         </p>
       </div>
 
@@ -183,17 +183,38 @@ function QuestCard({ quest, isComplete, isClaimed, progressValue, onClaim }: Que
 
   const canInteract = canClaim || (!isComplete && hasActionLink);
 
+  const [hasSubscribed, setHasSubscribed] = useState(false);
   const handleQuestAction = async () => {
     if (!canInteract || isVerifying) return;
     
     if (quest.id === 'subscribe_telegram_channel') {
       if (!isComplete) {
-        openQuestLink();
-        setIsVerifying(true);
-        // Simulate calling a backend API like getChatMember
-        await new Promise((resolve) => setTimeout(resolve, 3000));
-        setIsVerifying(false);
-        verifyChannelSubscription();
+        if (!hasSubscribed) {
+          openQuestLink();
+          setHasSubscribed(true);
+        } else {
+          setIsVerifying(true);
+          try {
+            const myId = getTelegramUserId();
+            const res = await fetch('/api/verify-channel', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: myId })
+            });
+            const data = await res.json();
+            if (data.verified) {
+                verifyChannelSubscription();
+            } else {
+                alert("Subscription not found. Make sure you joined the channel.");
+                // Reset so they can try subscribing again if they want
+                setHasSubscribed(false); 
+            }
+          } catch(err) {
+             console.error(err);
+             alert("Error verifying subscription.");
+          }
+          setIsVerifying(false);
+        }
       } else {
         onClaim();
       }

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Award, Gauge, Lock, Package, Radio, type LucideIcon } from 'lucide-react';
+import { ArrowLeft, Award, Trophy, Gauge, Lock, Package, Radio, type LucideIcon } from 'lucide-react';
 import { useGameStore, getTelegramUserId } from '../game/store/GameStore';
 import {
   AUTO_DRAG,
@@ -352,7 +352,7 @@ function getStatPower(stats: Pick<CarStats, 'topSpeed' | 'acceleration' | 'handl
   return stats.topSpeed + stats.acceleration + stats.handling;
 }
 
-/** Syndicate Bot's total power — a flat, disclosed-difficulty baseline scaled up by
+/** AI Racer's total power — a flat, disclosed-difficulty baseline scaled up by
  * BOT_RIVAL_STAT_MULTIPLIER. Race vs Player doesn't use this at all: a real (mock, for now)
  * opponent's power comes straight from their own car tier via getStatPower(getCarStats(...)),
  * same as the player's — see resolveMatch below. */
@@ -475,7 +475,7 @@ function AutoDragRace({ onExit }: AutoDragRaceProps) {
   const rafRef = useRef<number | null>(null);
 
   const playerPower = getStatPower(stats);
-  // Only meaningful for Syndicate Bot's betting screen now — Race vs Player shows a per-
+  // Only meaningful for AI Racer's betting screen now — Race vs Player shows a per-
   // opponent estimate instead (see MatchCard), computed the same honest way once a real
   // opponent's tier is known.
   const botWinChance = computeWinChancePercent(playerPower, getBotRivalPower());
@@ -519,7 +519,7 @@ function AutoDragRace({ onExit }: AutoDragRaceProps) {
   // The entire outcome is resolved right here, in one roll against the exact percentage that
   // was (or could have been) shown to the player for this specific opponent — everything from
   // this point on (segments, boosts, stumbles) only scripts how the animation dramatizes an
-  // outcome that's already locked in. Shared by both Syndicate Bot's "Start Race" button and
+  // outcome that's already locked in. Shared by both AI Racer's "Start Race" button and
   // Race vs Player's resolveMatch below, parameterized by whatever bet/opponent got the player
   // here — see those two call sites for how each fills in rivalPowerValue/rivalImage.
   const beginRace = (
@@ -738,7 +738,9 @@ function AutoDragRace({ onExit }: AutoDragRaceProps) {
         setWinner(finalWinner);
         setRaceState('finished');
         if (finalWinner === 'player') addNeon(netPayout, `Auto-Drag — Win (${raceMode})`);
-        recordRaceResult(finalWinner === 'player' ? 'win' : 'loss');
+        if (raceMode === 'player') {
+          recordRaceResult(finalWinner === 'player' ? 'win' : 'loss');
+        }
         return;
       }
 
@@ -773,6 +775,13 @@ function AutoDragRace({ onExit }: AutoDragRaceProps) {
         </p>
         <span className="text-xs font-medium tabular-nums text-neon-magenta">{neon} NEON</span>
       </div>
+      <button
+         type="button"
+         onClick={() => window.dispatchEvent(new CustomEvent('openLeaderboard'))}
+         className="rounded-xl border border-neon-cyan/40 bg-neon-cyan/10 p-3 flex items-center justify-center gap-2 font-display text-sm font-bold uppercase tracking-wide text-neon-cyan hover:bg-neon-cyan/20 transition-colors"
+      >
+         <Trophy className="h-4 w-4" /> Racing Leaderboard
+      </button>
 
       {raceState === 'betting' && (
         <>
@@ -804,7 +813,7 @@ function AutoDragRace({ onExit }: AutoDragRaceProps) {
                     : 'border-neutral-700 bg-black/20 text-neutral-400'
                 }`}
               >
-                Syndicate Bot
+                AI Racer
               </button>
             </div>
             <p className="mt-1.5 text-center text-[10px] text-neutral-600">
