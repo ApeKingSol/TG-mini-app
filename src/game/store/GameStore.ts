@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { createJSONStorage } from 'zustand/middleware';
 import { persist } from 'zustand/middleware';
 import {
   ECONOMY,
@@ -34,6 +35,19 @@ const LEGACY_STORAGE_KEY = 'cyber_garage_state_v2';
  * modules needing the same per-account identity (e.g. src/game/mock/syndicateApi.ts) derive
  * it the same way this save file does, rather than re-implementing their own reader that could
  * drift out of sync with it. */
+export function getTelegramUser() {
+  try {
+    const user = (
+      window as unknown as {
+        Telegram?: { WebApp?: { initDataUnsafe?: { user?: { id?: number; first_name?: string; username?: string } } } };
+      }
+    ).Telegram?.WebApp?.initDataUnsafe?.user;
+    return user || null;
+  } catch {
+    return null;
+  }
+}
+
 export function getTelegramUserId(): string | null {
   try {
     const id = (
@@ -78,17 +92,17 @@ migrateLegacySave(STORAGE_KEY);
  * but older cloud save under a naive last-write-wins timestamp comparison. useCloudSync reads
  * this flag to know its very first pull can't trust that comparison: there is nothing genuine
  * in local state yet for a timestamp to protect, so the cloud save must win outright. */
-export const hadLocalSaveAtLoad = (() => {
-  try {
-    return localStorage.getItem(STORAGE_KEY) !== null;
-  } catch {
-    // localStorage can throw in privacy modes / disabled storage. Fail closed (treat as "had
-    // a save") so a storage read error can never be misread as "definitely a wipe" and cause
-    // a cloud save to be adopted over local state that might, for all this code can tell, be
-    // perfectly fine.
-    return true;
+let _hadLocalSaveAtLoad: boolean | null = null;
+export function getHadLocalSaveAtLoad(): boolean {
+  if (_hadLocalSaveAtLoad === null) {
+    try {
+      _hadLocalSaveAtLoad = localStorage.getItem(getStorageKey()) !== null;
+    } catch {
+      _hadLocalSaveAtLoad = true;
+    }
   }
-})();
+  return _hadLocalSaveAtLoad;
+}
 
 /** This device's persisted `lastSaved`, captured the moment it's rehydrated — *before*
  * applyOfflineProgress() re-stamps `lastSaved` to "now" on every single app open. useCloudSync
@@ -297,6 +311,7 @@ function createStartingUpgrades(): Upgrade[] {
 /** The plain-data half of a fresh save — shared by the store's own initial state and by
  * migrate() below, so a brand-new player and a wiped-on-migrate one can never drift apart. */
 function createInitialPlayerState(): PlayerState {
+  const user = getTelegramUser();
   return {
     scrap: ECONOMY.STARTING_SCRAP,
     neon: ECONOMY.STARTING_NEON,
@@ -318,7 +333,7 @@ function createInitialPlayerState(): PlayerState {
     critMultiplier: ECONOMY.STARTING_CRIT_MULTIPLIER,
     offlineEarnings: null,
     lastOfflineCapacityRatio: 0,
-    lastSaved: Date.now(),
+    lastSaved: 0,
     dailyRewardStreak: 0,
     lastDailyRewardClaim: null,
     boostEndsAt: null,
@@ -923,7 +938,15 @@ export const useGameStore = create<GameStore>()(
       verifyChannelSubscription: () => set({ hasJoinedChannel: true }),
     }),
     {
-      name: STORAGE_KEY,
+      name: 'dynamic-storage',
+      storage: createJSONStorage(() => ({
+        getItem: () => {
+          getHadLocalSaveAtLoad(); // Ensure it's evaluated before first read
+          return localStorage.getItem(getStorageKey());
+        },
+        setItem: (_, value) => localStorage.setItem(getStorageKey(), value),
+        removeItem: () => localStorage.removeItem(getStorageKey()),
+      })),
       // offlineEarnings is a one-shot UI toast, recomputed fresh each load — persisting
       // it would just make a stale "Welcome back" reappear on the next reload.
       partialize: getSyncableState,
@@ -940,6 +963,7 @@ export const useGameStore = create<GameStore>()(
       // *newer* than local, and nothing pre-wipe can be newer than "now".
       migrate: (persistedState) => {
         const fresh = createInitialPlayerState();
+        fresh.lastSaved = Date.now();
         const old = persistedState as Partial<PlayerState> | undefined;
         if (old && getTelegramUserId() === ADMIN_TELEGRAM_ID) {
           return { ...fresh, neon: old.neon ?? fresh.neon, neonHistory: old.neonHistory ?? fresh.neonHistory };
@@ -947,6 +971,14 @@ export const useGameStore = create<GameStore>()(
         return fresh;
       },
       onRehydrateStorage: () => (state) => {
+        if (state) {
+            localLastSavedAtLoad = state.lastSaved;
+            const user = getTelegramUser();
+            if (user && (!state.telegramFirstName || state.telegramFirstName !== user.first_name)) {
+                state.telegramFirstName = user.first_name || null;
+                state.telegramUsername = user.username || null;
+            }
+        }
         if (state) localLastSavedAtLoad = state.lastSaved;
         state?.applyOfflineProgress();
       },

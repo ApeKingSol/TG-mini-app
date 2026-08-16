@@ -1,7 +1,7 @@
 {
   "game-saves": {
     "123456789": {
-      "scrap": 51076.02600000014,
+      "scrap": 4530.03239700012,
       "neon": 51,
       "car": {
         "id": "starter-rustbucket",
@@ -9,53 +9,39 @@
       },
       "carTier": 1,
       "inventory": [
-        {
-          "id": "00268cfe-3ecd-4e67-87c9-c9364bf7b670",
-          "level": 1,
-          "name": "Scrap Metal"
-        },
-        {
-          "id": "d0827420-f7de-45af-a9be-4b94311885d6",
-          "level": 1,
-          "name": "Scrap Metal"
-        },
-        {
-          "id": "9fd4eb00-bd4d-491e-bfdd-c793c84f66e8",
-          "level": 1,
-          "name": "Scrap Metal"
-        },
-        {
-          "id": "988eab11-cd51-4004-ab4f-b79319882c1a",
-          "level": 1,
-          "name": "Scrap Metal"
-        },
+        null,
+        null,
+        null,
+        null,
         null,
         null,
         null,
         null
       ],
-      "partsPurchased": 0,
-      "energy": 1000,
+      "partsPurchased": 4,
+      "energy": 650,
       "maxEnergy": 1000,
-      "lastEnergyRegenAt": 1786824949135,
+      "lastEnergyRegenAt": 1786916407300,
       "pendingCalibrationPart": null,
-      "installedUpgrades": [],
+      "installedUpgrades": [
+        "Quantum Injector"
+      ],
       "upgrades": [
         {
           "id": "rusty-clicker",
           "name": "Rusty Clicker",
-          "cost": 25,
+          "cost": 6697,
           "effect": "scrapPerClick",
           "boost": 1,
-          "owned": 0
+          "owned": 40
         },
         {
           "id": "auto-scrapper",
           "name": "Auto-Scrapper",
-          "cost": 30,
+          "cost": 2627,
           "effect": "scrapPerSecond",
           "boost": 0.3,
-          "owned": 0
+          "owned": 32
         },
         {
           "id": "expanded-battery",
@@ -99,11 +85,11 @@
         }
       ],
       "hasReceivedAdminScrapGrant": false,
-      "scrapPerClick": 1,
-      "scrapPerSecond": 0.5,
+      "scrapPerClick": 41,
+      "scrapPerSecond": 15.403000000000002,
       "critChance": 0.1,
       "critMultiplier": 3,
-      "lastSaved": 1786915903486,
+      "lastSaved": 1786916699668,
       "dailyRewardStreak": 1,
       "lastDailyRewardClaim": 1786913563479,
       "boostEndsAt": null,

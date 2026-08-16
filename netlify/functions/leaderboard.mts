@@ -36,7 +36,7 @@ export default async (req: Request, context: Context) => {
           if (data && typeof data === 'object') {
             return {
               id: blob.key,
-              name: `Runner #${blob.key.slice(-4)}`,
+              name: (data as any).telegramFirstName || (data as any).telegramUsername || `Runner #${blob.key.slice(-4)}`,
               racesWon: (data as any).racesWon || 0, walletAddress: (data as any).walletAddress || null,
             };
           }

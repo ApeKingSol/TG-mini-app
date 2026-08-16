@@ -3,7 +3,7 @@ import {
   useGameStore,
   getSyncableState,
   localLastSavedAtLoad,
-  hadLocalSaveAtLoad,
+  getHadLocalSaveAtLoad,
   getTelegramUserId
 } from '../game/store/GameStore';
 import { WebApp, isRunningInTelegram } from '../lib/telegram';
@@ -261,7 +261,7 @@ export function useCloudSync(): { status: CloudSyncStatus; syncNow: () => void }
             remote.syndicateId = remoteSyndicateId;
             const localBaseline = Math.max(localLastSavedAtLoad, lastPushedAtRef.current);
             const shouldAdopt =
-              (isInitialPull && !hadLocalSaveAtLoad) || remote.lastSaved > localBaseline;
+              (isInitialPull && !getHadLocalSaveAtLoad()) || remote.lastSaved > localBaseline;
             
             if (shouldAdopt) {
               applyRemoteState(remote);

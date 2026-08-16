@@ -49,6 +49,9 @@ export interface NeonTransaction {
 }
 
 export interface PlayerState {
+  telegramFirstName?: string | null;
+  telegramUsername?: string | null;
+
   scrap: number;
   neon: number;
   car: CarState;

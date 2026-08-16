@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Trophy, Medal, ArrowLeft, Loader2, Award } from 'lucide-react';
-import { getTelegramUserId } from '../game/store/GameStore';
+import { getTelegramUserId, useGameStore } from '../game/store/GameStore';
 
 interface LeaderboardEntry {
   id: string;
@@ -14,6 +14,7 @@ export function LeaderboardScreen({ onBack }: { onBack: () => void }) {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const myId = getTelegramUserId();
+  const myRacesWon = useGameStore(state => state.racesWon);
 
   useEffect(() => {
     fetch('/api/leaderboard')
@@ -48,7 +49,12 @@ export function LeaderboardScreen({ onBack }: { onBack: () => void }) {
           <Trophy className="h-4 w-4" />
           Leaderboard
         </p>
-        <div className="w-16" />
+        <div className="w-16 flex justify-end">
+          <div className="flex flex-col items-end">
+            <span className="text-[10px] uppercase tracking-widest text-neutral-500">Your Wins</span>
+            <span className="font-mono text-xs font-bold text-neon-cyan">{myRacesWon}</span>
+          </div>
+        </div>
       </div>
 
       <div className="rounded-2xl border border-neon-cyan/30 bg-neon-cyan/5 p-4 text-center backdrop-blur-sm">
