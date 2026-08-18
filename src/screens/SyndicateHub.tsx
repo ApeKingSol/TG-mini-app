@@ -553,22 +553,22 @@ function ActiveScreen({ syndicate, onLeft, onSyndicateUpdate }: ActiveScreenProp
             >
               <h3 className="font-display text-lg font-bold uppercase tracking-widest text-neon-cyan mb-4 flex items-center gap-2">
                 <Info className="h-5 w-5" />
-                Earnings Split
+                Night Siege Rewards
               </h3>
               <div className="space-y-4 text-sm text-neutral-300">
-                <p>When a Syndicate member wins a race, a percentage of the payout is distributed among the Syndicate:</p>
+                <p>When a Syndicate defeats the Night Siege Boss, members receive a $NEON bounty based on their role:</p>
                 <ul className="space-y-2">
                   <li className="flex items-center justify-between rounded border border-amber/30 bg-amber/5 px-3 py-2">
                     <span className="font-bold text-amber">Leader</span>
-                    <span className="font-mono text-amber">Gets highest %</span>
+                    <span className="font-mono text-amber">250 NEON</span>
                   </li>
                   <li className="flex items-center justify-between rounded border border-neon-cyan/30 bg-neon-cyan/5 px-3 py-2">
                     <span className="font-bold text-neon-cyan">Co-Leaders</span>
-                    <span className="font-mono text-neon-cyan">Get medium %</span>
+                    <span className="font-mono text-neon-cyan">150 NEON</span>
                   </li>
                   <li className="flex items-center justify-between rounded border border-neutral-700 bg-white/5 px-3 py-2">
                     <span className="font-bold text-neutral-300">Members</span>
-                    <span className="font-mono text-neutral-400">Share remaining %</span>
+                    <span className="font-mono text-neutral-400">75 NEON</span>
                   </li>
                 </ul>
               </div>

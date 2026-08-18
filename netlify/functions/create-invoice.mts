@@ -9,9 +9,24 @@ const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
  * Stars items get added later. Price/duration for each come straight from OVERCLOCK/
  * MEGA_OVERCLOCK in src/game/config/economy.ts — the same source the client reads to display
  * them — rather than being re-declared here, so the two can never drift apart. */
-type InvoiceItem = 'overclock_24h' | 'mega_overclock_72h';
+type InvoiceItem = 'overclock_24h' | 'mega_overclock_72h' | 'buy_neon_50' | 'buy_neon_200' | 'buy_neon_1000';
 
 const ITEM_CONFIG: Record<InvoiceItem, { title: string; description: string; priceStars: number }> = {
+  buy_neon_50: {
+    title: '50 NEON Pack',
+    description: 'Instantly grants 50 NEON.',
+    priceStars: 15,
+  },
+  buy_neon_200: {
+    title: '200 NEON Pack',
+    description: 'Instantly grants 200 NEON.',
+    priceStars: 49,
+  },
+  buy_neon_1000: {
+    title: '1000 NEON Pack',
+    description: 'Instantly grants 1000 NEON.',
+    priceStars: 499,
+  },
   overclock_24h: {
     title: 'Overclock: 24h Auto-Mechanic',
     description: 'Triples your passive Scrap income for 24 hours.',

@@ -30,7 +30,7 @@ interface ShopModalProps {
 
 /** One of the two Stars-purchasable boost tiers — see create-invoice.mts/telegram-webhook.mts
  * for the matching server-side item ids. */
-type BoostItem = 'overclock_24h' | 'mega_overclock_72h';
+type BoostItem = 'overclock_24h' | 'mega_overclock_72h' | 'buy_neon_50' | 'buy_neon_200' | 'buy_neon_1000';
 
 function formatDuration(ms: number): string {
   const totalMinutes = Math.max(0, Math.ceil(ms / 60000));
@@ -46,7 +46,7 @@ function formatDuration(ms: number): string {
  * is, the overwhelming majority of the time, just two or three ordinary poll cycles. */
 const CONFIRMATION_TIMEOUT_MS = 20_000;
 
-/** The Shop: the premium "Overclock: 24h Auto-Mechanic" and "Mega Overclock (72h)" Telegram
+/** The Shop: the premium "1 Day Boost" and "Mega Overclock (72h)" Telegram
  * Stars boosts, and the NEON → Scrap Exchange grid. Both boost tiers extend the exact same
  * `boostEndsAt` clock (see getBoostedScrapEarned in economy.ts) — buying either one, in either
  * order, just pushes that one shared countdown further out. Mega Overclock *additionally* tracks
@@ -212,7 +212,7 @@ export function ShopModal({ onClose }: ShopModalProps) {
         exit={{ opacity: 0, y: -24, scale: 0.95 }}
         transition={{ duration: 0.25, ease: 'easeOut' }}
         onClick={(event) => event.stopPropagation()}
-        className="panel-cut max-h-[85vh] w-full max-w-sm overflow-y-auto border border-neon-cyan/50 bg-bg-panel p-4 text-left shadow-lg scrollbar-hide"
+        className="panel-cut max-h-[85vh] w-full max-w-sm overflow-y-auto border border-neon-cyan/50 bg-bg-panel p-4 pb-12 text-left shadow-lg scrollbar-hide"
       >
         <div className="mb-3 flex items-center justify-between">
           <p className="font-display text-sm font-bold uppercase tracking-widest text-neon-cyan">
@@ -287,7 +287,7 @@ export function ShopModal({ onClose }: ShopModalProps) {
           <div className="flex items-center gap-1.5 text-[#b026ff]">
             <Zap className="h-4 w-4" strokeWidth={2} fill="currentColor" />
             <p className="font-display text-xs font-bold uppercase tracking-widest">
-              Mega Overclock (72H)
+              3 Days Boost
             </p>
             <span className="rounded-full border border-[#b026ff] px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-widest text-[#b026ff]">
               Premium
@@ -329,6 +329,49 @@ export function ShopModal({ onClose }: ShopModalProps) {
                   ? `Extend +72h — ${MEGA_OVERCLOCK.STARS_PRICE}`
                   : `Buy — ${MEGA_OVERCLOCK.STARS_PRICE}`}
           </motion.button>
+        </div>
+
+        
+        <div className="mt-4">
+          <div className="flex items-center gap-1.5 text-neon-cyan">
+            <Sparkles className="h-4 w-4" strokeWidth={2} />
+            <p className="font-display text-xs font-bold uppercase tracking-widest">
+              Buy NEON
+            </p>
+          </div>
+          <p className="mt-1 text-[10px] text-neutral-600">
+            Purchase premium currency with Telegram Stars.
+          </p>
+          <div className="mt-2 grid grid-cols-3 gap-2">
+            {[
+              { id: 'buy_neon_50', neon: 50, price: 15 },
+              { id: 'buy_neon_200', neon: 200, price: 49 },
+              { id: 'buy_neon_1000', neon: 1000, price: 499 }
+            ].map((pkg) => (
+              <motion.button
+                key={pkg.id}
+                type="button"
+                onClick={() => handleBuy(pkg.id as BoostItem)}
+                disabled={purchaseDisabled}
+                whileHover={!purchaseDisabled ? { scale: 1.05 } : undefined}
+                whileTap={!purchaseDisabled ? { scale: 0.95 } : undefined}
+                className="flex flex-col items-center gap-1.5 rounded-lg border border-neon-cyan/50 bg-neon-cyan/10 p-2.5 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <span className="flex items-center gap-1 font-display text-sm font-bold text-neon-cyan">
+                  <Sparkles className="h-3.5 w-3.5" strokeWidth={2} />
+                  {pkg.neon}
+                </span>
+                <div className="flex items-center gap-1 rounded bg-black/40 px-2 py-1 text-[10px] font-bold tabular-nums text-amber">
+                  {isPurchasing || (isConfirmingPayment && pendingItemRef.current === pkg.id) ? (
+                    <Loader2 className="h-3 w-3 animate-spin" strokeWidth={2} />
+                  ) : (
+                    <Star className="h-3 w-3" fill="currentColor" />
+                  )}
+                  {pkg.price}
+                </div>
+              </motion.button>
+            ))}
+          </div>
         </div>
 
         <div className="mt-4">

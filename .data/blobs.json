@@ -1,7 +1,7 @@
 {
   "game-saves": {
     "123456789": {
-      "scrap": 4530.03239700012,
+      "scrap": 2602989.8548790147,
       "neon": 51,
       "car": {
         "id": "starter-rustbucket",
@@ -19,9 +19,9 @@
         null
       ],
       "partsPurchased": 4,
-      "energy": 650,
+      "energy": 1000,
       "maxEnergy": 1000,
-      "lastEnergyRegenAt": 1786916407300,
+      "lastEnergyRegenAt": 1786922107300,
       "pendingCalibrationPart": null,
       "installedUpgrades": [
         "Quantum Injector"
@@ -89,7 +89,7 @@
       "scrapPerSecond": 15.403000000000002,
       "critChance": 0.1,
       "critMultiplier": 3,
-      "lastSaved": 1786916699668,
+      "lastSaved": 1787085397962,
       "dailyRewardStreak": 1,
       "lastDailyRewardClaim": 1786913563479,
       "boostEndsAt": null,

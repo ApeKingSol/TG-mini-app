@@ -573,7 +573,7 @@ export function getBoostedScrapEarned(
  * rate. One-way (Scrap can never convert back into $NEON) — this is a Scrap-progression relief
  * valve for players sitting on spare racing winnings, not a way to launder Scrap into racing
  * currency. */
-export const NEON_TO_SCRAP_RATE = 10_000;
+export const NEON_TO_SCRAP_RATE = 1000;
 
 export interface NeonExchangePackage {
   neon: number;

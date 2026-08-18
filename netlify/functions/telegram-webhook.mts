@@ -10,6 +10,9 @@ const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET;
 
 const ITEM_PRICES_STARS: Record<string, number> = {
+  buy_neon_50: 15,
+  buy_neon_200: 49,
+  buy_neon_1000: 499,
   overclock_24h: OVERCLOCK.STARS_PRICE,
   mega_overclock_72h: MEGA_OVERCLOCK.STARS_PRICE,
 };
@@ -19,7 +22,10 @@ const ITEM_PRICES_STARS: Record<string, number> = {
  * many hours that specific tier is worth; only the Mega tier *additionally* extends
  * `megaBoostEndsAt`, which is what raises the AFK/offline cap while it's running (see
  * getEffectiveMaxOfflineSeconds in economy.ts) — a privilege the plain 24h tier never grants. */
-const ITEM_GRANTS: Record<string, { boostHours: number; alsoExtendsMegaOfflineCap: boolean }> = {
+const ITEM_GRANTS: Record<string, { boostHours?: number; alsoExtendsMegaOfflineCap?: boolean; neon?: number }> = {
+  buy_neon_50: { neon: 50 },
+  buy_neon_200: { neon: 200 },
+  buy_neon_1000: { neon: 1000 },
   overclock_24h: { boostHours: OVERCLOCK.DURATION_HOURS, alsoExtendsMegaOfflineCap: false },
   mega_overclock_72h: {
     boostHours: MEGA_OVERCLOCK.DURATION_HOURS,
@@ -121,14 +127,21 @@ async function handleSuccessfulPayment(payment: SuccessfulPayment, payerId: numb
     [key: string]: unknown;
   };
   const now = Date.now();
-  const durationMs = grant.boostHours * 60 * 60 * 1000;
+  const durationMs = (grant.boostHours || 0) * 60 * 60 * 1000;
   const updated = {
     ...record,
     // Both tiers extend this same shared multiplier clock, by however many hours their own
     // tier is worth.
-    boostEndsAt: Math.max(now, record.boostEndsAt ?? 0) + durationMs,
+    boostEndsAt: grant.boostHours ? Math.max(now, record.boostEndsAt ?? 0) + durationMs : record.boostEndsAt,
     // Only the Mega tier also extends this — see ITEM_GRANTS' own doc comment above for why
     // it's tracked as its own field rather than reusing boostEndsAt for the AFK-cap decision.
+    ...(grant.neon && {
+      neon: (record.neon !== undefined ? Number(record.neon) : 0) + grant.neon,
+      neonHistory: [
+        { id: Math.random().toString(36).substring(2, 15), amount: grant.neon, label: "Purchased with Telegram Stars", timestamp: now },
+        ...(Array.isArray(record.neonHistory) ? record.neonHistory : [])
+      ].slice(0, 50),
+    }),
     ...(grant.alsoExtendsMegaOfflineCap && {
       megaBoostEndsAt: Math.max(now, record.megaBoostEndsAt ?? 0) + durationMs,
     }),
