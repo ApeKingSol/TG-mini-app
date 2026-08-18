@@ -76,6 +76,7 @@ export function ShopModal({ onClose }: ShopModalProps) {
   // not a fake progress bar standing in for an instant grant.
   const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
   const boostEndsAtBeforePurchaseRef = useRef<number | null>(null);
+  const neonBeforePurchaseRef = useRef<number | null>(null);
   const megaBoostEndsAtBeforePurchaseRef = useRef<number | null>(null);
   const pendingItemRef = useRef<BoostItem | null>(null);
   const [message, setMessage] = useState<{ text: string; variant: 'error' | 'success' } | null>(
@@ -105,10 +106,13 @@ export function ShopModal({ onClose }: ShopModalProps) {
     if (!isConfirmingPayment || !pendingItemRef.current) return;
     const boostBefore = boostEndsAtBeforePurchaseRef.current;
     const megaBefore = megaBoostEndsAtBeforePurchaseRef.current;
+    const neonBefore = neonBeforePurchaseRef.current;
     const boostLanded = boostEndsAt !== null && (boostBefore === null || boostEndsAt > boostBefore);
     const megaLanded =
       megaBoostEndsAt !== null && (megaBefore === null || megaBoostEndsAt > megaBefore);
-    const landed = pendingItemRef.current === 'mega_overclock_72h' ? megaLanded : boostLanded;
+    const neonLanded = neonBefore !== null && neon > neonBefore;
+    const landed = pendingItemRef.current === 'mega_overclock_72h' ? megaLanded : 
+                   pendingItemRef.current?.startsWith('buy_neon') ? neonLanded : boostLanded;
     if (landed) {
       const wasMega = pendingItemRef.current === 'mega_overclock_72h';
       setIsConfirmingPayment(false);
@@ -116,12 +120,12 @@ export function ShopModal({ onClose }: ShopModalProps) {
       showMessage(
         wasMega
           ? 'Mega Overclock activated — 72h of triple Scrap and an extended AFK cap!'
-          : 'Overclock activated — the Auto-Mechanic is on the clock!',
+          : pendingItemRef.current?.startsWith('buy_neon') ? 'NEON purchase successful!' : 'Overclock activated — the Auto-Mechanic is on the clock!',
         'success',
       );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isConfirmingPayment, boostEndsAt, megaBoostEndsAt]);
+  }, [isConfirmingPayment, boostEndsAt, megaBoostEndsAt, neon]);
 
   // Gives up *displaying* the wait after a while — not a claim the payment failed (as far as
   // this client knows, Telegram already reported success on-device), just an acknowledgment that
@@ -169,6 +173,7 @@ export function ShopModal({ onClose }: ShopModalProps) {
       pendingItemRef.current = item;
       boostEndsAtBeforePurchaseRef.current = boostEndsAt;
       megaBoostEndsAtBeforePurchaseRef.current = megaBoostEndsAt;
+      neonBeforePurchaseRef.current = neon;
       WebApp.openInvoice(invoiceUrl, (status) => {
         setIsPurchasing(false);
         if (status === 'paid') {
