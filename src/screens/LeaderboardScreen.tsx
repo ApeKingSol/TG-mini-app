@@ -57,9 +57,12 @@ export function LeaderboardScreen({ onBack }: { onBack: () => void }) {
         </div>
       </div>
 
-      <div className="rounded-2xl border border-neon-cyan/30 bg-neon-cyan/5 p-4 text-center backdrop-blur-sm">
+      <div className="relative rounded-2xl border border-neon-cyan/30 bg-neon-cyan/5 p-4 text-center backdrop-blur-sm">
+        <div className="absolute -top-2 -right-2 rotate-6 rounded bg-amber px-2 py-0.5 font-mono text-[9px] font-black uppercase tracking-widest text-black shadow-lg">
+          Snapshot: Sept 25
+        </div>
         <p className="font-display text-sm font-bold leading-relaxed text-neon-cyan drop-shadow-[0_0_8px_rgba(0,240,255,0.4)]">
-          🔥 TOP 10 PLAYERS WIN EXCLUSIVE TON DROPS! (SNAPSHOT: SEPT 25)<br/>
+          🔥 TOP 10 PLAYERS WIN EXCLUSIVE TON DROPS!<br/>
           <span className="mt-1 block font-mono text-[10px] uppercase text-neon-cyan/80">
             Rewards will be sent to your connected wallets.
           </span>

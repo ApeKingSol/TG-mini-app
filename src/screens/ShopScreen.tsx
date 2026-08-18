@@ -204,7 +204,7 @@ export function ShopModal({ onClose }: ShopModalProps) {
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       onClick={onClose}
-      className="fixed inset-0 z-[1000] fixed inset-0 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm"
     >
       <motion.div
         initial={{ opacity: 0, y: -24, scale: 0.95 }}
@@ -241,8 +241,7 @@ export function ShopModal({ onClose }: ShopModalProps) {
             </p>
           </div>
           <p className="mt-1.5 text-xs text-neutral-400">
-            Auto-collects Scrap and triples your passive income for 24 hours — the fastest way to
-            your next trade-in.
+            Supercharge your garage! Get 3X Scrap production, infinite Energy, and a massive boost to critical merge chances for a full 24 hours.
           </p>
 
           {boostActive && (
@@ -294,8 +293,7 @@ export function ShopModal({ onClose }: ShopModalProps) {
             </span>
           </div>
           <p className="mt-1.5 text-xs text-neutral-400">
-            Triples your passive Scrap income for a full 3 days AND raises your AFK offline cap to
-            72 hours while active — go dark for the whole weekend and come back to a full tank.
+            The ultimate progression hack! Enjoy 72 hours of 3X Scrap production, infinite Energy, increased critical merge chances, AND a massive 72-hour AFK cap!
           </p>
 
           {megaActive && (
