@@ -59,9 +59,9 @@ export function LeaderboardScreen({ onBack }: { onBack: () => void }) {
 
       <div className="rounded-2xl border border-neon-cyan/30 bg-neon-cyan/5 p-4 text-center backdrop-blur-sm">
         <p className="font-display text-sm font-bold leading-relaxed text-neon-cyan drop-shadow-[0_0_8px_rgba(0,240,255,0.4)]">
-          🔥 TOP 10 PLAYERS WIN EXCLUSIVE TON DROPS!<br/>
+          🔥 TOP 10 PLAYERS WIN EXCLUSIVE TON DROPS! (SNAPSHOT: SEPT 25)<br/>
           <span className="mt-1 block font-mono text-[10px] uppercase text-neon-cyan/80">
-            Win PvP races in Auto-Drag to climb the ranks!
+            Rewards will be sent to your connected wallets.
           </span>
         </p>
       </div>

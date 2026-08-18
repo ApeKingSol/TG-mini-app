@@ -204,7 +204,7 @@ export function ShopModal({ onClose }: ShopModalProps) {
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       onClick={onClose}
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[1000] fixed inset-0 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm"
     >
       <motion.div
         initial={{ opacity: 0, y: -24, scale: 0.95 }}
@@ -237,7 +237,7 @@ export function ShopModal({ onClose }: ShopModalProps) {
           <div className="flex items-center gap-1.5 text-amber">
             <Rocket className="h-4 w-4" strokeWidth={2} />
             <p className="font-display text-xs font-bold uppercase tracking-widest">
-              Overclock: 24h Auto-Mechanic
+              1 Day Boost
             </p>
           </div>
           <p className="mt-1.5 text-xs text-neutral-400">
@@ -280,16 +280,16 @@ export function ShopModal({ onClose }: ShopModalProps) {
         <div
           className={`mt-3 rounded-xl border p-4 ${
             megaActive
-              ? 'border-[#b026ff] bg-[#b026ff]/10 shadow-[0_0_20px_rgba(176,38,255,0.35)]'
+              ? 'border-amber bg-amber/10 shadow-[0_0_20px_rgba(255,149,0,0.35)]'
               : 'border-neutral-800 bg-black/20'
           }`}
         >
-          <div className="flex items-center gap-1.5 text-[#b026ff]">
+          <div className="flex items-center gap-1.5 text-amber">
             <Zap className="h-4 w-4" strokeWidth={2} fill="currentColor" />
             <p className="font-display text-xs font-bold uppercase tracking-widest">
               3 Days Boost
             </p>
-            <span className="rounded-full border border-[#b026ff] px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-widest text-[#b026ff]">
+            <span className="rounded-full border border-amber px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-widest text-amber">
               Premium
             </span>
           </div>
@@ -299,9 +299,9 @@ export function ShopModal({ onClose }: ShopModalProps) {
           </p>
 
           {megaActive && (
-            <div className="mt-3 flex items-center justify-center gap-1.5 rounded-lg border border-[#b026ff]/40 bg-[#b026ff]/5 py-2.5">
-              <Timer className="h-3.5 w-3.5 text-[#b026ff]" strokeWidth={2} />
-              <span className="font-display text-sm font-bold tabular-nums text-[#b026ff]">
+            <div className="mt-3 flex items-center justify-center gap-1.5 rounded-lg border border-amber/40 bg-amber/5 py-2.5">
+              <Timer className="h-3.5 w-3.5 text-amber" strokeWidth={2} />
+              <span className="font-display text-sm font-bold tabular-nums text-amber">
                 Active — {formatDuration((megaBoostEndsAt as number) - now)} left
               </span>
             </div>
@@ -313,7 +313,7 @@ export function ShopModal({ onClose }: ShopModalProps) {
             disabled={purchaseDisabled}
             whileHover={!purchaseDisabled ? { scale: 1.02 } : undefined}
             whileTap={!purchaseDisabled ? { scale: 0.97 } : undefined}
-            className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border-2 border-[#b026ff] bg-[#b026ff]/10 py-2.5 font-display text-sm font-black uppercase tracking-widest text-[#b026ff] shadow-[0_0_16px_rgba(176,38,255,0.3)] transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
+            className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border-2 border-amber bg-amber/10 py-2.5 font-display text-sm font-black uppercase tracking-widest text-amber shadow-[0_0_16px_rgba(255,149,0,0.3)] transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isPurchasing ||
             (isConfirmingPayment && pendingItemRef.current === 'mega_overclock_72h') ? (
