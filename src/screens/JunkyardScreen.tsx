@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { formatAbbreviated } from '../lib/format';
 import { useGameStore } from '../game/store/GameStore';
 import { AnimatedNumber } from '../components/AnimatedNumber';
 import type { Upgrade } from '../game/types';
@@ -54,7 +55,7 @@ function createSparkBurst(x: number, y: number): Spark[] {
 function formatScrapRate(value: number): string {
   if (value < 10) return value.toFixed(2);
   if (value < 100) return value.toFixed(1);
-  return Math.round(value).toLocaleString();
+  return formatAbbreviated(Math.round(value));
 }
 
 function formatUpgradeBenefit(upgrade: Upgrade): string {
@@ -245,7 +246,7 @@ export function JunkyardScreen() {
                   </p>
                 </div>
                 <span className="shrink-0 pl-3 text-right font-display text-sm font-bold text-neon-cyan tabular-nums">
-                  {Math.round(upgrade.cost).toLocaleString()}
+                  {formatAbbreviated(Math.round(upgrade.cost))}
                 </span>
               </motion.button>
             );

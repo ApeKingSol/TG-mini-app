@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { formatAbbreviated } from '../lib/format';
 import { Zap, Store, Gift, Trophy } from 'lucide-react';
 import {
   DndContext,
@@ -250,7 +251,7 @@ export function GarageScreen() {
                   whileTap={canBuyPart ? { scale: 0.95 } : undefined}
                   className="panel-cut-sm whitespace-nowrap border border-neutral-700 px-2 py-1 text-xs text-neutral-300 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  Buy Part ({partCost.toLocaleString()})
+                  Buy Part ({formatAbbreviated(partCost)})
                 </motion.button>
               </div>
               <p className="mt-1 text-xs text-neutral-600">

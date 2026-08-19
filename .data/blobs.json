@@ -1,7 +1,7 @@
 {
   "game-saves": {
     "123456789": {
-      "scrap": 2652152.5251900605,
+      "scrap": 3376912.1946400697,
       "neon": 51,
       "car": {
         "id": "starter-rustbucket",
@@ -89,7 +89,7 @@
       "scrapPerSecond": 15.403000000000002,
       "critChance": 0.1,
       "critMultiplier": 3,
-      "lastSaved": 1787088524799,
+      "lastSaved": 1787135577949,
       "dailyRewardStreak": 2,
       "lastDailyRewardClaim": 1787085441890,
       "boostEndsAt": null,

@@ -1,3 +1,4 @@
+import { formatAbbreviated } from '../lib/format';
 import { useEffect } from 'react';
 import { animate, motion, useMotionValue, useTransform } from 'framer-motion';
 
@@ -10,7 +11,7 @@ interface AnimatedNumberProps {
 export function AnimatedNumber({ value, className }: AnimatedNumberProps) {
   const motionValue = useMotionValue(value);
   const rounded = useTransform(motionValue, (latest) =>
-    Math.floor(latest).toLocaleString(),
+    formatAbbreviated(Math.floor(latest)),
   );
 
   useEffect(() => {

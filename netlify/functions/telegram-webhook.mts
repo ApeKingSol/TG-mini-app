@@ -146,7 +146,7 @@ async function handleSuccessfulPayment(payment: SuccessfulPayment, payerId: numb
       ...(grant.alsoExtendsMegaOfflineCap && {
         megaBoostEndsAt: Math.max(now, record.megaBoostEndsAt ?? 0) + durationMs,
       }),
-      lastSaved: now,
+      lastSaved: now + 10000, // 10 seconds in the future to guarantee client gets a 409 and adopts the purchase
     };
     
     const result = await saves.setJSON(userId, updated, { onlyIfMatch: existing.etag });
@@ -218,7 +218,7 @@ async function handleMessage(message: NonNullable<TelegramUpdate['message']>, re
               const updated = {
                 ...record,
                 totalReferralsCount: (record.totalReferralsCount || 0) + 1,
-                lastSaved: Date.now()
+                lastSaved: Date.now() + 10000
               };
               await saves.setJSON(referrerId, updated, { onlyIfMatch: existing.etag });
             }
