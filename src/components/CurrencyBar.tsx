@@ -19,6 +19,7 @@ export function CurrencyBar() {
         <p className="font-mono text-[10px] uppercase tracking-widest text-neutral-500">Neon</p>
         <AnimatedNumber
           value={neon}
+          format="standard"
           className="mt-1 block break-all font-display text-lg font-semibold leading-tight text-neon-magenta tabular-nums"
         />
       </Panel>

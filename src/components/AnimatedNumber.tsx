@@ -5,13 +5,14 @@ import { animate, motion, useMotionValue, useTransform } from 'framer-motion';
 interface AnimatedNumberProps {
   value: number;
   className?: string;
+  format?: "standard" | "abbreviated";
 }
 
 /** Rolls smoothly from the previous value to the next instead of snapping, for passive-income ticks and reward payouts. */
-export function AnimatedNumber({ value, className }: AnimatedNumberProps) {
+export function AnimatedNumber({ value, className, format = "abbreviated" }: AnimatedNumberProps) {
   const motionValue = useMotionValue(value);
   const rounded = useTransform(motionValue, (latest) =>
-    formatAbbreviated(Math.floor(latest)),
+    format === "abbreviated" ? formatAbbreviated(Math.floor(latest)) : Math.floor(latest).toLocaleString(),
   );
 
   useEffect(() => {

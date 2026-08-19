@@ -186,6 +186,7 @@ export function useCloudSync(): { status: CloudSyncStatus; syncNow: () => void }
   const [status, setStatus] = useState<CloudSyncStatus>(initialStatus);
   const lastPushedAtRef = useRef(0);
   const pullRemoteRef = useRef<() => void>(() => {});
+  const isPullingRef = useRef(false);
   const pushIfChangedRef = useRef<(reliable: boolean) => void>(() => {});
   /** Closed (false) until the initial pull settles with a real answer from the backend —
    * success (data or a genuinely-new-player empty save) — and only ever set back to false
@@ -218,6 +219,7 @@ export function useCloudSync(): { status: CloudSyncStatus; syncNow: () => void }
     };
 
     const pullRemote = () => {
+      isPullingRef.current = true;
       Promise.all([
         fetchRemoteState(initData), 
         fetchMySyndicate(),
@@ -280,6 +282,7 @@ export function useCloudSync(): { status: CloudSyncStatus; syncNow: () => void }
           // answer (existing save, or `remote === null` for a brand-new player), not a
           // network failure. From here on, pushIfChanged is allowed to actually send.
           hasPulledInitialStateRef.current = true;
+          isPullingRef.current = false;
         })
         .catch((err: unknown) => {
           if (cancelled) return;
@@ -291,6 +294,7 @@ export function useCloudSync(): { status: CloudSyncStatus; syncNow: () => void }
             lastError: err instanceof Error ? err.message : String(err),
           }));
           // Deliberately does not set hasPulledInitialStateRef — see its doc comment above.
+          isPullingRef.current = false;
         });
     };
 
@@ -298,6 +302,7 @@ export function useCloudSync(): { status: CloudSyncStatus; syncNow: () => void }
       // HARD LOCK — see hasPulledInitialStateRef's doc comment. No payload leaves this
       // device before the initial pull has resolved, full stop.
       if (!hasPulledInitialStateRef.current) return;
+      if (isPullingRef.current) return;
       const state = getSyncableState(useGameStore.getState());
       if (state.lastSaved === lastPushedAtRef.current) return;
       lastPushedAtRef.current = state.lastSaved;
@@ -393,7 +398,7 @@ export function useCloudSync(): { status: CloudSyncStatus; syncNow: () => void }
     // Still subject to the hasPulledInitialStateRef hard lock inside pushIfChanged — mashing
     // this before the very first pull has settled just re-triggers the pull, as it should.
     lastPushedAtRef.current = -1;
-    pushIfChangedRef.current(false);
+    // The periodic interval will pick this up automatically within 2 seconds
   };
 
   return { status, syncNow };
